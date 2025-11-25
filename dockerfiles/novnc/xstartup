@@ -1,0 +1,32 @@
+#!/bin/bash
+# VNC xstartup script for CORE GUI
+
+# Start dbus
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    eval $(dbus-launch --sh-syntax)
+fi
+
+# Set background color
+xsetroot -solid grey
+
+# Start clipboard synchronization for copy-paste between browser and VNC
+# autocutsel syncs CLIPBOARD selection (Ctrl+C/Ctrl+V)
+autocutsel -fork -s CLIPBOARD &
+# Also sync PRIMARY selection (middle-click paste)
+autocutsel -fork -s PRIMARY &
+
+# Start window manager
+fluxbox &
+
+# Give window manager time to start
+sleep 2
+
+# Start Tailscaled daemon
+mkdir -p /var/lib/tailscale /var/run/tailscale
+tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock > /var/log/tailscaled.log 2>&1 &
+
+# Wait for tailscaled to be ready
+sleep 2
+
+# Start CORE GUI and keep it running
+exec /opt/core/venv/bin/core-gui

@@ -1,0 +1,110 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!--
+  Tailscale Mesh Network Example
+
+  This topology demonstrates a properly structured Tailscale mesh with:
+  - Explicit node IDs (prevents "unknown node id None" error)
+  - Docker nodes with Tailscale image
+  - Optional management network for initial setup
+  - Custom Tailscale service configuration
+
+  To use:
+  1. Ensure TAILSCALE_AUTHKEY environment variable is set in Docker
+  2. Load this file in CORE GUI or via core-cli
+  3. Nodes will auto-connect to your tailnet
+-->
+<scenario name="Tailscale Mesh Network">
+
+  <networks>
+    <!-- Optional: Management network for initial access -->
+    <network id="100" name="mgmt-switch" type="SWITCH">
+      <position x="400.0" y="50.0" lat="0.0" lon="0.0" alt="0.0"/>
+    </network>
+  </networks>
+
+  <devices>
+    <!-- Tailscale Node 1 -->
+    <device id="1" name="ts-node1" type="docker" image="ubuntu:22.04">
+      <position x="200.0" y="200.0" lat="0.0" lon="0.0" alt="0.0"/>
+      <services>
+        <service name="DefaultRoute"/>
+        <!-- Uncomment when Tailscale custom service is added -->
+        <!-- <service name="Tailscale"/> -->
+      </services>
+    </device>
+
+    <!-- Tailscale Node 2 -->
+    <device id="2" name="ts-node2" type="docker" image="ubuntu:22.04">
+      <position x="400.0" y="200.0" lat="0.0" lon="0.0" alt="0.0"/>
+      <services>
+        <service name="DefaultRoute"/>
+        <!-- <service name="Tailscale"/> -->
+      </services>
+    </device>
+
+    <!-- Tailscale Node 3 -->
+    <device id="3" name="ts-node3" type="docker" image="ubuntu:22.04">
+      <position x="600.0" y="200.0" lat="0.0" lon="0.0" alt="0.0"/>
+      <services>
+        <service name="DefaultRoute"/>
+        <!-- <service name="Tailscale"/> -->
+      </services>
+    </device>
+
+    <!-- Tailscale Node 4 -->
+    <device id="4" name="ts-node4" type="docker" image="ubuntu:22.04">
+      <position x="300.0" y="350.0" lat="0.0" lon="0.0" alt="0.0"/>
+      <services>
+        <service name="DefaultRoute"/>
+        <!-- <service name="Tailscale"/> -->
+      </services>
+    </device>
+
+    <!-- Tailscale Node 5 -->
+    <device id="5" name="ts-node5" type="docker" image="ubuntu:22.04">
+      <position x="500.0" y="350.0" lat="0.0" lon="0.0" alt="0.0"/>
+      <services>
+        <service name="DefaultRoute"/>
+        <!-- <service name="Tailscale"/> -->
+      </services>
+    </device>
+  </devices>
+
+  <links>
+    <!-- Optional: Management network links for initial configuration -->
+    <!-- These allow initial access before Tailscale mesh is established -->
+    <link node1="100" node2="1">
+      <iface2 id="0" name="eth0" ip4="192.168.0.1" ip4_mask="24"/>
+      <options bandwidth="1000000000" delay="0" loss="0.0"/>
+    </link>
+    <link node1="100" node2="2">
+      <iface2 id="0" name="eth0" ip4="192.168.0.2" ip4_mask="24"/>
+      <options bandwidth="1000000000" delay="0" loss="0.0"/>
+    </link>
+    <link node1="100" node2="3">
+      <iface2 id="0" name="eth0" ip4="192.168.0.3" ip4_mask="24"/>
+      <options bandwidth="1000000000" delay="0" loss="0.0"/>
+    </link>
+    <link node1="100" node2="4">
+      <iface2 id="0" name="eth0" ip4="192.168.0.4" ip4_mask="24"/>
+      <options bandwidth="1000000000" delay="0" loss="0.0"/>
+    </link>
+    <link node1="100" node2="5">
+      <iface2 id="0" name="eth0" ip4="192.168.0.5" ip4_mask="24"/>
+      <options bandwidth="1000000000" delay="0" loss="0.0"/>
+    </link>
+  </links>
+
+  <!-- Service configurations will be added here when Tailscale service is implemented -->
+  <service_configurations/>
+
+  <!-- Session settings -->
+  <session_origin lat="0.0" lon="0.0" alt="0.0" scale="100.0"/>
+  <session_options>
+    <configuration name="controlnet" value=""/>
+    <configuration name="enablerj45" value="0"/>
+    <configuration name="preservedir" value="0"/>
+    <configuration name="enablesdt" value="0"/>
+  </session_options>
+
+</scenario>

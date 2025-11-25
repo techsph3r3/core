@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORE Topology Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.1rem;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 100px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .example-btn {
+            padding: 10px 15px;
+            background: #f5f5f5;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        .example-btn:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+            border: 2px solid #e0e0e0;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .result-header h2 {
+            color: #333;
+            font-size: 1.8rem;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat {
+            background: #f5f5f5;
+            padding: 10px 20px;
+            border-radius: 8px;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .summary {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .download-section {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            display: none;
+            background: #ffe0e0;
+            color: #d00;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #d00;
+            margin-top: 15px;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .success {
+            display: none;
+            background: #e0ffe0;
+            color: #0a0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #0a0;
+            margin-top: 15px;
+        }
+
+        .success.show {
+            display: block;
+        }
+
+        .rules-section {
+            background: #f0f7ff;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+            margin-top: 20px;
+        }
+
+        .rules-section h3 {
+            color: #1976D2;
+            margin-bottom: 15px;
+        }
+
+        .rules-section ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .rules-section li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .rules-section li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2rem;
+            }
+
+            .examples {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 CORE Topology Generator</h1>
+            <p>Create network topologies using natural language</p>
+        </header>
+
+        <div class="card">
+            <div class="input-section">
+                <label for="description">Describe your network topology:</label>
+                <textarea
+                    id="description"
+                    placeholder="Example: Create a ring with 6 routers&#10;Example: Build a star with a switch and 8 hosts&#10;Example: Make a wireless mesh with 5 MDR nodes"
+                ></textarea>
+
+                <div class="examples" id="examples">
+                    <!-- Examples will be loaded here -->
+                </div>
+            </div>
+
+            <div>
+                <button class="btn btn-primary" id="generateBtn">
+                    🚀 Generate Topology
+                </button>
+                <button class="btn btn-secondary" id="clearBtn">
+                    🗑️ Clear
+                </button>
+            </div>
+
+            <div class="error" id="error"></div>
+            <div class="success" id="success"></div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Generating your topology...</p>
+            </div>
+
+            <div class="results" id="results">
+                <div class="result-header">
+                    <h2>Generated Topology</h2>
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-label">Nodes</div>
+                            <div class="stat-value" id="nodeCount">0</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Links</div>
+                            <div class="stat-value" id="linkCount">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="summary" id="summary"></div>
+
+                <div class="download-section">
+                    <button class="btn btn-primary" id="downloadXml">
+                        📥 Download XML
+                    </button>
+                    <button class="btn btn-primary" id="downloadPython">
+                        📥 Download Python Script
+                    </button>
+                    <button class="btn btn-primary" id="copyToCore" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                        🚀 Copy to CORE & Open
+                    </button>
+                </div>
+            </div>
+
+            <div class="rules-section">
+                <h3>🎓 Network Engineering Rules (Enforced)</h3>
+                <ul>
+                    <li><strong>Layer 2 (Switch/Hub):</strong> All connected devices on the SAME subnet</li>
+                    <li><strong>Layer 3 (Router):</strong> Each interface on a DIFFERENT subnet</li>
+                    <li><strong>Wireless Networks:</strong> All nodes on same WLAN use the SAME subnet</li>
+                    <li><strong>Router Links:</strong> Each router-to-router link is a separate subnet</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const descriptionInput = document.getElementById('description');
+        const generateBtn = document.getElementById('generateBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+        const success = document.getElementById('success');
+        const summary = document.getElementById('summary');
+        const nodeCount = document.getElementById('nodeCount');
+        const linkCount = document.getElementById('linkCount');
+        const downloadXml = document.getElementById('downloadXml');
+        const downloadPython = document.getElementById('downloadPython');
+        const examplesContainer = document.getElementById('examples');
+
+        // Load examples
+        async function loadExamples() {
+            try {
+                const response = await fetch('/api/examples');
+                const data = await response.json();
+
+                data.examples.forEach(example => {
+                    const btn = document.createElement('button');
+                    btn.className = 'example-btn';
+                    btn.textContent = example.description;
+                    btn.title = example.name;
+                    btn.onclick = () => {
+                        descriptionInput.value = example.description;
+                    };
+                    examplesContainer.appendChild(btn);
+                });
+            } catch (err) {
+                console.error('Failed to load examples:', err);
+            }
+        }
+
+        // Generate topology
+        async function generateTopology() {
+            const description = descriptionInput.value.trim();
+
+            if (!description) {
+                showError('Please enter a topology description');
+                return;
+            }
+
+            hideMessages();
+            loading.classList.add('show');
+            results.classList.remove('show');
+            generateBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        description: description
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Show results
+                summary.textContent = data.summary;
+                nodeCount.textContent = data.nodes;
+                linkCount.textContent = data.links;
+                results.classList.add('show');
+                showSuccess(`✓ ${data.result}`);
+
+            } catch (err) {
+                showError('Failed to generate topology: ' + err.message);
+            } finally {
+                loading.classList.remove('show');
+                generateBtn.disabled = false;
+            }
+        }
+
+        // Download files
+        async function downloadFile(endpoint, filename) {
+            try {
+                const response = await fetch(endpoint);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showSuccess(`Downloaded ${filename}`);
+            } catch (err) {
+                showError('Download failed: ' + err.message);
+            }
+        }
+
+        // Show/hide messages
+        function showError(message) {
+            error.textContent = message;
+            error.classList.add('show');
+            setTimeout(() => error.classList.remove('show'), 5000);
+        }
+
+        function showSuccess(message) {
+            success.textContent = message;
+            success.classList.add('show');
+            setTimeout(() => success.classList.remove('show'), 3000);
+        }
+
+        function hideMessages() {
+            error.classList.remove('show');
+            success.classList.remove('show');
+        }
+
+        // Event listeners
+        generateBtn.addEventListener('click', generateTopology);
+
+        clearBtn.addEventListener('click', () => {
+            descriptionInput.value = '';
+            results.classList.remove('show');
+            hideMessages();
+        });
+
+        downloadXml.addEventListener('click', () => {
+            downloadFile('/api/download/xml', 'topology.xml');
+        });
+
+        downloadPython.addEventListener('click', () => {
+            downloadFile('/api/download/python', 'topology.py');
+        });
+
+        // Copy to CORE button
+        const copyToCore = document.getElementById('copyToCore');
+        copyToCore.addEventListener('click', async () => {
+            hideMessages();
+            copyToCore.disabled = true;
+            copyToCore.textContent = '🚀 Copying...';
+
+            try {
+                const response = await fetch('/api/copy-to-core', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: 'web_generated.xml',
+                        auto_open: true
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess(`✅ ${data.message}\n📺 Check your noVNC tab - CORE GUI should open automatically!`);
+                } else {
+                    showError(`Failed: ${data.error}`);
+                }
+            } catch (err) {
+                showError('Copy failed: ' + err.message);
+            } finally {
+                copyToCore.disabled = false;
+                copyToCore.textContent = '🚀 Copy to CORE & Open';
+            }
+        });
+
+        descriptionInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                generateTopology();
+            }
+        });
+
+        // Load examples on page load
+        loadExamples();
+    </script>
+</body>
+</html>

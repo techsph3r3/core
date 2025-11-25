@@ -1,0 +1,287 @@
+# CORE Network Laboratory - Theme Configuration
+# Edit this file to customize colors, fonts, and UI elements
+# Run: ./apply-theme.sh to apply changes
+
+# ============================================================================
+# THEME METADATA
+# ============================================================================
+theme:
+  name: "CORE Dark"
+  version: "1.0"
+  author: "CORE Lab"
+  description: "Professional dark theme optimized for network simulation"
+
+# ============================================================================
+# COLOR PALETTE
+# ============================================================================
+# You can change any of these colors to customize the appearance
+# Use hex format: #RRGGBB
+
+colors:
+  # Primary colors - Main visual identity
+  primary:
+    background: "#1a1d29"      # Main background (dark navy)
+    foreground: "#e2e8f0"      # Main text color (light gray)
+    accent: "#00d9ff"          # Accent color (teal/cyan - represents connectivity)
+    secondary: "#2d3748"       # Secondary background (medium gray)
+
+  # Semantic colors - Functional states
+  semantic:
+    success: "#10b981"         # Green - successful operations, active connections
+    warning: "#ff9500"         # Orange - warnings, alerts
+    error: "#ef4444"           # Red - errors, critical issues
+    info: "#3b82f6"            # Blue - informational messages
+
+  # UI element colors
+  ui:
+    border: "#475569"          # Border color for windows and panels
+    shadow: "#0f1419"          # Shadow color (darker than background)
+    highlight: "#334155"       # Highlight color for hover states
+    divider: "#64748b"         # Divider lines and separators
+
+  # Text colors - Different text contexts
+  text:
+    primary: "#e2e8f0"         # Primary text
+    secondary: "#94a3b8"       # Secondary/muted text
+    disabled: "#64748b"        # Disabled text
+    link: "#00d9ff"            # Hyperlinks
+    heading: "#00d9ff"         # Headings and titles
+
+  # Window colors
+  window:
+    title_focus: "#2d3748"     # Focused window title background
+    title_unfocus: "#1a1d29"   # Unfocused window title background
+    border_focus: "#00d9ff"    # Focused window border
+    border_unfocus: "#475569"  # Unfocused window border
+
+  # Menu colors
+  menu:
+    background: "#2d3748"      # Menu background
+    text: "#e2e8f0"            # Menu text
+    highlight_bg: "#00d9ff"    # Selected item background
+    highlight_text: "#1a1d29"  # Selected item text
+    title_bg: "#00d9ff"        # Menu title background
+    title_text: "#1a1d29"      # Menu title text
+
+  # Toolbar/Panel colors
+  toolbar:
+    background: "#2d3748"      # Toolbar background
+    text: "#e2e8f0"            # Toolbar text
+    accent: "#00d9ff"          # Toolbar accent elements (clock, etc)
+
+  # Terminal colors (for xterm/terminal emulators)
+  terminal:
+    background: "#1a1d29"
+    foreground: "#e2e8f0"
+    cursor: "#00d9ff"
+    selection: "#334155"
+
+# ============================================================================
+# TYPOGRAPHY
+# ============================================================================
+fonts:
+  # Font families (fallbacks provided)
+  family:
+    sans: "DejaVu Sans"        # Sans-serif font for UI
+    mono: "DejaVu Sans Mono"   # Monospace font for terminal/code
+    heading: "DejaVu Sans"     # Font for headings
+
+  # Font sizes (in points)
+  size:
+    small: 9
+    normal: 10
+    large: 11
+    heading: 12
+    title: 14
+
+  # Font weights
+  weight:
+    normal: "normal"
+    bold: "bold"
+
+# ============================================================================
+# UI ELEMENTS
+# ============================================================================
+ui_elements:
+  # Window settings
+  window:
+    border_width: 2            # Window border thickness (pixels)
+    title_height: 24           # Window title bar height (pixels)
+    padding: 4                 # Internal padding (pixels)
+    shadow: true               # Enable window shadows
+
+  # Panel/Dock settings
+  panel:
+    enabled: true              # Enable bottom panel (tint2)
+    height: 40                 # Panel height (pixels)
+    position: "bottom center horizontal"  # Panel position
+    transparency: 90           # Panel transparency (0-100, 100 = opaque)
+
+  # Menu settings
+  menu:
+    show_icons: true           # Show icons in menus
+    submenu_delay: 200         # Submenu delay (milliseconds)
+
+  # Desktop settings
+  desktop:
+    show_icons: true           # Show desktop icons
+    icon_size: 48              # Desktop icon size (pixels)
+    grid_spacing: 10           # Space between icons (pixels)
+
+# ============================================================================
+# BRANDING
+# ============================================================================
+branding:
+  # Application name and tagline
+  app_name: "CORE Network Laboratory"
+  tagline: "Digital Twin Network Simulation"
+
+  # Logo settings
+  logo:
+    enabled: true
+    position: "bottom-right"   # Position on desktop: top-left, top-right, bottom-left, bottom-right
+    size: 120                  # Logo size (pixels)
+    opacity: 0.3               # Logo opacity (0.0-1.0)
+
+  # Welcome screen
+  welcome:
+    enabled: true              # Show welcome screen on first launch
+    show_on_startup: false     # Show on every startup (false = first time only)
+
+# ============================================================================
+# FEATURES
+# ============================================================================
+features:
+  # Desktop shortcuts
+  shortcuts:
+    enabled: true
+    location: "/root/Desktop"  # Where to place shortcuts
+    items:
+      - name: "CORE GUI"
+        command: "/opt/core/venv/bin/core-gui"
+        icon: "network-workgroup"
+        enabled: true
+
+      - name: "Wireshark"
+        command: "wireshark"
+        icon: "wireshark"
+        enabled: true
+
+      - name: "Terminal"
+        command: "xterm"
+        icon: "utilities-terminal"
+        enabled: true
+
+      - name: "File Manager"
+        command: "thunar"
+        icon: "system-file-manager"
+        enabled: true
+
+      - name: "Examples"
+        command: "thunar /opt/examples"
+        icon: "folder-documents"
+        enabled: true
+
+      - name: "Documentation"
+        command: "firefox /opt/core/docs/index.html"
+        icon: "help-browser"
+        enabled: false  # Disable if Firefox not installed
+
+  # Status dashboard (Conky)
+  dashboard:
+    enabled: true
+    position: "top_right"      # top_left, top_right, bottom_left, bottom_right
+    update_interval: 2         # Update interval (seconds)
+
+  # Keyboard shortcuts
+  keyboard_shortcuts:
+    enabled: true
+    # Modifier keys: Mod4 (Super/Windows), Mod1 (Alt), Control, Shift
+    shortcuts:
+      launch_core: "Mod4 c"
+      launch_wireshark: "Mod4 w"
+      launch_terminal: "Mod4 t"
+      launch_filemanager: "Mod4 f"
+      close_window: "Mod4 q"
+      next_window: "Mod1 Tab"
+      prev_window: "Mod1 Shift Tab"
+      screenshot: "Print"
+
+# ============================================================================
+# WALLPAPER
+# ============================================================================
+wallpaper:
+  type: "gradient"             # solid, gradient, image
+
+  # For solid or gradient
+  color1: "#1a1d29"            # Primary color (or solid color)
+  color2: "#0f4c5c"            # Secondary color (for gradient)
+  gradient_direction: "vertical"  # horizontal, vertical, diagonal
+
+  # For image
+  image_path: "/root/.fluxbox/backgrounds/core-network.png"
+  image_mode: "stretched"      # centered, tiled, stretched, scaled
+
+  # Network diagram overlay
+  overlay:
+    enabled: true              # Show subtle network diagram
+    opacity: 0.05              # Overlay opacity (0.0-1.0)
+    color: "#00d9ff"           # Diagram line color
+
+# ============================================================================
+# PRESET THEMES
+# ============================================================================
+# Quick theme presets - uncomment a preset section to use it
+# Or create your own by copying this file
+
+# PRESET: Light Theme (uncomment to use)
+# colors:
+#   primary:
+#     background: "#f8fafc"
+#     foreground: "#1e293b"
+#     accent: "#0891b2"
+#     secondary: "#e2e8f0"
+#   semantic:
+#     success: "#059669"
+#     warning: "#d97706"
+#     error: "#dc2626"
+#     info: "#2563eb"
+
+# PRESET: High Contrast (uncomment to use)
+# colors:
+#   primary:
+#     background: "#000000"
+#     foreground: "#ffffff"
+#     accent: "#00ff00"
+#     secondary: "#1a1a1a"
+#   semantic:
+#     success: "#00ff00"
+#     warning: "#ffff00"
+#     error: "#ff0000"
+#     info: "#00ffff"
+
+# PRESET: Solarized Dark (uncomment to use)
+# colors:
+#   primary:
+#     background: "#002b36"
+#     foreground: "#839496"
+#     accent: "#268bd2"
+#     secondary: "#073642"
+#   semantic:
+#     success: "#859900"
+#     warning: "#b58900"
+#     error: "#dc322f"
+#     info: "#268bd2"
+
+# PRESET: Nord Theme (uncomment to use)
+# colors:
+#   primary:
+#     background: "#2e3440"
+#     foreground: "#d8dee9"
+#     accent: "#88c0d0"
+#     secondary: "#3b4252"
+#   semantic:
+#     success: "#a3be8c"
+#     warning: "#ebcb8b"
+#     error: "#bf616a"
+#     info: "#5e81ac"

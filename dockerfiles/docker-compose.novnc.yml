@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  core-novnc:
+    build:
+      context: ..
+      dockerfile: dockerfiles/Dockerfile.novnc
+    image: core-novnc:latest
+    container_name: core-novnc
+    privileged: true
+    init: true
+    pid: host
+    ports:
+      - "6080:6080"   # noVNC web interface
+      - "5901:5901"   # VNC server (optional, for native VNC clients)
+      - "50051:50051" # CORE gRPC API
+    environment:
+      - VNC_RESOLUTION=1920x1080
+      - VNC_DEPTH=24
+      - DISPLAY=:1
+    volumes:
+      - core-data:/root/.coregui
+      - /dev/net/tun:/dev/net/tun
+      - /var/run/docker.sock:/var/run/docker.sock  # Docker socket for Docker nodes
+    cap_add:
+      - NET_ADMIN
+      - SYS_ADMIN
+    restart: unless-stopped
+    hostname: core-novnc
+
+volumes:
+  core-data:
+    driver: local

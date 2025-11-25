@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORE Topology Generator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .input-section {
+            margin-bottom: 30px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+            font-size: 1.1rem;
+        }
+
+        textarea {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 100px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .example-btn {
+            padding: 10px 15px;
+            background: #f5f5f5;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 0.9rem;
+            text-align: left;
+        }
+
+        .example-btn:hover {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .btn {
+            padding: 15px 30px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #f5f5f5;
+            color: #333;
+            border: 2px solid #e0e0e0;
+        }
+
+        .btn-secondary:hover {
+            background: #e0e0e0;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .results {
+            display: none;
+            margin-top: 30px;
+        }
+
+        .results.show {
+            display: block;
+        }
+
+        .result-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .result-header h2 {
+            color: #333;
+            font-size: 1.8rem;
+        }
+
+        .stats {
+            display: flex;
+            gap: 20px;
+        }
+
+        .stat {
+            background: #f5f5f5;
+            padding: 10px 20px;
+            border-radius: 8px;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: #666;
+            text-transform: uppercase;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #667eea;
+        }
+
+        .summary {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+            margin-bottom: 20px;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .download-section {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            display: none;
+            background: #ffe0e0;
+            color: #d00;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #d00;
+            margin-top: 15px;
+        }
+
+        .error.show {
+            display: block;
+        }
+
+        .success {
+            display: none;
+            background: #e0ffe0;
+            color: #0a0;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #0a0;
+            margin-top: 15px;
+        }
+
+        .success.show {
+            display: block;
+        }
+
+        .rules-section {
+            background: #f0f7ff;
+            padding: 20px;
+            border-radius: 8px;
+            border-left: 4px solid #2196F3;
+            margin-top: 20px;
+        }
+
+        .rules-section h3 {
+            color: #1976D2;
+            margin-bottom: 15px;
+        }
+
+        .rules-section ul {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .rules-section li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+        }
+
+        .rules-section li:before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .image-upload-section {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border: 2px dashed #e0e0e0;
+            text-align: center;
+        }
+
+        .image-upload-section input[type="file"] {
+            display: none;
+        }
+
+        .upload-label {
+            display: inline-block;
+            padding: 12px 24px;
+            background: #667eea;
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .upload-label:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .image-preview {
+            margin-top: 15px;
+            max-width: 400px;
+            max-height: 300px;
+            display: none;
+            margin-left: auto;
+            margin-right: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .image-preview.show {
+            display: block;
+        }
+
+        .interpretation-view {
+            display: none;
+            margin-top: 30px;
+            padding: 25px;
+            background: #f0f9ff;
+            border-radius: 12px;
+            border-left: 4px solid #667eea;
+        }
+
+        .interpretation-view.show {
+            display: block;
+        }
+
+        .interpretation-view h3 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.4rem;
+        }
+
+        .interpretation-content {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .node-breakdown {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .node-type {
+            background: #667eea;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .node-type-label {
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            opacity: 0.9;
+        }
+
+        .node-type-count {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-top: 5px;
+        }
+
+        .questions-list, .suggestions-list {
+            list-style-type: none;
+            padding-left: 0;
+        }
+
+        .questions-list li {
+            padding: 10px;
+            margin-bottom: 8px;
+            background: white;
+            border-radius: 6px;
+            border-left: 3px solid #667eea;
+            padding-left: 15px;
+        }
+
+        .suggestion-item {
+            padding: 12px;
+            margin-bottom: 10px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            display: flex;
+            align-items: flex-start;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .suggestion-item:hover {
+            border-color: #667eea;
+            background: #f0f9ff;
+        }
+
+        .suggestion-item input[type="checkbox"] {
+            margin-right: 12px;
+            margin-top: 4px;
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .suggestion-content {
+            flex: 1;
+        }
+
+        .suggestion-label {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 4px;
+        }
+
+        .suggestion-description {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .refinement-section {
+            margin-top: 20px;
+        }
+
+        .refinement-section textarea {
+            min-height: 80px;
+            background: white;
+        }
+
+        @media (max-width: 768px) {
+            header h1 {
+                font-size: 2rem;
+            }
+
+            .examples {
+                grid-template-columns: 1fr;
+            }
+
+            .stats {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .node-breakdown {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🌐 CORE Topology Generator</h1>
+            <p>Create network topologies using natural language</p>
+        </header>
+
+        <div class="card">
+            <div class="input-section">
+                <label for="description">Describe your network topology:</label>
+                <textarea
+                    id="description"
+                    placeholder="Example: Create a ring with 6 routers&#10;Example: Build a star with a switch and 8 hosts&#10;Example: Make a wireless mesh with 5 MDR nodes"
+                ></textarea>
+
+                <div class="examples" id="examples">
+                    <!-- Examples will be loaded here -->
+                </div>
+
+                <div class="image-upload-section">
+                    <p style="margin-bottom: 15px; color: #666;">Or upload a network diagram:</p>
+                    <input type="file" id="imageUpload" accept="image/*">
+                    <label for="imageUpload" class="upload-label">
+                        📷 Choose Image
+                    </label>
+                    <p id="imageFilename" style="margin-top: 10px; color: #667eea; font-weight: 600;"></p>
+                    <img id="imagePreview" class="image-preview" alt="Network diagram preview">
+                </div>
+            </div>
+
+            <div>
+                <button class="btn btn-primary" id="interpretBtn">
+                    🔍 Interpret Description
+                </button>
+                <button class="btn btn-primary" id="interpretImageBtn" style="display: none;">
+                    🔍 Interpret Image
+                </button>
+                <button class="btn btn-primary" id="generateBtn">
+                    🚀 Generate Topology (Direct)
+                </button>
+                <button class="btn btn-secondary" id="clearBtn">
+                    🗑️ Clear
+                </button>
+            </div>
+
+            <!-- Interpretation View -->
+            <div class="interpretation-view" id="interpretationView">
+                <h3>My Understanding:</h3>
+
+                <div class="interpretation-content">
+                    <p id="interpretationText" style="font-size: 1.1rem; line-height: 1.6; color: #333;"></p>
+
+                    <div class="node-breakdown" id="nodeBreakdown">
+                        <!-- Node counts will be displayed here -->
+                    </div>
+                </div>
+
+                <div id="questionsSection" style="display: none; margin-bottom: 20px;">
+                    <h4 style="color: #667eea; margin-bottom: 10px;">Clarifying Questions:</h4>
+                    <ul class="questions-list" id="questionsList"></ul>
+                </div>
+
+                <div id="suggestionsSection" style="display: none; margin-bottom: 20px;">
+                    <h4 style="color: #667eea; margin-bottom: 10px;">Suggestions:</h4>
+                    <ul class="suggestions-list" id="suggestionsList"></ul>
+                </div>
+
+                <div id="calderaSection" style="display: none; margin-bottom: 20px;">
+                    <h4 style="color: #667eea; margin-bottom: 10px;">MITRE Caldera:</h4>
+                    <div class="suggestion-item">
+                        <input type="checkbox" id="calderaEnabled" style="margin-right: 12px; margin-top: 4px; width: 18px; height: 18px;">
+                        <div class="suggestion-content">
+                            <div class="suggestion-label">Add MITRE Caldera Docker Container</div>
+                            <div class="suggestion-description">
+                                Adversary emulation platform - Select which host to convert:
+                                <select id="calderaHostSelect" style="margin-left: 10px; padding: 5px; border-radius: 4px; border: 1px solid #e0e0e0; margin-top: 8px; display: block;">
+                                    <option value="0">First Host</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="pfsenseSection" style="display: none; margin-bottom: 20px;">
+                    <h4 style="color: #dc2626; margin-bottom: 10px;">🔥 pfSense Firewall (Security Architecture):</h4>
+                    <div class="suggestion-item">
+                        <input type="checkbox" id="pfsenseEnabled" style="margin-right: 12px; margin-top: 4px; width: 18px; height: 18px;">
+                        <div class="suggestion-content">
+                            <div class="suggestion-label">Add pfSense Firewall at Router Position</div>
+                            <div class="suggestion-description">
+                                <strong>Network Security:</strong> Firewalls belong at router/gateway positions (network boundaries), not at host level. Select which router to convert to pfSense:
+                                <select id="pfsenseRouterSelect" style="margin-left: 10px; padding: 5px; border-radius: 4px; border: 1px solid #e0e0e0; margin-top: 8px; display: block;">
+                                    <option value="0">First Router (Edge/Perimeter)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="refinement-section">
+                    <label for="refinedDescription">Refine your description (optional):</label>
+                    <textarea
+                        id="refinedDescription"
+                        placeholder="Add details like: 'Add a switch to each router with 5 hosts' or 'Make it a full mesh' or just click Generate if it looks good!"
+                    ></textarea>
+                </div>
+
+                <button class="btn btn-primary" id="generateFromPlanBtn" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); font-size: 1.2rem; padding: 18px 36px;">
+                    ✅ Generate Topology
+                </button>
+            </div>
+
+            <div class="error" id="error"></div>
+            <div class="success" id="success"></div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Generating your topology...</p>
+            </div>
+
+            <div class="results" id="results">
+                <div class="result-header">
+                    <h2>Generated Topology</h2>
+                    <div class="stats">
+                        <div class="stat">
+                            <div class="stat-label">Nodes</div>
+                            <div class="stat-value" id="nodeCount">0</div>
+                        </div>
+                        <div class="stat">
+                            <div class="stat-label">Links</div>
+                            <div class="stat-value" id="linkCount">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="summary" id="summary"></div>
+
+                <div class="download-section">
+                    <button class="btn btn-primary" id="downloadXml">
+                        📥 Download XML
+                    </button>
+                    <button class="btn btn-primary" id="downloadPython">
+                        📥 Download Python Script
+                    </button>
+                    <button class="btn btn-primary" id="copyToCore" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                        🚀 Copy to CORE & Open
+                    </button>
+                </div>
+            </div>
+
+            <div class="rules-section">
+                <h3>🎓 Network Engineering Rules (Enforced)</h3>
+                <ul>
+                    <li><strong>Layer 2 (Switch/Hub):</strong> All connected devices on the SAME subnet</li>
+                    <li><strong>Layer 3 (Router):</strong> Each interface on a DIFFERENT subnet</li>
+                    <li><strong>Wireless Networks:</strong> All nodes on same WLAN use the SAME subnet</li>
+                    <li><strong>Router Links:</strong> Each router-to-router link is a separate subnet</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const descriptionInput = document.getElementById('description');
+        const generateBtn = document.getElementById('generateBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const error = document.getElementById('error');
+        const success = document.getElementById('success');
+        const summary = document.getElementById('summary');
+        const nodeCount = document.getElementById('nodeCount');
+        const linkCount = document.getElementById('linkCount');
+        const downloadXml = document.getElementById('downloadXml');
+        const downloadPython = document.getElementById('downloadPython');
+        const examplesContainer = document.getElementById('examples');
+
+        // Interactive workflow elements
+        const imageUpload = document.getElementById('imageUpload');
+        const imagePreview = document.getElementById('imagePreview');
+        const imageFilename = document.getElementById('imageFilename');
+        const interpretBtn = document.getElementById('interpretBtn');
+        const interpretImageBtn = document.getElementById('interpretImageBtn');
+        const interpretationView = document.getElementById('interpretationView');
+        const interpretationText = document.getElementById('interpretationText');
+        const nodeBreakdown = document.getElementById('nodeBreakdown');
+        const questionsList = document.getElementById('questionsList');
+        const suggestionsList = document.getElementById('suggestionsList');
+        const questionsSection = document.getElementById('questionsSection');
+        const suggestionsSection = document.getElementById('suggestionsSection');
+        const refinedDescription = document.getElementById('refinedDescription');
+        const generateFromPlanBtn = document.getElementById('generateFromPlanBtn');
+
+        // Store current state
+        let currentPlan = null;
+        let selectedImageFile = null;
+
+        // Handle image file selection
+        imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                selectedImageFile = file;
+                imageFilename.textContent = `Selected: ${file.name}`;
+
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.add('show');
+                };
+                reader.readAsDataURL(file);
+
+                // Show interpret image button
+                interpretImageBtn.style.display = 'inline-block';
+            }
+        });
+
+        // Interpret text description
+        async function interpretText() {
+            const description = descriptionInput.value.trim();
+
+            if (!description) {
+                showError('Please enter a topology description');
+                return;
+            }
+
+            hideMessages();
+            loading.classList.add('show');
+            interpretBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/interpret-text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        description: description
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Display interpretation
+                displayInterpretation(data.interpretation);
+                showSuccess('Interpretation complete! Review and refine if needed.');
+
+            } catch (err) {
+                showError('Failed to interpret: ' + err.message);
+            } finally {
+                loading.classList.remove('show');
+                interpretBtn.disabled = false;
+            }
+        }
+
+        // Interpret uploaded image
+        async function interpretImage() {
+            if (!selectedImageFile) {
+                showError('Please select an image first');
+                return;
+            }
+
+            hideMessages();
+            loading.classList.add('show');
+            interpretImageBtn.disabled = true;
+
+            try {
+                const formData = new FormData();
+                formData.append('image', selectedImageFile);
+
+                const response = await fetch('/api/interpret-image', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Display interpretation
+                displayInterpretation(data.interpretation);
+                showSuccess('Image analyzed! Review and refine if needed.');
+
+            } catch (err) {
+                showError('Failed to interpret image: ' + err.message);
+            } finally {
+                loading.classList.remove('show');
+                interpretImageBtn.disabled = false;
+            }
+        }
+
+        // Display interpretation results
+        function displayInterpretation(interpretation) {
+            currentPlan = interpretation;
+
+            // Show interpretation text
+            interpretationText.textContent = interpretation.interpretation || 'No interpretation available';
+
+            // Show node breakdown
+            nodeBreakdown.innerHTML = '';
+            const nodes = interpretation.nodes || {};
+
+            if (nodes.routers > 0) {
+                const routerDiv = document.createElement('div');
+                routerDiv.className = 'node-type';
+                routerDiv.innerHTML = `
+                    <div class="node-type-label">Routers</div>
+                    <div class="node-type-count">${nodes.routers}</div>
+                `;
+                nodeBreakdown.appendChild(routerDiv);
+            }
+
+            if (nodes.switches > 0) {
+                const switchDiv = document.createElement('div');
+                switchDiv.className = 'node-type';
+                switchDiv.innerHTML = `
+                    <div class="node-type-label">Switches</div>
+                    <div class="node-type-count">${nodes.switches}</div>
+                `;
+                nodeBreakdown.appendChild(switchDiv);
+            }
+
+            if (nodes.hosts > 0) {
+                const hostDiv = document.createElement('div');
+                hostDiv.className = 'node-type';
+                hostDiv.innerHTML = `
+                    <div class="node-type-label">Hosts</div>
+                    <div class="node-type-count">${nodes.hosts}</div>
+                `;
+                nodeBreakdown.appendChild(hostDiv);
+            }
+
+            // Show questions if any
+            const questions = interpretation.questions || [];
+            if (questions.length > 0) {
+                questionsList.innerHTML = '';
+                questions.forEach(q => {
+                    const li = document.createElement('li');
+                    li.textContent = q;
+                    questionsList.appendChild(li);
+                });
+                questionsSection.style.display = 'block';
+            } else {
+                questionsSection.style.display = 'none';
+            }
+
+            // Show suggestions as checkboxes
+            const suggestions = interpretation.suggestions || [];
+            if (suggestions.length > 0) {
+                suggestionsList.innerHTML = '';
+                suggestions.forEach(s => {
+                    // Handle both old string format and new object format
+                    const suggestionId = s.id || Math.random().toString(36).substr(2, 9);
+                    const suggestionLabel = s.label || s;
+                    const suggestionDesc = s.description || '';
+
+                    const div = document.createElement('div');
+                    div.className = 'suggestion-item';
+
+                    div.innerHTML = `
+                        <input type="checkbox" id="suggestion-${suggestionId}" value="${suggestionId}" checked>
+                        <div class="suggestion-content">
+                            <div class="suggestion-label">${suggestionLabel}</div>
+                            ${suggestionDesc ? `<div class="suggestion-description">${suggestionDesc}</div>` : ''}
+                        </div>
+                    `;
+
+                    // Make entire div clickable
+                    div.addEventListener('click', (e) => {
+                        if (e.target.tagName !== 'INPUT') {
+                            const checkbox = div.querySelector('input[type="checkbox"]');
+                            checkbox.checked = !checkbox.checked;
+                        }
+                    });
+
+                    suggestionsList.appendChild(div);
+                });
+                suggestionsSection.style.display = 'block';
+            } else {
+                suggestionsSection.style.display = 'none';
+            }
+
+            // Show Caldera section if there are hosts
+            const hostCount = nodes.hosts || 0;
+            if (hostCount > 0) {
+                const calderaSelect = document.getElementById('calderaHostSelect');
+                calderaSelect.innerHTML = '';
+
+                for (let i = 0; i < hostCount; i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    option.textContent = `Host ${i + 1}`;
+                    calderaSelect.appendChild(option);
+                }
+
+                document.getElementById('calderaSection').style.display = 'block';
+            } else {
+                document.getElementById('calderaSection').style.display = 'none';
+            }
+
+            // Show pfSense section if there are routers (Security Architecture)
+            const routerCount = nodes.routers || 0;
+            if (routerCount > 0) {
+                const pfsenseSelect = document.getElementById('pfsenseRouterSelect');
+                pfsenseSelect.innerHTML = '';
+
+                for (let i = 0; i < routerCount; i++) {
+                    const option = document.createElement('option');
+                    option.value = i;
+                    // Label first router as Edge/Perimeter for security context
+                    if (i === 0) {
+                        option.textContent = `Router ${i + 1} (Edge/Perimeter Firewall)`;
+                    } else {
+                        option.textContent = `Router ${i + 1} (Internal Firewall)`;
+                    }
+                    pfsenseSelect.appendChild(option);
+                }
+
+                document.getElementById('pfsenseSection').style.display = 'block';
+            } else {
+                document.getElementById('pfsenseSection').style.display = 'none';
+            }
+
+            // Show interpretation view
+            interpretationView.classList.add('show');
+            results.classList.remove('show');
+
+            // Scroll to interpretation
+            interpretationView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Generate topology from refined plan
+        async function generateFromPlan() {
+            hideMessages();
+            loading.classList.add('show');
+            generateFromPlanBtn.disabled = true;
+
+            // Build updated plan with refinement
+            let finalPlan = { ...currentPlan };
+
+            // Collect selected suggestions
+            const selectedSuggestions = [];
+            const suggestionCheckboxes = document.querySelectorAll('#suggestionsList input[type="checkbox"]:checked');
+            suggestionCheckboxes.forEach(cb => {
+                const suggestionDiv = cb.closest('.suggestion-item');
+                const label = suggestionDiv.querySelector('.suggestion-label').textContent;
+                selectedSuggestions.push({
+                    id: cb.value,
+                    label: label
+                });
+            });
+
+            // Add selected suggestions to plan
+            if (selectedSuggestions.length > 0) {
+                finalPlan.selected_features = selectedSuggestions;
+            }
+
+            // Collect Caldera configuration
+            const calderaEnabled = document.getElementById('calderaEnabled').checked;
+            if (calderaEnabled) {
+                const hostIndex = parseInt(document.getElementById('calderaHostSelect').value);
+                finalPlan.caldera_config = {
+                    enabled: true,
+                    host_index: hostIndex
+                };
+            }
+
+            // Collect pfSense configuration (Router-level firewall)
+            const pfsenseEnabled = document.getElementById('pfsenseEnabled').checked;
+            if (pfsenseEnabled) {
+                const routerIndex = parseInt(document.getElementById('pfsenseRouterSelect').value);
+                finalPlan.pfsense_config = {
+                    enabled: true,
+                    router_index: routerIndex
+                };
+            }
+
+            // If user added refinement, update the interpretation
+            const refinement = refinedDescription.value.trim();
+            if (refinement) {
+                // Re-interpret with refinement
+                try {
+                    const response = await fetch('/api/interpret-text', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            description: currentPlan.interpretation + '. ' + refinement
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (!data.error) {
+                        finalPlan = data.interpretation;
+                    }
+                } catch (err) {
+                    console.error('Refinement interpretation failed:', err);
+                }
+            }
+
+            // Generate topology
+            try {
+                const response = await fetch('/api/generate-from-plan', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        plan: finalPlan
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Show results
+                summary.textContent = data.summary;
+                nodeCount.textContent = data.nodes;
+                linkCount.textContent = data.links;
+                results.classList.add('show');
+                showSuccess(`✓ ${data.result}`);
+
+                // Scroll to results
+                results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            } catch (err) {
+                showError('Failed to generate topology: ' + err.message);
+            } finally {
+                loading.classList.remove('show');
+                generateFromPlanBtn.disabled = false;
+            }
+        }
+
+        // Load examples
+        async function loadExamples() {
+            try {
+                const response = await fetch('/api/examples');
+                const data = await response.json();
+
+                data.examples.forEach(example => {
+                    const btn = document.createElement('button');
+                    btn.className = 'example-btn';
+                    btn.textContent = example.description;
+                    btn.title = example.name;
+                    btn.onclick = () => {
+                        descriptionInput.value = example.description;
+                    };
+                    examplesContainer.appendChild(btn);
+                });
+            } catch (err) {
+                console.error('Failed to load examples:', err);
+            }
+        }
+
+        // Generate topology
+        async function generateTopology() {
+            const description = descriptionInput.value.trim();
+
+            if (!description) {
+                showError('Please enter a topology description');
+                return;
+            }
+
+            hideMessages();
+            loading.classList.add('show');
+            results.classList.remove('show');
+            generateBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        description: description
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    showError(data.error);
+                    return;
+                }
+
+                // Show results
+                summary.textContent = data.summary;
+                nodeCount.textContent = data.nodes;
+                linkCount.textContent = data.links;
+                results.classList.add('show');
+                showSuccess(`✓ ${data.result}`);
+
+            } catch (err) {
+                showError('Failed to generate topology: ' + err.message);
+            } finally {
+                loading.classList.remove('show');
+                generateBtn.disabled = false;
+            }
+        }
+
+        // Download files
+        async function downloadFile(endpoint, filename) {
+            try {
+                const response = await fetch(endpoint);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                showSuccess(`Downloaded ${filename}`);
+            } catch (err) {
+                showError('Download failed: ' + err.message);
+            }
+        }
+
+        // Show/hide messages
+        function showError(message) {
+            error.textContent = message;
+            error.classList.add('show');
+            setTimeout(() => error.classList.remove('show'), 5000);
+        }
+
+        function showSuccess(message) {
+            success.textContent = message;
+            success.classList.add('show');
+            setTimeout(() => success.classList.remove('show'), 3000);
+        }
+
+        function hideMessages() {
+            error.classList.remove('show');
+            success.classList.remove('show');
+        }
+
+        // Event listeners
+        interpretBtn.addEventListener('click', interpretText);
+        interpretImageBtn.addEventListener('click', interpretImage);
+        generateFromPlanBtn.addEventListener('click', generateFromPlan);
+        generateBtn.addEventListener('click', generateTopology);
+
+        clearBtn.addEventListener('click', () => {
+            descriptionInput.value = '';
+            refinedDescription.value = '';
+            imageFilename.textContent = '';
+            imagePreview.classList.remove('show');
+            imagePreview.src = '';
+            selectedImageFile = null;
+            currentPlan = null;
+            interpretImageBtn.style.display = 'none';
+            interpretationView.classList.remove('show');
+            results.classList.remove('show');
+            hideMessages();
+        });
+
+        downloadXml.addEventListener('click', () => {
+            downloadFile('/api/download/xml', 'topology.xml');
+        });
+
+        downloadPython.addEventListener('click', () => {
+            downloadFile('/api/download/python', 'topology.py');
+        });
+
+        // Copy to CORE button
+        const copyToCore = document.getElementById('copyToCore');
+        copyToCore.addEventListener('click', async () => {
+            hideMessages();
+            copyToCore.disabled = true;
+            copyToCore.textContent = '🚀 Copying...';
+
+            try {
+                const response = await fetch('/api/copy-to-core', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: 'web_generated.xml',
+                        auto_open: true
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    showSuccess(`✅ ${data.message}\n📺 Check your noVNC tab - CORE GUI should open automatically!`);
+                } else {
+                    showError(`Failed: ${data.error}`);
+                }
+            } catch (err) {
+                showError('Copy failed: ' + err.message);
+            } finally {
+                copyToCore.disabled = false;
+                copyToCore.textContent = '🚀 Copy to CORE & Open';
+            }
+        });
+
+        descriptionInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                generateTopology();
+            }
+        });
+
+        // Load examples on page load
+        loadExamples();
+    </script>
+</body>
+</html>

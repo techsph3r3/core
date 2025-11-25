@@ -1,0 +1,291 @@
+# syntax=docker/dockerfile:1
+FROM ubuntu:22.04 AS emane-python
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    automake \
+    ca-certificates \
+    g++ \
+    git \
+    libpcap-dev \
+    libpcre3-dev \
+    libprotobuf-dev \
+    libtool \
+    libxml2-dev \
+    make \
+    pkg-config \
+    python3 \
+    python3-pip \
+    unzip \
+    uuid-dev \
+    wget && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+WORKDIR /opt
+ARG PROTOC_VERSION=3.19.6
+RUN wget -q https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-x86_64.zip && \
+    mkdir protoc && \
+    unzip protoc-${PROTOC_VERSION}-linux-x86_64.zip -d protoc && \
+    git clone https://github.com/adjacentlink/emane.git && \
+    cd emane && \
+    git checkout v1.5.2 && \
+    ./autogen.sh && \
+    PYTHON=python3 ./configure --prefix=/usr && \
+    cd src/python && \
+    PATH=/opt/protoc/bin:$PATH make && \
+    python3 setup.py bdist_wheel && \
+    mv dist/*.whl /opt/ && \
+    cd /opt && \
+    rm -rf protoc && \
+    rm -rf emane && \
+    rm -f protoc-${PROTOC_VERSION}-linux-x86_64.zip
+
+FROM ubuntu:22.04 AS ospf-deb
+WORKDIR /opt
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    automake \
+    make \
+    libtool \
+    pkg-config \
+    gawk \
+    g++ \
+    dpkg-dev \
+    debhelper \
+    libreadline-dev \
+    texinfo \
+    imagemagick \
+    groff \
+    build-essential:native \
+    texlive-latex-recommended \
+    texlive-plain-generic && \
+    git clone https://github.com/USNavalResearchLaboratory/ospf-mdr.git && \
+    cd ospf-mdr && \
+    ./bootstrap.sh && \
+    ./configure && \
+    (make -f quagga.deb.mk build || make -f quagga.deb.mk build) && \
+    mv quagga-mr_0.99*.deb /opt/ && \
+    cd /opt && \
+    rm -rf ospf-mdr && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+WORKDIR /opt
+
+# install system dependencies
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    xterm \
+    psmisc \
+    python3 \
+    python3-tk \
+    python3-venv \
+    python3-pip \
+    wget \
+    iproute2 \
+    iputils-ping \
+    curl \
+    tcpdump && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# install core
+ARG CORE_VERSION=9.2.0
+ARG CORE_PACKAGE=core_${CORE_VERSION}_amd64.deb
+ARG PACKAGE_URL=https://github.com/coreemu/core/releases/download/release-${CORE_VERSION}/${CORE_PACKAGE}
+RUN apt-get update -y && \
+    wget -q ${PACKAGE_URL} && \
+    apt-get install -y --no-install-recommends ./${CORE_PACKAGE} && \
+    rm -f ${CORE_PACKAGE} && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# install ospf mdr
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    automake \
+    make \
+    gawk \
+    git \
+    g++ \
+    libreadline-dev \
+    libtool \
+    pkg-config && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+RUN git clone https://github.com/USNavalResearchLaboratory/ospf-mdr.git && \
+    cd ospf-mdr && \
+    ./bootstrap.sh && \
+    ./configure --disable-doc --enable-user=root --enable-group=root \
+    --with-cflags=-ggdb --sysconfdir=/usr/local/etc/quagga --enable-vtysh \
+    --localstatedir=/var/run/quagga && \
+    make -j$(nproc) && \
+    make install && \
+    cd .. && \
+    rm -rf ospf-mdr
+
+# install emane
+ARG EMANE_RELEASE=emane-1.5.1-release-1
+ARG EMANE_PACKAGE=${EMANE_RELEASE}.ubuntu-22_04.amd64.tar.gz
+RUN apt-get update -y && \
+    wget -q https://adjacentlink.com/downloads/emane/${EMANE_PACKAGE} && \
+    tar xf ${EMANE_PACKAGE} && \
+    cd ${EMANE_RELEASE}/debs/ubuntu-22_04/amd64 && \
+    rm emane-spectrum-tools*.deb emane-model-lte*.deb && \
+    rm *dev*.deb && \
+    apt-get install -y --no-install-recommends ./emane*.deb ./python3-emane_*.deb && \
+    cd ../../../.. && \
+    rm ${EMANE_PACKAGE} && \
+    rm -rf ${EMANE_RELEASE} && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# install emane python bindings
+ARG VENV_PATH=/opt/core/venv
+COPY --from=emane-python /opt/emane-*.whl .
+RUN ${VENV_PATH}/bin/python -m pip install ./emane-*.whl
+
+# install VNC server, noVNC, and window manager
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    tigervnc-standalone-server \
+    tigervnc-common \
+    tigervnc-tools \
+    fluxbox \
+    supervisor \
+    net-tools \
+    x11-utils \
+    x11-xserver-utils \
+    dbus-x11 \
+    xfonts-base \
+    xfonts-100dpi \
+    xfonts-75dpi \
+    xfonts-cyrillic \
+    xfonts-scalable \
+    fonts-liberation \
+    fonts-dejavu \
+    # Clipboard tools for copy-paste support
+    autocutsel \
+    xclip \
+    xsel \
+    git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# install noVNC
+RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/noVNC && \
+    git clone --depth 1 https://github.com/novnc/websockify /opt/noVNC/utils/websockify && \
+    ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
+
+# create VNC directories
+RUN mkdir -p /root/.vnc
+
+# set VNC password (default: core123)
+RUN echo "core123" | vncpasswd -f > /root/.vnc/passwd && \
+    chmod 600 /root/.vnc/passwd
+
+# create startup scripts
+COPY dockerfiles/novnc/xstartup /root/.vnc/xstartup
+RUN chmod +x /root/.vnc/xstartup
+
+COPY dockerfiles/novnc/start-vnc.sh /opt/start-vnc.sh
+RUN chmod +x /opt/start-vnc.sh
+
+COPY dockerfiles/novnc/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# install CORE service dependencies and utilities
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    # Routing services (FRR)
+    frr \
+    frr-pythontools \
+    # Web and FTP servers
+    apache2 \
+    vsftpd \
+    # SSH server
+    openssh-server \
+    # DHCP server and client
+    isc-dhcp-server \
+    isc-dhcp-client \
+    # IPv6 router advertisement
+    radvd \
+    # At daemon
+    at \
+    # NRL protocol suite dependencies
+    iperf \
+    iperf3 \
+    ethtool \
+    # Network utilities
+    traceroute \
+    nmap \
+    netcat-openbsd \
+    # Wireshark and analysis tools
+    wireshark \
+    tshark \
+    # Additional utilities
+    vim \
+    nano \
+    less \
+    htop \
+    net-tools \
+    dnsutils \
+    bind9-utils && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# configure FRR
+RUN sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons && \
+    sed -i 's/ospfd=no/ospfd=yes/' /etc/frr/daemons && \
+    sed -i 's/ospf6d=no/ospf6d=yes/' /etc/frr/daemons && \
+    sed -i 's/ripd=no/ripd=yes/' /etc/frr/daemons && \
+    sed -i 's/ripngd=no/ripngd=yes/' /etc/frr/daemons && \
+    sed -i 's/isisd=no/isisd=yes/' /etc/frr/daemons
+
+# install Docker for Docker node support
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    gnupg \
+    lsb-release && \
+    mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+    $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    docker-ce-cli \
+    docker-buildx-plugin \
+    docker-compose-plugin && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# configure Docker for CORE (disable iptables and bridge)
+RUN mkdir -p /etc/docker && \
+    echo '{"bridge": "none", "iptables": false}' > /etc/docker/daemon.json
+
+# install Tailscale
+RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg | tee /usr/share/keyrings/tailscale-archive-keyring.gpg >/dev/null && \
+    curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.tailscale-keyring.list | tee /etc/apt/sources.list.d/tailscale.list && \
+    apt-get update -y && \
+    apt-get install -y tailscale && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+
+# expose VNC and noVNC ports
+EXPOSE 5901 6080
+
+# set environment variables
+ENV DISPLAY=:1 \
+    VNC_RESOLUTION=1920x1080 \
+    VNC_DEPTH=24
+
+# set default directory
+WORKDIR /root
+
+# start supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

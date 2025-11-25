@@ -1,0 +1,27 @@
+[project]
+name = "core-mcp-server"
+version = "0.1.0"
+description = "Model Context Protocol server for CORE network topology generation"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=0.1.0",
+    "pydantic>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "mypy>=1.0.0",
+]
+
+[build-system]
+requires = ["setuptools>=68.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project.scripts]
+core-mcp-server = "core_mcp.server:main"
+
+[tool.setuptools]
+packages = ["core_mcp"]

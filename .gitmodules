@@ -1,0 +1,3 @@
+[submodule "caldera-latest"]
+	path = caldera-latest
+	url = https://github.com/mitre/caldera.git

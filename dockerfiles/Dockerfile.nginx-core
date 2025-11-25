@@ -1,0 +1,18 @@
+# CORE-Compatible Nginx Web Server
+# Wraps nginx:latest for use inside NRL CORE 9.2.0
+
+FROM nginx:latest
+
+USER root
+RUN apt-get update && \
+    apt-get install -y \
+        iproute2 \
+        ethtool \
+        iputils-ping \
+        net-tools \
+        tcpdump \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Preserve nginx's default ENTRYPOINT and CMD
+# CORE will handle network setup automatically

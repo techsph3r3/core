@@ -1,0 +1,81 @@
+# CORE Node Base Image
+# This image is used by CORE when creating Docker-based nodes
+# It includes all necessary networking tools, services, and utilities
+
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install networking and system utilities
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+    # Basic networking
+    iproute2 \
+    iputils-ping \
+    net-tools \
+    ethtool \
+    # Routing services
+    frr \
+    frr-pythontools \
+    # Network analysis
+    wireshark \
+    tshark \
+    tcpdump \
+    # Performance testing
+    iperf \
+    iperf3 \
+    # Network utilities
+    traceroute \
+    nmap \
+    netcat-openbsd \
+    curl \
+    wget \
+    dnsutils \
+    bind9-utils \
+    # Application services
+    apache2 \
+    vsftpd \
+    openssh-server \
+    openssh-client \
+    # DHCP
+    isc-dhcp-server \
+    isc-dhcp-client \
+    # IPv6
+    radvd \
+    # System utilities
+    vim \
+    nano \
+    less \
+    htop \
+    procps \
+    psmisc \
+    at \
+    # X11 for GUI applications
+    x11-apps \
+    xauth \
+    # Required for CORE
+    bash \
+    sudo && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/*
+
+# Configure FRR
+RUN sed -i 's/bgpd=no/bgpd=yes/' /etc/frr/daemons && \
+    sed -i 's/ospfd=no/ospfd=yes/' /etc/frr/daemons && \
+    sed -i 's/ospf6d=no/ospf6d=yes/' /etc/frr/daemons && \
+    sed -i 's/ripd=no/ripd=yes/' /etc/frr/daemons && \
+    sed -i 's/ripngd=no/ripngd=yes/' /etc/frr/daemons && \
+    sed -i 's/isisd=no/isisd=yes/' /etc/frr/daemons
+
+# Configure Wireshark to allow non-root capture
+RUN echo "wireshark-common wireshark-common/install-setuid boolean true" | debconf-set-selections && \
+    dpkg-reconfigure -f noninteractive wireshark-common
+
+# Create necessary directories
+RUN mkdir -p /var/run/sshd /etc/ssh /var/www/html
+
+# Set up a simple web page for HTTP service
+RUN echo '<html><body><h1>CORE Node Web Server</h1><p>This node is running Apache2.</p></body></html>' > /var/www/html/index.html
+
+# Default command (can be overridden by CORE)
+CMD ["/bin/bash"]

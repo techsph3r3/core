@@ -1,0 +1,158 @@
+# CORE Network Laboratory - Nord Theme
+# Arctic, north-bluish color palette
+
+theme:
+  name: "CORE Nord"
+  version: "1.0"
+  author: "CORE Lab"
+  description: "Cool, arctic-inspired theme based on Nord palette"
+
+colors:
+  primary:
+    background: "#2e3440"
+    foreground: "#d8dee9"
+    accent: "#88c0d0"
+    secondary: "#3b4252"
+
+  semantic:
+    success: "#a3be8c"
+    warning: "#ebcb8b"
+    error: "#bf616a"
+    info: "#5e81ac"
+
+  ui:
+    border: "#4c566a"
+    shadow: "#2e3440"
+    highlight: "#434c5e"
+    divider: "#4c566a"
+
+  text:
+    primary: "#eceff4"
+    secondary: "#d8dee9"
+    disabled: "#4c566a"
+    link: "#88c0d0"
+    heading: "#8fbcbb"
+
+  window:
+    title_focus: "#3b4252"
+    title_unfocus: "#2e3440"
+    border_focus: "#88c0d0"
+    border_unfocus: "#4c566a"
+
+  menu:
+    background: "#3b4252"
+    text: "#eceff4"
+    highlight_bg: "#88c0d0"
+    highlight_text: "#2e3440"
+    title_bg: "#5e81ac"
+    title_text: "#eceff4"
+
+  toolbar:
+    background: "#3b4252"
+    text: "#eceff4"
+    accent: "#88c0d0"
+
+  terminal:
+    background: "#2e3440"
+    foreground: "#d8dee9"
+    cursor: "#88c0d0"
+    selection: "#434c5e"
+
+fonts:
+  family:
+    sans: "DejaVu Sans"
+    mono: "DejaVu Sans Mono"
+    heading: "DejaVu Sans"
+  size:
+    small: 9
+    normal: 10
+    large: 11
+    heading: 12
+    title: 14
+  weight:
+    normal: "normal"
+    bold: "bold"
+
+ui_elements:
+  window:
+    border_width: 2
+    title_height: 24
+    padding: 4
+    shadow: true
+  panel:
+    enabled: true
+    height: 40
+    position: "bottom center horizontal"
+    transparency: 90
+  menu:
+    show_icons: true
+    submenu_delay: 200
+  desktop:
+    show_icons: true
+    icon_size: 48
+    grid_spacing: 10
+
+branding:
+  app_name: "CORE Network Laboratory"
+  tagline: "Digital Twin Network Simulation"
+  logo:
+    enabled: true
+    position: "bottom-right"
+    size: 120
+    opacity: 0.3
+  welcome:
+    enabled: true
+    show_on_startup: false
+
+features:
+  shortcuts:
+    enabled: true
+    location: "/root/Desktop"
+    items:
+      - name: "CORE GUI"
+        command: "/opt/core/venv/bin/core-gui"
+        icon: "network-workgroup"
+        enabled: true
+      - name: "Wireshark"
+        command: "wireshark"
+        icon: "wireshark"
+        enabled: true
+      - name: "Terminal"
+        command: "xterm"
+        icon: "utilities-terminal"
+        enabled: true
+      - name: "File Manager"
+        command: "thunar"
+        icon: "system-file-manager"
+        enabled: true
+      - name: "Examples"
+        command: "thunar /opt/examples"
+        icon: "folder-documents"
+        enabled: true
+
+  dashboard:
+    enabled: true
+    position: "top_right"
+    update_interval: 2
+
+  keyboard_shortcuts:
+    enabled: true
+    shortcuts:
+      launch_core: "Mod4 c"
+      launch_wireshark: "Mod4 w"
+      launch_terminal: "Mod4 t"
+      launch_filemanager: "Mod4 f"
+      close_window: "Mod4 q"
+      next_window: "Mod1 Tab"
+      prev_window: "Mod1 Shift Tab"
+      screenshot: "Print"
+
+wallpaper:
+  type: "gradient"
+  color1: "#2e3440"
+  color2: "#3b4252"
+  gradient_direction: "vertical"
+  overlay:
+    enabled: true
+    opacity: 0.05
+    color: "#88c0d0"

