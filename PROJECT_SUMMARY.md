@@ -1,5 +1,76 @@
 # CORE Network Emulator + Caldera Integration Project
 
+## Quick Start
+
+### Option 1: Docker Container with noVNC (Recommended)
+
+```bash
+# Build and run the CORE container with noVNC
+cd /workspaces/core/dockerfiles
+docker build -t core-novnc -f Dockerfile.novnc ..
+docker run -d --name core-novnc --privileged \
+    -p 6080:6080 -p 5000:5000 \
+    -v /var/run/docker.sock:/var/run/docker.sock \
+    core-novnc
+
+# Access noVNC desktop in browser
+open http://localhost:6080
+# Password: core123
+```
+
+### Option 2: Web UI for Topology Generation
+
+```bash
+# Install dependencies (first time only)
+cd /workspaces/core/core-mcp-server
+pip install flask flask-cors openai pyyaml
+
+# Start the Web UI server
+python3 web_ui.py --host 0.0.0.0 --port 5000
+
+# Access in browser
+open http://localhost:5000
+```
+
+### Option 3: Command Line Topology Generation
+
+```bash
+cd /workspaces/core/core-mcp-server
+
+# Run test to generate sample topologies
+python3 test_topology_gen.py
+
+# Generated files appear in /tmp/:
+#   /tmp/test_star_topology.py
+#   /tmp/test_wireless_mesh.py
+#   /tmp/test_tailscale_mesh.py
+```
+
+### Option 4: Python API
+
+```python
+from core_mcp.topology_generator import TopologyGenerator
+
+gen = TopologyGenerator()
+gen.generate_from_description("Create 3 routers in a triangle with OSPF")
+
+# Export as XML (for CORE GUI)
+with open("my_topology.xml", "w") as f:
+    f.write(gen.to_xml())
+
+# Export as Python script (for automation)
+with open("my_topology.py", "w") as f:
+    f.write(gen.to_python_script())
+```
+
+### GitHub Codespaces URLs
+
+If running in GitHub Codespaces, access via:
+- **noVNC**: `https://<codespace-name>-6080.app.github.dev`
+- **Web UI**: `https://<codespace-name>-5000.app.github.dev`
+
+---
+
 ## Project Overview
 
 This project extends the [CORE Network Emulator](https://github.com/coreemu/core) with:
