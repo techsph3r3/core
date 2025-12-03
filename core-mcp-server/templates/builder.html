@@ -1,0 +1,1804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin Builder</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+
+        .app-container {
+            display: grid;
+            grid-template-columns: 280px 1fr 320px;
+            min-height: 100vh;
+        }
+
+        /* Sidebar - Projects & Stages */
+        .sidebar {
+            background: #16213e;
+            padding: 20px;
+            border-right: 1px solid #0f3460;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            font-size: 1.1rem;
+            color: #e94560;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .project-list {
+            margin-bottom: 30px;
+        }
+
+        .project-item {
+            padding: 12px;
+            background: #0f3460;
+            border-radius: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .project-item:hover { background: #1a4a7a; }
+        .project-item.active { background: #e94560; }
+
+        .project-item .name { font-weight: 600; }
+        .project-item .meta { font-size: 0.75rem; opacity: 0.7; margin-top: 4px; }
+
+        .btn {
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            width: 100%;
+            margin-bottom: 8px;
+        }
+
+        .btn-primary { background: #e94560; color: white; }
+        .btn-primary:hover { background: #ff6b6b; }
+        .btn-secondary { background: #0f3460; color: white; }
+        .btn-secondary:hover { background: #1a4a7a; }
+
+        /* Design Stages */
+        .stages-list { margin-top: 20px; }
+
+        .stage-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .stage-item:hover { background: #0f3460; }
+        .stage-item.active { background: #e94560; }
+        .stage-item.disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .stage-status {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+        }
+
+        .stage-status.ready { background: #00d26a; }
+        .stage-status.placeholder { background: #ffc107; }
+        .stage-status.future { background: #6c757d; }
+
+        .stage-name { flex: 1; font-size: 0.85rem; }
+
+        /* Main Content */
+        .main-content {
+            padding: 30px;
+            overflow-y: auto;
+        }
+
+        .main-content h1 {
+            font-size: 1.8rem;
+            margin-bottom: 10px;
+            color: #e94560;
+        }
+
+        .main-content .subtitle {
+            color: #888;
+            margin-bottom: 30px;
+        }
+
+        /* Forms */
+        .form-section {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 20px;
+        }
+
+        .form-section h3 {
+            font-size: 1.1rem;
+            margin-bottom: 20px;
+            color: #e94560;
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #0f3460;
+            border-radius: 6px;
+            background: #1a1a2e;
+            color: #eee;
+            font-size: 0.9rem;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        /* Element List */
+        .element-list {
+            background: #0f3460;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 16px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .element-item {
+            padding: 8px 12px;
+            background: #16213e;
+            border-radius: 6px;
+            margin-bottom: 6px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+        }
+
+        .element-item .type-badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+
+        .type-badge.router { background: #0d6efd; }
+        .type-badge.switch { background: #198754; }
+        .type-badge.host { background: #6c757d; }
+        .type-badge.docker { background: #fd7e14; }
+        .type-badge.plc { background: #ffc107; color: #000; }
+        .type-badge.otsim { background: #20c997; }
+        .type-badge.sensor { background: #0dcaf0; }
+
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #e94560;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        /* Progress Panel */
+        .progress-panel {
+            background: #16213e;
+            padding: 20px;
+            border-left: 1px solid #0f3460;
+            overflow-y: auto;
+        }
+
+        .progress-panel h2 {
+            font-size: 1rem;
+            color: #e94560;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .progress-section {
+            margin-bottom: 20px;
+        }
+
+        .progress-section h4 {
+            font-size: 0.8rem;
+            color: #00d26a;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .progress-section.planned h4 { color: #ffc107; }
+        .progress-section.future h4 { color: #6c757d; }
+        .progress-section.notes h4 { color: #0dcaf0; }
+
+        .progress-item {
+            font-size: 0.8rem;
+            padding: 4px 0;
+            color: #aaa;
+            border-left: 2px solid currentColor;
+            padding-left: 10px;
+            margin-bottom: 4px;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: #0f3460;
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-card .value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #e94560;
+        }
+
+        .stat-card .label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+        }
+
+        /* Actions */
+        .action-bar {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .action-bar .btn { width: auto; flex: 1; }
+
+        /* Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 30px;
+            width: 500px;
+            max-width: 90%;
+        }
+
+        .modal h2 {
+            color: #e94560;
+            margin-bottom: 20px;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 20px;
+            background: #00d26a;
+            color: white;
+            border-radius: 8px;
+            display: none;
+            z-index: 1001;
+        }
+
+        .toast.error { background: #e94560; }
+        .toast.active { display: block; }
+
+        /* Placeholder notice */
+        .placeholder-notice {
+            background: #ffc10722;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 0.85rem;
+        }
+
+        .placeholder-notice strong { color: #ffc107; }
+
+        /* XML Preview */
+        .xml-preview {
+            background: #0a0a15;
+            border-radius: 8px;
+            padding: 16px;
+            font-family: monospace;
+            font-size: 0.8rem;
+            max-height: 400px;
+            overflow: auto;
+            white-space: pre-wrap;
+            color: #0f0;
+        }
+
+        /* Template Grid Styles */
+        .template-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding: 4px;
+        }
+
+        .template-card {
+            background: #0f3460;
+            border-radius: 10px;
+            padding: 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 2px solid transparent;
+            position: relative;
+        }
+
+        .template-card:hover {
+            background: #1a4a7a;
+            border-color: #e94560;
+            transform: translateY(-2px);
+        }
+
+        .template-card .card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .template-card .card-icon {
+            width: 36px;
+            height: 36px;
+            background: #e94560;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .template-card .card-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #fff;
+        }
+
+        .template-card .card-desc {
+            font-size: 0.8rem;
+            color: #aaa;
+            margin-bottom: 10px;
+            line-height: 1.4;
+        }
+
+        .template-card .card-meta {
+            display: flex;
+            gap: 12px;
+            font-size: 0.7rem;
+            color: #888;
+        }
+
+        .template-card .card-actions {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .template-card .card-actions button {
+            flex: 1;
+            padding: 6px 10px;
+            border: none;
+            border-radius: 5px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .template-card .btn-deploy {
+            background: #e94560;
+            color: white;
+        }
+
+        .template-card .btn-deploy:hover {
+            background: #ff6b6b;
+        }
+
+        .template-card .btn-customize {
+            background: #0f3460;
+            color: #aaa;
+            border: 1px solid #1a4a7a;
+        }
+
+        .template-card .btn-customize:hover {
+            background: #1a4a7a;
+            color: #fff;
+        }
+
+        .template-cat-btn {
+            padding: 6px 14px;
+            border: 1px solid #0f3460;
+            background: #1a1a2e;
+            color: #aaa;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.2s;
+        }
+
+        .template-cat-btn:hover {
+            border-color: #e94560;
+            color: #fff;
+        }
+
+        .template-cat-btn.active {
+            background: #e94560;
+            border-color: #e94560;
+            color: #fff;
+        }
+
+        .complexity-dots {
+            display: flex;
+            gap: 3px;
+        }
+
+        .complexity-dots .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #333;
+        }
+
+        .complexity-dots .dot.filled {
+            background: #e94560;
+        }
+
+        /* Deploy status overlay */
+        .deploy-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .deploy-overlay.active { display: flex; }
+
+        .deploy-status {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            max-width: 400px;
+        }
+
+        .deploy-status .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #0f3460;
+            border-top-color: #e94560;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .deploy-status h3 { margin-bottom: 10px; }
+        .deploy-status p { color: #888; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <h2>Projects</h2>
+            <button class="btn btn-primary" onclick="showNewProjectModal()">+ New Project</button>
+            <div class="project-list" id="projectList">
+                <!-- Projects loaded here -->
+            </div>
+
+            <h2>Design Stages</h2>
+            <div class="stages-list" id="stagesList">
+                <div class="stage-item" data-stage="network" onclick="selectStage('network')">
+                    <span class="stage-status ready">A</span>
+                    <span class="stage-name">Network Zones</span>
+                </div>
+                <div class="stage-item" data-stage="hosts" onclick="selectStage('hosts')">
+                    <span class="stage-status ready">B</span>
+                    <span class="stage-name">Hosts & Containers</span>
+                </div>
+                <div class="stage-item" data-stage="plcs" onclick="selectStage('plcs')">
+                    <span class="stage-status placeholder">C</span>
+                    <span class="stage-name">PLCs (Placeholder)</span>
+                </div>
+                <div class="stage-item" data-stage="otsim" onclick="selectStage('otsim')">
+                    <span class="stage-status placeholder">D</span>
+                    <span class="stage-name">OT-sim Models (Placeholder)</span>
+                </div>
+                <div class="stage-item" data-stage="sensors" onclick="selectStage('sensors')">
+                    <span class="stage-status placeholder">E</span>
+                    <span class="stage-name">Sensors (Placeholder)</span>
+                </div>
+                <div class="stage-item" data-stage="protocols" onclick="selectStage('protocols')">
+                    <span class="stage-status placeholder">F</span>
+                    <span class="stage-name">Protocols (Placeholder)</span>
+                </div>
+                <div class="stage-item" data-stage="generate" onclick="selectStage('generate')">
+                    <span class="stage-status ready">H</span>
+                    <span class="stage-name">Generate & Load</span>
+                </div>
+                <div class="stage-item" data-stage="3d_arvr" onclick="selectStage('3d_arvr')">
+                    <span class="stage-status future">I</span>
+                    <span class="stage-name">3D/AR/VR (Future)</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content" id="mainContent">
+            <div id="welcomeView">
+                <h1>Digital Twin Builder</h1>
+                <p class="subtitle">Progressive environment design - build incrementally, extend anytime</p>
+
+                <!-- Quick Start Templates -->
+                <div class="form-section" id="templatesSection">
+                    <h3 style="display:flex; justify-content:space-between; align-items:center;">
+                        Quick Start Templates
+                        <span style="font-size:0.75rem; color:#888; font-weight:normal;">One-click deploy or customize</span>
+                    </h3>
+
+                    <!-- Category Tabs -->
+                    <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+                        <button class="template-cat-btn active" onclick="filterTemplates('all')">All</button>
+                        <button class="template-cat-btn" onclick="filterTemplates('Basic')">Basic</button>
+                        <button class="template-cat-btn" onclick="filterTemplates('IT')">IT</button>
+                        <button class="template-cat-btn" onclick="filterTemplates('OT')">OT</button>
+                        <button class="template-cat-btn" onclick="filterTemplates('IoT')">IoT</button>
+                        <button class="template-cat-btn" onclick="filterTemplates('Security')">Security</button>
+                    </div>
+
+                    <!-- Template Grid -->
+                    <div class="template-grid" id="templateGrid">
+                        <!-- Templates loaded dynamically -->
+                        <div style="color:#666; padding:20px; text-align:center;">Loading templates...</div>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Or Build From Scratch</h3>
+                    <p style="color:#aaa; line-height:1.6;">
+                        1. Create a new project or load an existing one<br>
+                        2. Work through design stages (A-H)<br>
+                        3. Stages marked with yellow capture requirements for future implementation<br>
+                        4. Generate CORE XML when ready<br>
+                        5. Return anytime to extend your environment
+                    </p>
+                </div>
+            </div>
+
+            <!-- Stage Views (hidden by default) -->
+            <div id="networkView" class="stage-view" style="display:none;">
+                <h1>Stage A: Network Zones</h1>
+                <p class="subtitle">Define network segments and boundaries</p>
+
+                <div class="form-section">
+                    <h3>Add Zone</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Zone Name</label>
+                            <input type="text" id="zoneName" placeholder="e.g., OT-Control">
+                        </div>
+                        <div class="form-group">
+                            <label>Zone Type</label>
+                            <select id="zoneType">
+                                <option value="OT-Control">OT-Control</option>
+                                <option value="OT-Field">OT-Field</option>
+                                <option value="DMZ">DMZ</option>
+                                <option value="IT">IT/Corporate</option>
+                                <option value="External">External</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Subnet (optional)</label>
+                        <input type="text" id="zoneSubnet" placeholder="e.g., 10.0.1.0/24">
+                    </div>
+                    <button class="btn btn-primary" onclick="addZone()">Add Zone</button>
+
+                    <div class="element-list" id="zoneList"></div>
+                </div>
+            </div>
+
+            <div id="hostsView" class="stage-view" style="display:none;">
+                <h1>Stage B: Hosts & Containers</h1>
+                <p class="subtitle">Add network nodes, Docker containers, and tools</p>
+
+                <div class="form-section">
+                    <h3>Add Node</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Node Name</label>
+                            <input type="text" id="nodeName" placeholder="e.g., historian1">
+                        </div>
+                        <div class="form-group">
+                            <label>Node Type</label>
+                            <select id="nodeType" onchange="toggleDockerImage()">
+                                <option value="router">Router</option>
+                                <option value="switch">Switch</option>
+                                <option value="host">Host/PC</option>
+                                <option value="docker">Docker Container</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group" id="dockerImageGroup" style="display:none;">
+                        <label>Docker Image</label>
+                        <select id="dockerImage">
+                            <optgroup label="Security / Red Team">
+                                <option value="kali-novnc-core">Kali Linux (noVNC Desktop) - Port 6080</option>
+                                <option value="caldera-mcp-core">MITRE Caldera C2 - Port 8888</option>
+                            </optgroup>
+                            <optgroup label="OT / Industrial">
+                                <option value="openplc-core">OpenPLC Runtime - Port 8080, Modbus 502</option>
+                            </optgroup>
+                            <optgroup label="Web / Services">
+                                <option value="nginx-core">Nginx Web Server - Port 80</option>
+                            </optgroup>
+                            <optgroup label="Base Images">
+                                <option value="ubuntu:22.04">Ubuntu 22.04</option>
+                                <option value="alpine:latest">Alpine Linux</option>
+                            </optgroup>
+                            <optgroup label="Custom">
+                                <option value="custom">Custom Image...</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div class="form-group" id="customImageGroup" style="display:none;">
+                        <label>Custom Image Name</label>
+                        <input type="text" id="customImage" placeholder="e.g., myregistry/myimage:tag">
+                    </div>
+                    <div class="form-group">
+                        <label>Zone (optional)</label>
+                        <select id="nodeZone">
+                            <option value="">-- No Zone --</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary" onclick="addNode()">Add Node</button>
+
+                    <div class="element-list" id="nodeList"></div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Add Link</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>From Node</label>
+                            <select id="linkNode1"></select>
+                        </div>
+                        <div class="form-group">
+                            <label>To Node</label>
+                            <select id="linkNode2"></select>
+                        </div>
+                    </div>
+                    <button class="btn btn-primary" onclick="addLink()">Add Link</button>
+
+                    <div class="element-list" id="linkList"></div>
+                </div>
+            </div>
+
+            <div id="plcsView" class="stage-view" style="display:none;">
+                <h1>Stage C: PLCs</h1>
+                <p class="subtitle">Define PLC requirements (placeholder for OpenPLC)</p>
+
+                <div class="placeholder-notice">
+                    <strong>Placeholder Stage:</strong> PLC functionality is not yet implemented.
+                    Your requirements will be captured and a placeholder node created.
+                </div>
+
+                <div class="form-section">
+                    <h3>Add PLC Placeholder</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>PLC Name</label>
+                            <input type="text" id="plcName" placeholder="e.g., PLC-001">
+                        </div>
+                        <div class="form-group">
+                            <label>PLC Type</label>
+                            <select id="plcType">
+                                <option value="OpenPLC">OpenPLC</option>
+                                <option value="SoftPLC">SoftPLC</option>
+                                <option value="Siemens-sim">Siemens (simulated)</option>
+                                <option value="Allen-Bradley-sim">Allen-Bradley (simulated)</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Programming Language</label>
+                            <select id="plcLanguage">
+                                <option value="ST">Structured Text (ST)</option>
+                                <option value="Ladder">Ladder Logic</option>
+                                <option value="FBD">Function Block Diagram</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Connected Process (OT-sim)</label>
+                            <input type="text" id="plcProcess" placeholder="e.g., tank1">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Process Description</label>
+                        <textarea id="plcDescription" rows="3" placeholder="Describe what this PLC controls..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="addPLC()">Add PLC Placeholder</button>
+
+                    <div class="element-list" id="plcList"></div>
+                </div>
+            </div>
+
+            <div id="otsimView" class="stage-view" style="display:none;">
+                <h1>Stage D: OT-sim Process Models</h1>
+                <p class="subtitle">Define physical process simulations (placeholder)</p>
+
+                <div class="placeholder-notice">
+                    <strong>Placeholder Stage:</strong> OT-sim models are not yet implemented.
+                    Requirements will be captured for future integration.
+                </div>
+
+                <div class="form-section">
+                    <h3>Add Process Model Placeholder</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Process Name</label>
+                            <input type="text" id="otsimName" placeholder="e.g., tank1">
+                        </div>
+                        <div class="form-group">
+                            <label>Process Type</label>
+                            <select id="otsimType">
+                                <option value="tank">Tank/Vessel</option>
+                                <option value="pump">Pump</option>
+                                <option value="valve">Valve</option>
+                                <option value="conveyor">Conveyor</option>
+                                <option value="transformer">Transformer</option>
+                                <option value="breaker">Circuit Breaker</option>
+                                <option value="motor">Motor</option>
+                                <option value="custom">Custom Process</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Signals (comma-separated)</label>
+                        <input type="text" id="otsimSignals" placeholder="e.g., Level, Flow, Pressure, Temperature">
+                    </div>
+                    <div class="form-group">
+                        <label>Behavior Description</label>
+                        <textarea id="otsimBehavior" rows="3" placeholder="Describe the physical behavior..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="addOTSim()">Add Process Placeholder</button>
+
+                    <div class="element-list" id="otsimList"></div>
+                </div>
+            </div>
+
+            <div id="sensorsView" class="stage-view" style="display:none;">
+                <h1>Stage E: Sensors & Remote Data</h1>
+                <p class="subtitle">Define external data sources (placeholder)</p>
+
+                <div class="placeholder-notice">
+                    <strong>Placeholder Stage:</strong> Sensor integration is not yet implemented.
+                </div>
+
+                <div class="form-section">
+                    <h3>Add Sensor Placeholder</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Sensor Name</label>
+                            <input type="text" id="sensorName" placeholder="e.g., river-level-sensor">
+                        </div>
+                        <div class="form-group">
+                            <label>Sensor Type</label>
+                            <select id="sensorType">
+                                <option value="online_feed">Online Feed (API)</option>
+                                <option value="local_sensor">Local Sensor (micro:bit, etc.)</option>
+                                <option value="remote_tailscale">Remote via Tailscale</option>
+                                <option value="mqtt">MQTT Source</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Data Source URL/ID</label>
+                        <input type="text" id="sensorSource" placeholder="e.g., https://api.usgs.gov/...">
+                    </div>
+                    <div class="form-group">
+                        <label>Signals (comma-separated)</label>
+                        <input type="text" id="sensorSignals" placeholder="e.g., water_level, flow_rate">
+                    </div>
+                    <button class="btn btn-primary" onclick="addSensor()">Add Sensor Placeholder</button>
+
+                    <div class="element-list" id="sensorList"></div>
+                </div>
+            </div>
+
+            <div id="protocolsView" class="stage-view" style="display:none;">
+                <h1>Stage F: Protocol Modeling</h1>
+                <p class="subtitle">Define industrial protocol configurations (placeholder)</p>
+
+                <div class="placeholder-notice">
+                    <strong>Placeholder Stage:</strong> Protocol simulation is not yet implemented.
+                </div>
+
+                <div class="form-section">
+                    <h3>Add Protocol Placeholder</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Configuration Name</label>
+                            <input type="text" id="protoName" placeholder="e.g., scada-modbus">
+                        </div>
+                        <div class="form-group">
+                            <label>Protocol</label>
+                            <select id="protoType">
+                                <option value="Modbus">Modbus TCP/RTU</option>
+                                <option value="DNP3">DNP3</option>
+                                <option value="OPC-UA">OPC-UA</option>
+                                <option value="IEC61850">IEC 61850</option>
+                                <option value="MQTT">MQTT</option>
+                                <option value="EtherNetIP">EtherNet/IP</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="protoRole">
+                            <option value="master">Master/Client</option>
+                            <option value="slave">Slave/Server</option>
+                            <option value="both">Both</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="protoDescription" rows="2" placeholder="Describe the protocol usage..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="addProtocol()">Add Protocol Placeholder</button>
+
+                    <div class="element-list" id="protoList"></div>
+                </div>
+            </div>
+
+            <div id="generateView" class="stage-view" style="display:none;">
+                <h1>Stage H: Generate & Load</h1>
+                <p class="subtitle">Generate CORE XML and load into the emulator</p>
+
+                <div class="form-section">
+                    <h3>Generation Options</h3>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="autoOpen" checked> Auto-open in CORE GUI
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="includePlaceholders" checked> Include placeholder comments in XML
+                        </label>
+                    </div>
+
+                    <div class="action-bar">
+                        <button class="btn btn-primary" onclick="generateXML()">Generate XML</button>
+                        <button class="btn btn-secondary" onclick="downloadXML()">Download XML</button>
+                        <button class="btn btn-secondary" onclick="loadInCore()">Load in CORE</button>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>XML Preview</h3>
+                    <div class="xml-preview" id="xmlPreview">
+                        <!-- XML will be displayed here -->
+                        Generate XML to see preview...
+                    </div>
+                </div>
+            </div>
+
+            <div id="arvrView" class="stage-view" style="display:none;">
+                <h1>Stage I: 3D/AR/VR Physical Twin</h1>
+                <p class="subtitle">Define 3D models and AR/VR requirements (future capability)</p>
+
+                <div class="placeholder-notice">
+                    <strong>Future Capability:</strong> 3D model generation and AR/VR integration
+                    will be implemented in a future release. Requirements captured here will be used
+                    when the capability becomes available.
+                </div>
+
+                <div class="form-section">
+                    <h3>Add Physical Twin Model</h3>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Model Name</label>
+                            <input type="text" id="twinName" placeholder="e.g., main-pump-3d">
+                        </div>
+                        <div class="form-group">
+                            <label>Model Type</label>
+                            <select id="twinType">
+                                <option value="valve">Valve</option>
+                                <option value="tank">Tank/Vessel</option>
+                                <option value="pump">Pump</option>
+                                <option value="pipeline">Pipeline</option>
+                                <option value="transformer">Transformer</option>
+                                <option value="conveyor">Conveyor</option>
+                                <option value="robot">Robot/Arm</option>
+                                <option value="control_panel">Control Panel</option>
+                                <option value="custom">Custom Model</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Physics Type</label>
+                        <select id="twinPhysics">
+                            <option value="rigid">Rigid Body</option>
+                            <option value="joints">Joints/Articulated</option>
+                            <option value="fluids">Fluid Simulation</option>
+                            <option value="conveyor">Conveyor Physics</option>
+                            <option value="none">No Physics</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>AR/VR Targets (comma-separated)</label>
+                        <input type="text" id="twinTargets" placeholder="e.g., Quest, WebXR, ARKit">
+                    </div>
+                    <div class="form-group">
+                        <label>Cyber-Physical Mapping</label>
+                        <textarea id="twinMapping" rows="2" placeholder="e.g., PLC.coil1 -> valve_rotation"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Description</label>
+                        <textarea id="twinDescription" rows="2" placeholder="Describe the 3D model requirements..."></textarea>
+                    </div>
+                    <button class="btn btn-primary" onclick="addPhysicalTwin()">Add Physical Twin Placeholder</button>
+
+                    <div class="element-list" id="twinList"></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Progress Panel -->
+        <aside class="progress-panel">
+            <h2>Progress</h2>
+
+            <div class="stats-grid" id="statsGrid">
+                <div class="stat-card">
+                    <div class="value" id="statNodes">0</div>
+                    <div class="label">Nodes</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="statLinks">0</div>
+                    <div class="label">Links</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="statZones">0</div>
+                    <div class="label">Zones</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="statPlaceholders">0</div>
+                    <div class="label">Placeholders</div>
+                </div>
+            </div>
+
+            <div class="progress-section implemented">
+                <h4>Implemented</h4>
+                <div id="implementedList"></div>
+            </div>
+
+            <div class="progress-section planned">
+                <h4>Planned (Placeholders)</h4>
+                <div id="plannedList"></div>
+            </div>
+
+            <div class="progress-section future">
+                <h4>Future 3D/AR/VR</h4>
+                <div id="futureList"></div>
+            </div>
+
+            <div class="progress-section notes">
+                <h4>Notes</h4>
+                <div id="notesList"></div>
+                <div style="margin-top: 10px;">
+                    <input type="text" id="newNote" placeholder="Add a note..." style="width:100%; padding:8px; border-radius:4px; border:1px solid #0f3460; background:#1a1a2e; color:#eee;">
+                    <button class="btn btn-secondary" style="margin-top:8px;" onclick="addNote()">Add Note</button>
+                </div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- New Project Modal -->
+    <div class="modal-overlay" id="newProjectModal">
+        <div class="modal">
+            <h2>New Project</h2>
+            <div class="form-group">
+                <label>Project Name</label>
+                <input type="text" id="newProjectName" placeholder="e.g., Water Treatment Plant">
+            </div>
+            <div class="form-group">
+                <label>Description</label>
+                <textarea id="newProjectDesc" rows="3" placeholder="Describe your digital twin environment..."></textarea>
+            </div>
+            <div class="form-group">
+                <label>
+                    <input type="checkbox" id="newProjectRealSite"> This is a digital twin of a real site
+                </label>
+            </div>
+            <div class="action-bar">
+                <button class="btn btn-secondary" onclick="hideNewProjectModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="createProject()">Create Project</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <!-- Deploy Overlay -->
+    <div class="deploy-overlay" id="deployOverlay">
+        <div class="deploy-status">
+            <div class="spinner"></div>
+            <h3 id="deployTitle">Deploying Template...</h3>
+            <p id="deployMessage">Creating topology and loading into CORE</p>
+        </div>
+    </div>
+
+    <script>
+        // Template data cache
+        let allTemplates = [];
+
+        // Icon mapping for templates
+        const iconMap = {
+            'network': '🔗',
+            'star': '⭐',
+            'ring': '⭕',
+            'line': '➖',
+            'office': '🏢',
+            'shield': '🛡️',
+            'factory': '🏭',
+            'water': '💧',
+            'layers': '📚',
+            'target': '🎯',
+            'skull': '💀',
+            'sensor': '📡',
+        };
+
+        // Load templates on page load
+        async function loadTemplates() {
+            try {
+                const response = await fetch('/api/templates');
+                const data = await response.json();
+                allTemplates = data.templates || [];
+                renderTemplates(allTemplates);
+            } catch (e) {
+                console.error('Failed to load templates:', e);
+                document.getElementById('templateGrid').innerHTML =
+                    '<div style="color:#e94560; padding:20px;">Failed to load templates</div>';
+            }
+        }
+
+        // Render template cards
+        function renderTemplates(templates) {
+            const grid = document.getElementById('templateGrid');
+            if (!templates.length) {
+                grid.innerHTML = '<div style="color:#666; padding:20px;">No templates found</div>';
+                return;
+            }
+
+            grid.innerHTML = templates.map(t => `
+                <div class="template-card" data-category="${t.category}">
+                    <div class="card-header">
+                        <div class="card-icon">${iconMap[t.icon] || '📦'}</div>
+                        <div class="card-title">${t.name}</div>
+                    </div>
+                    <div class="card-desc">${t.description}</div>
+                    <div class="card-meta">
+                        <span>${t.nodes?.length || t.node_count || '?'} nodes</span>
+                        <span>${t.links?.length || t.link_count || '?'} links</span>
+                        <span class="complexity-dots">
+                            ${[1,2,3,4].map(i => `<span class="dot ${i <= (t.complexity || 1) ? 'filled' : ''}"></span>`).join('')}
+                        </span>
+                    </div>
+                    <div class="card-actions">
+                        <button class="btn-deploy" onclick="deployTemplate('${t.id}', event)">Deploy</button>
+                        <button class="btn-customize" onclick="customizeTemplate('${t.id}', event)">Customize</button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Filter templates by category
+        function filterTemplates(category) {
+            // Update button states
+            document.querySelectorAll('.template-cat-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.textContent === category || (category === 'all' && btn.textContent === 'All'));
+            });
+
+            // Filter and render
+            if (category === 'all') {
+                renderTemplates(allTemplates);
+            } else {
+                renderTemplates(allTemplates.filter(t => t.category === category));
+            }
+        }
+
+        // Deploy template directly to CORE
+        async function deployTemplate(templateId, event) {
+            event.stopPropagation();
+
+            const overlay = document.getElementById('deployOverlay');
+            const title = document.getElementById('deployTitle');
+            const message = document.getElementById('deployMessage');
+
+            overlay.className = 'deploy-overlay active';
+            title.textContent = 'Deploying Template...';
+            message.textContent = 'Creating topology and loading into CORE';
+
+            try {
+                const response = await fetch(`/api/templates/${templateId}/deploy`, { method: 'POST' });
+                const result = await response.json();
+
+                if (result.success) {
+                    title.textContent = 'Deployed Successfully!';
+                    message.textContent = `${result.template_name} is now loaded in CORE GUI`;
+                    showToast(`${result.template_name} deployed! Switch to CORE GUI tab to view.`);
+
+                    setTimeout(() => {
+                        overlay.className = 'deploy-overlay';
+                        // Optionally switch to CORE tab if in dashboard
+                        if (window.parent && window.parent.postMessage) {
+                            window.parent.postMessage({ action: 'switchTab', tab: 'core' }, '*');
+                        }
+                    }, 2000);
+                } else {
+                    title.textContent = 'Deployment Failed';
+                    message.textContent = result.error || 'Unknown error';
+                    showToast(result.error || 'Deployment failed', true);
+                    setTimeout(() => overlay.className = 'deploy-overlay', 3000);
+                }
+            } catch (e) {
+                title.textContent = 'Deployment Failed';
+                message.textContent = e.message;
+                showToast('Deployment failed: ' + e.message, true);
+                setTimeout(() => overlay.className = 'deploy-overlay', 3000);
+            }
+        }
+
+        // Customize template (create project and pre-populate)
+        async function customizeTemplate(templateId, event) {
+            event.stopPropagation();
+
+            try {
+                // Get template details
+                const response = await fetch(`/api/templates/${templateId}`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    showToast('Failed to load template', true);
+                    return;
+                }
+
+                const template = data.template;
+
+                // Create a new project
+                const projectResult = await api('/projects', 'POST', {
+                    name: template.name + ' (Customized)',
+                    description: template.description,
+                    is_real_site: false
+                });
+
+                if (!projectResult.success) {
+                    showToast('Failed to create project', true);
+                    return;
+                }
+
+                currentProject = projectResult.project;
+
+                // Add zones
+                for (const zone of template.zones || []) {
+                    await api('/zones', 'POST', {
+                        name: zone.name,
+                        zone_type: zone.type,
+                        subnet: zone.subnet || ''
+                    });
+                }
+
+                // Add nodes
+                for (const node of template.nodes || []) {
+                    await api('/nodes', 'POST', {
+                        name: node.name,
+                        node_type: node.type,
+                        zone: '',
+                        docker_image: node.image || '',
+                        x: node.x || 0,
+                        y: node.y || 0
+                    });
+                }
+
+                // Add links
+                for (const link of template.links || []) {
+                    await api('/links', 'POST', {
+                        node1_name: link[0],
+                        node2_name: link[1]
+                    });
+                }
+
+                // Reload project and switch to hosts view
+                const loadResult = await api(`/projects/${currentProject.project_id}`);
+                if (loadResult.success) {
+                    currentProject = loadResult.project;
+                    loadProjects();
+                    updateUI();
+                    selectStage('hosts');
+                    showToast(`Template "${template.name}" loaded for customization!`);
+                }
+
+            } catch (e) {
+                showToast('Failed to customize template: ' + e.message, true);
+            }
+        }
+
+        let currentProject = null;
+        let currentStage = 'network';
+
+        // API calls
+        async function api(endpoint, method = 'GET', data = null) {
+            const options = { method, headers: { 'Content-Type': 'application/json' } };
+            if (data) options.body = JSON.stringify(data);
+            const response = await fetch(`/api/builder${endpoint}`, options);
+            return response.json();
+        }
+
+        // Toast notifications
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = 'toast active' + (isError ? ' error' : '');
+            setTimeout(() => toast.className = 'toast', 3000);
+        }
+
+        // Modal
+        function showNewProjectModal() {
+            document.getElementById('newProjectModal').className = 'modal-overlay active';
+        }
+
+        function hideNewProjectModal() {
+            document.getElementById('newProjectModal').className = 'modal-overlay';
+        }
+
+        // Project management
+        async function loadProjects() {
+            const projects = await api('/projects');
+            const list = document.getElementById('projectList');
+            list.innerHTML = projects.map(p => `
+                <div class="project-item ${currentProject?.project_id === p.project_id ? 'active' : ''}"
+                     onclick="loadProject('${p.project_id}')">
+                    <div class="name">${p.name}</div>
+                    <div class="meta">${p.current_stage} | ${new Date(p.updated_at).toLocaleDateString()}</div>
+                </div>
+            `).join('');
+        }
+
+        async function createProject() {
+            const name = document.getElementById('newProjectName').value;
+            const description = document.getElementById('newProjectDesc').value;
+            const isRealSite = document.getElementById('newProjectRealSite').checked;
+
+            if (!name) {
+                showToast('Project name is required', true);
+                return;
+            }
+
+            const result = await api('/projects', 'POST', { name, description, is_real_site: isRealSite });
+            if (result.success) {
+                currentProject = result.project;
+                hideNewProjectModal();
+                loadProjects();
+                updateUI();
+                selectStage('network');
+                showToast('Project created!');
+            }
+        }
+
+        async function loadProject(projectId) {
+            const result = await api(`/projects/${projectId}`);
+            if (result.success) {
+                currentProject = result.project;
+                loadProjects();
+                updateUI();
+                selectStage(currentProject.current_stage || 'network');
+                showToast('Project loaded');
+            }
+        }
+
+        // Stage selection
+        function selectStage(stage) {
+            currentStage = stage;
+
+            // Update stage list UI
+            document.querySelectorAll('.stage-item').forEach(el => {
+                el.classList.toggle('active', el.dataset.stage === stage);
+            });
+
+            // Hide all views, show selected
+            document.querySelectorAll('.stage-view').forEach(el => el.style.display = 'none');
+            document.getElementById('welcomeView').style.display = 'none';
+
+            const viewMap = {
+                'network': 'networkView',
+                'hosts': 'hostsView',
+                'plcs': 'plcsView',
+                'otsim': 'otsimView',
+                'sensors': 'sensorsView',
+                'protocols': 'protocolsView',
+                'generate': 'generateView',
+                '3d_arvr': 'arvrView'
+            };
+
+            const viewId = viewMap[stage];
+            if (viewId) {
+                document.getElementById(viewId).style.display = 'block';
+            }
+
+            updateUI();
+        }
+
+        // UI Updates
+        function updateUI() {
+            if (!currentProject) return;
+
+            // Update stats
+            document.getElementById('statNodes').textContent = currentProject.nodes?.length || 0;
+            document.getElementById('statLinks').textContent = currentProject.links?.length || 0;
+            document.getElementById('statZones').textContent = currentProject.zones?.length || 0;
+
+            const placeholders = (currentProject.plc_placeholders?.length || 0) +
+                               (currentProject.otsim_placeholders?.length || 0) +
+                               (currentProject.sensor_placeholders?.length || 0) +
+                               (currentProject.protocol_placeholders?.length || 0) +
+                               (currentProject.physical_twin_placeholders?.length || 0);
+            document.getElementById('statPlaceholders').textContent = placeholders;
+
+            // Update progress log
+            const log = currentProject.progress_log || {};
+            document.getElementById('implementedList').innerHTML = (log.implemented || [])
+                .map(i => `<div class="progress-item">${i}</div>`).join('');
+            document.getElementById('plannedList').innerHTML = (log.planned || [])
+                .map(i => `<div class="progress-item">${i}</div>`).join('');
+            document.getElementById('futureList').innerHTML = (log.future_3d_arvr || [])
+                .map(i => `<div class="progress-item">${i}</div>`).join('');
+            document.getElementById('notesList').innerHTML = (log.notes || [])
+                .map(n => `<div class="progress-item">${n}</div>`).join('');
+
+            // Update element lists
+            updateZoneList();
+            updateNodeList();
+            updateLinkList();
+            updatePLCList();
+            updateOTSimList();
+            updateSensorList();
+            updateProtocolList();
+            updateTwinList();
+            updateNodeSelectors();
+        }
+
+        function updateZoneList() {
+            const list = document.getElementById('zoneList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.zones || []).map((z, i) => `
+                <div class="element-item">
+                    <span>${z.name}</span>
+                    <span class="type-badge host">${z.zone_type}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No zones yet</div>';
+        }
+
+        function updateNodeList() {
+            const list = document.getElementById('nodeList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.nodes || []).map(n => `
+                <div class="element-item">
+                    <span>${n.name}</span>
+                    <span class="type-badge ${n.node_type}">${n.node_type}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No nodes yet</div>';
+        }
+
+        function updateLinkList() {
+            const list = document.getElementById('linkList');
+            if (!list) return;
+            const nodes = currentProject?.nodes || [];
+            list.innerHTML = (currentProject?.links || []).map(l => {
+                const n1 = nodes.find(n => n.node_id === l.node1_id)?.name || l.node1_id;
+                const n2 = nodes.find(n => n.node_id === l.node2_id)?.name || l.node2_id;
+                return `<div class="element-item"><span>${n1} <-> ${n2}</span></div>`;
+            }).join('') || '<div style="color:#666">No links yet</div>';
+        }
+
+        function updatePLCList() {
+            const list = document.getElementById('plcList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.plc_placeholders || []).map(p => `
+                <div class="element-item">
+                    <span>${p.name}</span>
+                    <span class="type-badge plc">${p.plc_type}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No PLC placeholders</div>';
+        }
+
+        function updateOTSimList() {
+            const list = document.getElementById('otsimList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.otsim_placeholders || []).map(o => `
+                <div class="element-item">
+                    <span>${o.name}</span>
+                    <span class="type-badge otsim">${o.process_type}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No OT-sim placeholders</div>';
+        }
+
+        function updateSensorList() {
+            const list = document.getElementById('sensorList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.sensor_placeholders || []).map(s => `
+                <div class="element-item">
+                    <span>${s.name}</span>
+                    <span class="type-badge sensor">${s.sensor_type}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No sensor placeholders</div>';
+        }
+
+        function updateProtocolList() {
+            const list = document.getElementById('protoList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.protocol_placeholders || []).map(p => `
+                <div class="element-item">
+                    <span>${p.name}</span>
+                    <span class="type-badge host">${p.protocol}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No protocol placeholders</div>';
+        }
+
+        function updateTwinList() {
+            const list = document.getElementById('twinList');
+            if (!list) return;
+            list.innerHTML = (currentProject?.physical_twin_placeholders || []).map(t => `
+                <div class="element-item">
+                    <span>${t.name}</span>
+                    <span class="type-badge docker">${t.model_type}</span>
+                </div>
+            `).join('') || '<div style="color:#666">No 3D twin placeholders</div>';
+        }
+
+        function updateNodeSelectors() {
+            const nodes = currentProject?.nodes || [];
+            const options = nodes.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
+
+            ['linkNode1', 'linkNode2'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.innerHTML = options || '<option>No nodes</option>';
+            });
+
+            // Update zone selector for nodes
+            const zones = currentProject?.zones || [];
+            const zoneOptions = '<option value="">-- No Zone --</option>' +
+                zones.map(z => `<option value="${z.name}">${z.name}</option>`).join('');
+            const nodeZone = document.getElementById('nodeZone');
+            if (nodeZone) nodeZone.innerHTML = zoneOptions;
+        }
+
+        function toggleDockerImage() {
+            const nodeType = document.getElementById('nodeType').value;
+            document.getElementById('dockerImageGroup').style.display =
+                nodeType === 'docker' ? 'block' : 'none';
+            if (nodeType !== 'docker') {
+                document.getElementById('customImageGroup').style.display = 'none';
+            }
+        }
+
+        // Show/hide custom image input
+        document.getElementById('dockerImage')?.addEventListener('change', function() {
+            document.getElementById('customImageGroup').style.display =
+                this.value === 'custom' ? 'block' : 'none';
+        });
+
+        // Add elements
+        async function addZone() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const name = document.getElementById('zoneName').value;
+            const zoneType = document.getElementById('zoneType').value;
+            const subnet = document.getElementById('zoneSubnet').value;
+
+            if (!name) { showToast('Zone name required', true); return; }
+
+            const result = await api('/zones', 'POST', { name, zone_type: zoneType, subnet });
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('zoneName').value = '';
+                document.getElementById('zoneSubnet').value = '';
+                showToast('Zone added');
+            }
+        }
+
+        async function addNode() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const name = document.getElementById('nodeName').value;
+            const nodeType = document.getElementById('nodeType').value;
+            const zone = document.getElementById('nodeZone').value;
+            let dockerImage = '';
+
+            if (nodeType === 'docker') {
+                const selectedImage = document.getElementById('dockerImage').value;
+                if (selectedImage === 'custom') {
+                    dockerImage = document.getElementById('customImage').value;
+                    if (!dockerImage) { showToast('Enter custom image name', true); return; }
+                } else {
+                    dockerImage = selectedImage;
+                }
+            }
+
+            if (!name) { showToast('Node name required', true); return; }
+
+            const result = await api('/nodes', 'POST', { name, node_type: nodeType, zone, docker_image: dockerImage });
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('nodeName').value = '';
+                showToast('Node added');
+            }
+        }
+
+        async function addLink() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const node1 = document.getElementById('linkNode1').value;
+            const node2 = document.getElementById('linkNode2').value;
+
+            if (!node1 || !node2) { showToast('Select both nodes', true); return; }
+
+            const result = await api('/links', 'POST', { node1_name: node1, node2_name: node2 });
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                showToast('Link added');
+            }
+        }
+
+        async function addPLC() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const result = await api('/plcs', 'POST', {
+                name: document.getElementById('plcName').value,
+                plc_type: document.getElementById('plcType').value,
+                language: document.getElementById('plcLanguage').value,
+                connected_otsim: document.getElementById('plcProcess').value,
+                process_description: document.getElementById('plcDescription').value
+            });
+
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('plcName').value = '';
+                document.getElementById('plcDescription').value = '';
+                showToast('PLC placeholder added');
+            }
+        }
+
+        async function addOTSim() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const signals = document.getElementById('otsimSignals').value.split(',').map(s => s.trim()).filter(s => s);
+
+            const result = await api('/otsim', 'POST', {
+                name: document.getElementById('otsimName').value,
+                process_type: document.getElementById('otsimType').value,
+                signals: signals,
+                behavior_description: document.getElementById('otsimBehavior').value
+            });
+
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('otsimName').value = '';
+                document.getElementById('otsimSignals').value = '';
+                document.getElementById('otsimBehavior').value = '';
+                showToast('OT-sim placeholder added');
+            }
+        }
+
+        async function addSensor() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const signals = document.getElementById('sensorSignals').value.split(',').map(s => s.trim()).filter(s => s);
+
+            const result = await api('/sensors', 'POST', {
+                name: document.getElementById('sensorName').value,
+                sensor_type: document.getElementById('sensorType').value,
+                data_source: document.getElementById('sensorSource').value,
+                signals: signals
+            });
+
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('sensorName').value = '';
+                document.getElementById('sensorSource').value = '';
+                document.getElementById('sensorSignals').value = '';
+                showToast('Sensor placeholder added');
+            }
+        }
+
+        async function addProtocol() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const result = await api('/protocols', 'POST', {
+                name: document.getElementById('protoName').value,
+                protocol: document.getElementById('protoType').value,
+                role: document.getElementById('protoRole').value,
+                description: document.getElementById('protoDescription').value
+            });
+
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('protoName').value = '';
+                document.getElementById('protoDescription').value = '';
+                showToast('Protocol placeholder added');
+            }
+        }
+
+        async function addPhysicalTwin() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const targets = document.getElementById('twinTargets').value.split(',').map(s => s.trim()).filter(s => s);
+
+            const result = await api('/physical-twins', 'POST', {
+                name: document.getElementById('twinName').value,
+                model_type: document.getElementById('twinType').value,
+                physics_type: document.getElementById('twinPhysics').value,
+                ar_vr_targets: targets,
+                cyber_mappings: document.getElementById('twinMapping').value,
+                description: document.getElementById('twinDescription').value
+            });
+
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('twinName').value = '';
+                document.getElementById('twinTargets').value = '';
+                document.getElementById('twinMapping').value = '';
+                document.getElementById('twinDescription').value = '';
+                showToast('Physical twin placeholder added');
+            }
+        }
+
+        async function addNote() {
+            if (!currentProject) return;
+            const note = document.getElementById('newNote').value;
+            if (!note) return;
+
+            const result = await api('/notes', 'POST', { note });
+            if (result.success) {
+                currentProject = result.project;
+                updateUI();
+                document.getElementById('newNote').value = '';
+            }
+        }
+
+        // XML Generation
+        async function generateXML() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const result = await api('/generate-xml', 'POST', {
+                include_placeholders: document.getElementById('includePlaceholders').checked
+            });
+
+            if (result.success) {
+                document.getElementById('xmlPreview').textContent = result.xml;
+                currentProject.last_generated_xml = result.xml;
+                showToast('XML generated!');
+            }
+        }
+
+        function downloadXML() {
+            const xml = document.getElementById('xmlPreview').textContent;
+            if (!xml || xml.includes('Generate XML')) {
+                showToast('Generate XML first', true);
+                return;
+            }
+
+            const blob = new Blob([xml], { type: 'application/xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${currentProject?.name || 'topology'}.xml`;
+            a.click();
+        }
+
+        async function loadInCore() {
+            if (!currentProject) { showToast('Create a project first', true); return; }
+
+            const xml = document.getElementById('xmlPreview').textContent;
+            if (!xml || xml.includes('Generate XML')) {
+                showToast('Generate XML first', true);
+                return;
+            }
+
+            showToast('Loading in CORE...');
+
+            const result = await api('/load-in-core', 'POST', {
+                auto_open: document.getElementById('autoOpen').checked
+            });
+
+            if (result.success) {
+                showToast('Topology loaded in CORE!');
+            } else {
+                showToast(result.error || 'Failed to load', true);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadProjects();
+            loadTemplates();
+        });
+    </script>
+</body>
+</html>

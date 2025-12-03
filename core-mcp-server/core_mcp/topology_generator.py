@@ -31,9 +31,27 @@ These rules can be overridden by explicit user specifications.
 
 import re
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
+from pathlib import Path
+
+# Import appliance registry for network appliances (firewalls, routers, etc.)
+try:
+    from .appliance_registry import (
+        APPLIANCE_REGISTRY,
+        get_appliance,
+        get_firewall_for_boundary,
+        check_appliance_ready,
+        ApplianceSpec,
+        ApplianceCategory,
+        NetworkRole,
+        TEMPLATES_DIR,
+    )
+    APPLIANCE_SUPPORT = True
+except ImportError:
+    APPLIANCE_SUPPORT = False
+    APPLIANCE_REGISTRY = {}
 
 
 # =============================================================================
@@ -85,6 +103,51 @@ DOCKER_IMAGE_REGISTRY = {
         "category": "security",
         "keywords": ["caldera", "mitre", "adversary", "red team", "security", "c2", "attack", "apt", "emulation"],
     },
+    "openplc": {
+        "image": "openplc-core",
+        "base_image": "openplc/openplc-runtime",
+        "description": "OpenPLC Runtime - IEC 61131-3 PLC with web interface on port 8080. Supports Ladder, ST, FBD, IL, SFC.",
+        "default_services": [],
+        "ports": [8080, 502],  # Web UI + Modbus
+        "category": "ot",
+        "keywords": ["openplc", "plc", "ics", "scada", "ot", "modbus", "ladder", "structured text", "industrial"],
+    },
+    "kali": {
+        "image": "kali-novnc-core",
+        "base_image": "kalilinux/kali-rolling",
+        "description": "Kali Linux with noVNC desktop - access via browser on port 6080. Full penetration testing toolkit.",
+        "default_services": [],
+        "ports": [6080, 5901, 22],  # noVNC, VNC, SSH
+        "category": "security",
+        "keywords": ["kali", "pentest", "security", "hacking", "red team", "offensive", "vnc", "novnc", "desktop"],
+    },
+    "mqtt-broker": {
+        "image": "mqtt-broker-core",
+        "base_image": "eclipse-mosquitto:2",
+        "description": "Eclipse Mosquitto MQTT broker for IoT sensor data. Ports: 1883 (MQTT), 9001 (WebSocket).",
+        "default_services": [],
+        "ports": [1883, 9001],
+        "category": "iot",
+        "keywords": ["mqtt", "mosquitto", "broker", "iot", "sensor", "pubsub", "message"],
+    },
+    "iot-sensor-server": {
+        "image": "iot-sensor-server",
+        "base_image": "python:3.11-alpine",
+        "description": "IoT Sensor Data Server - subscribes to MQTT and serves web dashboard on port 80.",
+        "default_services": [],
+        "ports": [80],
+        "category": "iot",
+        "keywords": ["iot", "sensor", "server", "display", "dashboard", "data"],
+    },
+    "hmi-workstation": {
+        "image": "hmi-workstation:latest",
+        "base_image": "ubuntu:22.04",
+        "description": "HMI Workstation with noVNC desktop and Firefox browser for accessing sensor displays.",
+        "default_services": [],
+        "ports": [6080, 5901],
+        "category": "ot",
+        "keywords": ["hmi", "workstation", "desktop", "browser", "operator", "scada"],
+    },
 }
 
 
@@ -126,6 +189,12 @@ class NodeConfig:
     model: Optional[str] = None
     image: Optional[str] = None
     services: List[str] = field(default_factory=list)
+    # Compose support for complex appliances
+    compose: Optional[str] = None       # Path to compose file
+    compose_name: Optional[str] = None  # Service name in compose file
+    # Appliance metadata
+    appliance_type: Optional[str] = None  # Key into APPLIANCE_REGISTRY
+    interfaces: List[Dict] = field(default_factory=list)  # Interface configs
 
 
 @dataclass
@@ -222,6 +291,127 @@ class TopologyGenerator:
         """Add a link to the topology."""
         self.links.append(link)
 
+    def add_appliance(
+        self,
+        node_id: int,
+        name: str,
+        appliance_type: str,
+        x: float = 100.0,
+        y: float = 100.0,
+        interfaces: Optional[List[Dict[str, Any]]] = None,
+        config_overrides: Optional[Dict[str, Any]] = None,
+    ) -> Optional[NodeConfig]:
+        """
+        Add a network appliance (firewall, router, IDS, etc.) to the topology.
+
+        This method handles the complexity of compose-based appliances,
+        multi-interface configuration, and configuration seeding.
+
+        Args:
+            node_id: Unique node ID
+            name: Node name (e.g., "fw1", "router1")
+            appliance_type: Key into APPLIANCE_REGISTRY (e.g., "vyos", "frr")
+            x, y: Canvas position
+            interfaces: List of interface configs [{"name": "eth0", "ip": "10.0.1.1", "mask": 24, "zone": "wan"}]
+            config_overrides: Extra config (enable_nat, enable_dhcp, etc.)
+
+        Returns:
+            NodeConfig if successful, None if appliance not found
+        """
+        if not APPLIANCE_SUPPORT:
+            # Fall back to simple docker node
+            node = NodeConfig(
+                node_id=node_id,
+                name=name,
+                node_type="docker",
+                image="alpine:latest",
+                x=x,
+                y=y,
+            )
+            self.add_node(node)
+            return node
+
+        spec = get_appliance(appliance_type)
+        if not spec:
+            return None
+
+        # For now, use image-only mode (no compose) for better compatibility
+        # Compose requires templates to be accessible inside CORE container
+        # TODO: Enable compose when templates are properly deployed to CORE container
+        #
+        # compose_path = None
+        # compose_name = None
+        # if spec.compose:
+        #     compose_path = "/opt/core-mcp/templates/appliances/" + spec.compose.template_file
+        #     compose_name = spec.compose.service_name
+
+        # Create the node config - using image-only mode
+        node = NodeConfig(
+            node_id=node_id,
+            name=name,
+            node_type="docker",
+            image=spec.full_image_name(),
+            x=x,
+            y=y,
+            services=spec.core_services,
+            compose=None,  # Disabled for now - use image-only mode
+            compose_name=None,
+            appliance_type=appliance_type,
+            interfaces=interfaces or [],
+        )
+
+        self.add_node(node)
+        return node
+
+    def get_available_appliances(self) -> List[Dict[str, Any]]:
+        """
+        Get list of available appliances for the topology generator.
+
+        Returns list of appliance info suitable for UI display or AI context.
+        """
+        if not APPLIANCE_SUPPORT:
+            return []
+
+        return [
+            {
+                "name": spec.name,
+                "display_name": spec.display_name,
+                "description": spec.description,
+                "category": spec.category.value,
+                "keywords": spec.keywords,
+                "supports_multi_nic": spec.supports_multi_nic,
+                "min_interfaces": spec.min_interfaces,
+                "max_interfaces": spec.max_interfaces,
+                "typical_placement": spec.typical_placement,
+            }
+            for spec in APPLIANCE_REGISTRY.values()
+        ]
+
+    def verify_appliances(self) -> Dict[str, Any]:
+        """
+        Verify all appliances used in the current topology are ready.
+
+        Returns:
+            Dict with "ready" bool and "issues" list
+        """
+        if not APPLIANCE_SUPPORT:
+            return {"ready": True, "issues": []}
+
+        issues = []
+        for node in self.nodes.values():
+            if node.appliance_type:
+                status = check_appliance_ready(get_appliance(node.appliance_type))
+                if not status["ready"]:
+                    issues.extend([
+                        f"{node.name}: {warning}"
+                        for warning in status["warnings"]
+                    ])
+
+        return {
+            "ready": len(issues) == 0,
+            "issues": issues,
+        }
+
     def set_wlan_config(self, node_id: int, **kwargs):
         """Configure a WLAN node."""
         if node_id not in self.wlan_configs:
@@ -244,6 +434,9 @@ class TopologyGenerator:
         - "Create a tailscale mesh with 5 docker nodes running tailscale"
         - "Create 3 nginx web servers with 2 clients"
         - "Build a web server farm with 5 nginx containers"
+        - "Create an IT/OT network with VyOS firewall"
+        - "Create an OT network with Suricata IDS monitoring PLCs"
+        - "Create a web farm with HAProxy load balancer"
         """
         description_lower = description.lower()
 
@@ -251,7 +444,37 @@ class TopologyGenerator:
         node_count = self._extract_number(description_lower, default=3)
 
         # =================================================================
-        # Check for Docker application keywords FIRST (most specific match)
+        # Check for APPLIANCE-BASED topologies FIRST (most specific)
+        # =================================================================
+
+        # IT/OT Network with Firewall
+        if (("it" in description_lower and "ot" in description_lower) or
+            "it/ot" in description_lower or "ot/it" in description_lower) and \
+           any(fw in description_lower for fw in ["firewall", "vyos", "pfsense", "frr"]):
+            return self._generate_it_ot_network(description)
+
+        # OT Network with IDS
+        if ("ot" in description_lower or "plc" in description_lower or "scada" in description_lower) and \
+           any(ids in description_lower for ids in ["ids", "ips", "suricata", "monitor"]):
+            return self._generate_ot_ids_network(description)
+
+        # Load balanced web farm
+        if any(lb in description_lower for lb in ["haproxy", "load balanc", "lb"]) and \
+           any(web in description_lower for web in ["nginx", "web", "server", "backend"]):
+            return self._generate_loadbalanced_webfarm(description)
+
+        # VPN Gateway network
+        if any(vpn in description_lower for vpn in ["vpn", "wireguard", "tunnel"]) and \
+           any(net in description_lower for net in ["gateway", "remote", "connect"]):
+            return self._generate_vpn_network(description)
+
+        # IoT Sensor Network (quick deploy for micro:bit/sensor integration)
+        if any(iot in description_lower for iot in ["iot", "sensor", "mqtt", "micro:bit", "microbit"]) and \
+           any(net in description_lower for net in ["network", "deploy", "quick", "template"]):
+            return self._generate_iot_sensor_network(description)
+
+        # =================================================================
+        # Check for Docker application keywords (next priority)
         # =================================================================
         # Check each registered Docker image for keyword matches
         for app_name, config in DOCKER_IMAGE_REGISTRY.items():
@@ -585,6 +808,645 @@ class TopologyGenerator:
             self.add_node(node)
 
         return f"Created tailscale mesh with {node_count} Docker nodes (tailscale service needs to be configured separately)"
+
+    # =========================================================================
+    # APPLIANCE-BASED TOPOLOGY GENERATORS
+    # =========================================================================
+
+    def _generate_it_ot_network(self, description: str) -> str:
+        """
+        Generate an IT/OT segmented network with firewall.
+
+        Architecture:
+        - VyOS firewall at the boundary between IT and OT zones
+        - IT zone: switch + workstations
+        - OT zone: switch + PLCs + HMI
+        - Firewall has interfaces in both zones
+        """
+        self.clear()
+        import math
+
+        desc_lower = description.lower()
+
+        # Count IT workstations and OT devices
+        it_count = 2  # Default IT workstations
+        ot_count = 2  # Default OT devices (PLCs)
+
+        # Try to extract counts from description
+        if "workstation" in desc_lower:
+            match = re.search(r'(\d+)\s*workstation', desc_lower)
+            if match:
+                it_count = int(match.group(1))
+
+        if "plc" in desc_lower or "openplc" in desc_lower:
+            match = re.search(r'(\d+)\s*(?:plc|openplc)', desc_lower)
+            if match:
+                ot_count = int(match.group(1))
+
+        # Determine firewall type
+        if "frr" in desc_lower:
+            fw_type = "frr"
+        else:
+            fw_type = "vyos"  # Default
+
+        # Include IDS?
+        include_ids = "ids" in desc_lower or "suricata" in desc_lower or "monitor" in desc_lower
+
+        # Layout constants
+        center_x, center_y = 500, 350
+        node_id = 1
+
+        # === Create VyOS Firewall (center) ===
+        fw_node = self.add_appliance(
+            node_id=node_id,
+            name="fw-itot",
+            appliance_type=fw_type,
+            x=center_x,
+            y=center_y,
+            interfaces=[
+                {"name": "eth0", "ip": "192.168.1.1", "mask": 24, "zone": "it"},
+                {"name": "eth1", "ip": "10.0.100.1", "mask": 24, "zone": "ot"},
+            ]
+        )
+        node_id += 1
+
+        # === IT Zone (left side) ===
+        it_switch_id = node_id
+        it_switch = NodeConfig(
+            node_id=it_switch_id,
+            name="it-switch",
+            node_type="switch",
+            x=center_x - 250,
+            y=center_y,
+        )
+        self.add_node(it_switch)
+        node_id += 1
+
+        # Link IT switch to firewall
+        self.add_link(LinkConfig(
+            node1_id=it_switch_id,
+            node2_id=1,
+            ip4_2="192.168.1.1"
+        ))
+
+        # IT Workstations
+        for i in range(it_count):
+            angle = math.pi + (math.pi * (i + 1)) / (it_count + 1)
+            x = (center_x - 250) + 150 * math.cos(angle)
+            y = center_y + 150 * math.sin(angle)
+
+            ws = NodeConfig(
+                node_id=node_id,
+                name=f"it-ws{i+1}",
+                node_type="host",
+                x=x,
+                y=y,
+            )
+            self.add_node(ws)
+            self.add_link(LinkConfig(
+                node1_id=it_switch_id,
+                node2_id=node_id,
+                ip4_2=f"192.168.1.{10 + i}"
+            ))
+            node_id += 1
+
+        # === OT Zone (right side) ===
+        ot_switch_id = node_id
+        ot_switch = NodeConfig(
+            node_id=ot_switch_id,
+            name="ot-switch",
+            node_type="switch",
+            x=center_x + 250,
+            y=center_y,
+        )
+        self.add_node(ot_switch)
+        node_id += 1
+
+        # Link OT switch to firewall
+        self.add_link(LinkConfig(
+            node1_id=ot_switch_id,
+            node2_id=1,
+            ip4_2="10.0.100.1"
+        ))
+
+        # OpenPLC Controllers
+        for i in range(ot_count):
+            angle = (math.pi * (i + 1)) / (ot_count + 1)
+            x = (center_x + 250) + 150 * math.cos(angle)
+            y = center_y + 150 * math.sin(angle)
+
+            plc = self.add_appliance(
+                node_id=node_id,
+                name=f"plc{i+1}",
+                appliance_type="openplc",
+                x=x,
+                y=y,
+            )
+            self.add_link(LinkConfig(
+                node1_id=ot_switch_id,
+                node2_id=node_id,
+                ip4_2=f"10.0.100.{10 + i}"
+            ))
+            node_id += 1
+
+        # HMI Workstation with Browser (Docker-based for VNC access)
+        hmi = self.add_appliance(
+            node_id=node_id,
+            name="hmi1",
+            appliance_type="hmi-workstation",
+            x=center_x + 400,
+            y=center_y + 150,
+        )
+        self.add_link(LinkConfig(
+            node1_id=ot_switch_id,
+            node2_id=node_id,
+            ip4_2="10.0.100.50"
+        ))
+        node_id += 1
+
+        # Optional: Suricata IDS on OT network
+        if include_ids:
+            ids = self.add_appliance(
+                node_id=node_id,
+                name="ids-ot",
+                appliance_type="suricata",
+                x=center_x + 250,
+                y=center_y + 200,
+            )
+            self.add_link(LinkConfig(
+                node1_id=ot_switch_id,
+                node2_id=node_id,
+                ip4_2="10.0.100.250"
+            ))
+            node_id += 1
+
+        fw_name = "VyOS" if fw_type == "vyos" else "FRRouting"
+        ids_msg = " with Suricata IDS monitoring" if include_ids else ""
+        return f"Created IT/OT network with {fw_name} firewall, {it_count} IT workstations, {ot_count} OpenPLC controllers, and HMI{ids_msg}"
+
+    def _generate_ot_ids_network(self, description: str) -> str:
+        """
+        Generate an OT network with IDS monitoring.
+
+        Architecture:
+        - Suricata IDS monitoring OT traffic
+        - Multiple PLCs
+        - HMI workstation
+        - Engineering workstation
+        """
+        self.clear()
+        import math
+
+        desc_lower = description.lower()
+
+        # Count PLCs
+        plc_count = 2
+        match = re.search(r'(\d+)\s*(?:plc|openplc)', desc_lower)
+        if match:
+            plc_count = int(match.group(1))
+
+        center_x, center_y = 500, 350
+        node_id = 1
+
+        # Central OT Switch
+        ot_switch = NodeConfig(
+            node_id=node_id,
+            name="ot-switch",
+            node_type="switch",
+            x=center_x,
+            y=center_y,
+        )
+        self.add_node(ot_switch)
+        ot_switch_id = node_id
+        node_id += 1
+
+        # Suricata IDS (monitoring mode)
+        ids = self.add_appliance(
+            node_id=node_id,
+            name="ids-ot",
+            appliance_type="suricata",
+            x=center_x,
+            y=center_y - 150,
+        )
+        self.add_link(LinkConfig(
+            node1_id=ot_switch_id,
+            node2_id=node_id,
+            ip4_2="10.0.100.250"
+        ))
+        node_id += 1
+
+        # PLCs arranged in arc
+        for i in range(plc_count):
+            angle = math.pi/4 + (math.pi/2 * i) / max(plc_count - 1, 1)
+            x = center_x + 200 * math.cos(angle)
+            y = center_y + 200 * math.sin(angle)
+
+            plc = self.add_appliance(
+                node_id=node_id,
+                name=f"plc{i+1}",
+                appliance_type="openplc",
+                x=x,
+                y=y,
+            )
+            self.add_link(LinkConfig(
+                node1_id=ot_switch_id,
+                node2_id=node_id,
+                ip4_2=f"10.0.100.{10 + i}"
+            ))
+            node_id += 1
+
+        # HMI
+        hmi = NodeConfig(
+            node_id=node_id,
+            name="hmi1",
+            node_type="host",
+            x=center_x - 200,
+            y=center_y + 100,
+        )
+        self.add_node(hmi)
+        self.add_link(LinkConfig(
+            node1_id=ot_switch_id,
+            node2_id=node_id,
+            ip4_2="10.0.100.50"
+        ))
+        node_id += 1
+
+        # Engineering Workstation
+        eng_ws = NodeConfig(
+            node_id=node_id,
+            name="eng-ws",
+            node_type="host",
+            x=center_x - 200,
+            y=center_y - 100,
+        )
+        self.add_node(eng_ws)
+        self.add_link(LinkConfig(
+            node1_id=ot_switch_id,
+            node2_id=node_id,
+            ip4_2="10.0.100.51"
+        ))
+
+        return f"Created OT network with Suricata IDS monitoring {plc_count} PLCs, HMI, and Engineering workstation"
+
+    def _generate_loadbalanced_webfarm(self, description: str) -> str:
+        """
+        Generate a load-balanced web farm with HAProxy.
+
+        Architecture:
+        - HAProxy load balancer (frontend)
+        - Multiple nginx backend servers
+        - Client for testing
+        """
+        self.clear()
+        import math
+
+        desc_lower = description.lower()
+
+        # Count backend servers
+        backend_count = 3
+        match = re.search(r'(\d+)\s*(?:nginx|backend|server|web)', desc_lower)
+        if match:
+            backend_count = int(match.group(1))
+
+        center_x, center_y = 500, 350
+        node_id = 1
+
+        # Frontend switch (client-facing)
+        frontend_switch = NodeConfig(
+            node_id=node_id,
+            name="frontend-sw",
+            node_type="switch",
+            x=center_x - 200,
+            y=center_y,
+        )
+        self.add_node(frontend_switch)
+        frontend_sw_id = node_id
+        node_id += 1
+
+        # Backend switch
+        backend_switch = NodeConfig(
+            node_id=node_id,
+            name="backend-sw",
+            node_type="switch",
+            x=center_x + 200,
+            y=center_y,
+        )
+        self.add_node(backend_switch)
+        backend_sw_id = node_id
+        node_id += 1
+
+        # HAProxy Load Balancer (between switches)
+        haproxy = self.add_appliance(
+            node_id=node_id,
+            name="haproxy-lb",
+            appliance_type="haproxy",
+            x=center_x,
+            y=center_y,
+        )
+        # Connect to frontend
+        self.add_link(LinkConfig(
+            node1_id=frontend_sw_id,
+            node2_id=node_id,
+            ip4_2="192.168.1.10"
+        ))
+        # Connect to backend
+        self.add_link(LinkConfig(
+            node1_id=backend_sw_id,
+            node2_id=node_id,
+            ip4_2="10.0.1.1"
+        ))
+        node_id += 1
+
+        # Client
+        client = NodeConfig(
+            node_id=node_id,
+            name="client1",
+            node_type="host",
+            x=center_x - 350,
+            y=center_y,
+        )
+        self.add_node(client)
+        self.add_link(LinkConfig(
+            node1_id=frontend_sw_id,
+            node2_id=node_id,
+            ip4_2="192.168.1.100"
+        ))
+        node_id += 1
+
+        # Nginx backend servers
+        for i in range(backend_count):
+            angle = (math.pi * (i + 1)) / (backend_count + 1)
+            x = (center_x + 200) + 150 * math.cos(angle)
+            y = center_y + 150 * math.sin(angle)
+
+            nginx = NodeConfig(
+                node_id=node_id,
+                name=f"nginx{i+1}",
+                node_type="docker",
+                image="nginx-core" if get_docker_image("nginx") else "nginx:latest",
+                x=x,
+                y=y,
+            )
+            self.add_node(nginx)
+            self.add_link(LinkConfig(
+                node1_id=backend_sw_id,
+                node2_id=node_id,
+                ip4_2=f"10.0.1.{10 + i}"
+            ))
+            node_id += 1
+
+        return f"Created load-balanced web farm with HAProxy and {backend_count} nginx backend servers"
+
+    def _generate_vpn_network(self, description: str) -> str:
+        """
+        Generate a VPN gateway network.
+
+        Architecture:
+        - WireGuard VPN gateway
+        - Internal servers
+        - Remote clients (simulated)
+        """
+        self.clear()
+
+        desc_lower = description.lower()
+
+        # Count internal servers
+        server_count = 2
+        match = re.search(r'(\d+)\s*(?:server|internal)', desc_lower)
+        if match:
+            server_count = int(match.group(1))
+
+        center_x, center_y = 500, 350
+        node_id = 1
+
+        # External switch (WAN side)
+        wan_switch = NodeConfig(
+            node_id=node_id,
+            name="wan-switch",
+            node_type="switch",
+            x=center_x - 250,
+            y=center_y,
+        )
+        self.add_node(wan_switch)
+        wan_sw_id = node_id
+        node_id += 1
+
+        # Internal switch (LAN side)
+        lan_switch = NodeConfig(
+            node_id=node_id,
+            name="lan-switch",
+            node_type="switch",
+            x=center_x + 250,
+            y=center_y,
+        )
+        self.add_node(lan_switch)
+        lan_sw_id = node_id
+        node_id += 1
+
+        # WireGuard VPN Gateway
+        wg = self.add_appliance(
+            node_id=node_id,
+            name="vpn-gw",
+            appliance_type="wireguard",
+            x=center_x,
+            y=center_y,
+        )
+        # WAN connection
+        self.add_link(LinkConfig(
+            node1_id=wan_sw_id,
+            node2_id=node_id,
+            ip4_2="203.0.113.1"  # Public IP simulation
+        ))
+        # LAN connection
+        self.add_link(LinkConfig(
+            node1_id=lan_sw_id,
+            node2_id=node_id,
+            ip4_2="10.0.1.1"
+        ))
+        node_id += 1
+
+        # Remote clients (on WAN side)
+        for i in range(2):
+            client = NodeConfig(
+                node_id=node_id,
+                name=f"remote-client{i+1}",
+                node_type="host",
+                x=center_x - 400,
+                y=center_y - 100 + (i * 200),
+            )
+            self.add_node(client)
+            self.add_link(LinkConfig(
+                node1_id=wan_sw_id,
+                node2_id=node_id,
+                ip4_2=f"203.0.113.{100 + i}"
+            ))
+            node_id += 1
+
+        # Internal servers
+        for i in range(server_count):
+            server = NodeConfig(
+                node_id=node_id,
+                name=f"server{i+1}",
+                node_type="host",
+                x=center_x + 400,
+                y=center_y - 100 + (i * 100),
+            )
+            self.add_node(server)
+            self.add_link(LinkConfig(
+                node1_id=lan_sw_id,
+                node2_id=node_id,
+                ip4_2=f"10.0.1.{10 + i}"
+            ))
+            node_id += 1
+
+        return f"Created VPN network with WireGuard gateway, 2 remote clients, and {server_count} internal servers"
+
+    def _generate_iot_sensor_network(self, description: str) -> str:
+        """
+        Generate an IoT sensor network for quick deployment.
+
+        This is a ready-to-use topology for bridging physical sensors (micro:bit, etc.)
+        into the CORE network simulation via MQTT.
+
+        Architecture:
+        - MQTT Broker (Mosquitto) - central message hub
+        - IoT Sensor Server - subscribes to MQTT, serves web display
+        - HMI Workstation(s) - browser-based operator displays
+        - All on same subnet for simple connectivity
+
+        Data Flow:
+        Physical micro:bit -> Browser WebSerial -> REST API -> MQTT Broker
+                                                                   |
+                                                                   v
+        HMI Workstation <- Web Display <- IoT Sensor Server <- MQTT Subscribe
+
+        To use:
+        1. Deploy this topology
+        2. Configure web_ui.py MQTT to point to the broker node IP
+        3. Open micro:bit page in browser, connect sensor
+        4. Open HMI workstation VNC, browse to IoT Sensor Server
+        """
+        self.clear()
+        import math
+
+        desc_lower = description.lower()
+
+        # Count HMI workstations
+        hmi_count = 1
+        match = re.search(r'(\d+)\s*(?:hmi|workstation|operator)', desc_lower)
+        if match:
+            hmi_count = int(match.group(1))
+
+        center_x, center_y = 500, 350
+        node_id = 1
+
+        # Central Switch
+        iot_switch = NodeConfig(
+            node_id=node_id,
+            name="iot-switch",
+            node_type="switch",
+            x=center_x,
+            y=center_y,
+        )
+        self.add_node(iot_switch)
+        switch_id = node_id
+        node_id += 1
+
+        # MQTT Broker (Mosquitto) - top center
+        mqtt_broker = NodeConfig(
+            node_id=node_id,
+            name="mqtt-broker",
+            node_type="docker",
+            image="mqtt-broker-core",
+            x=center_x,
+            y=center_y - 180,
+        )
+        self.add_node(mqtt_broker)
+        mqtt_broker_ip = "10.0.1.10"
+        self.add_link(LinkConfig(
+            node1_id=switch_id,
+            node2_id=node_id,
+            ip4_2=mqtt_broker_ip,
+        ))
+        node_id += 1
+
+        # IoT Sensor Server - right of center
+        sensor_server = NodeConfig(
+            node_id=node_id,
+            name="sensor-server",
+            node_type="docker",
+            image="iot-sensor-server",
+            x=center_x + 200,
+            y=center_y - 100,
+        )
+        self.add_node(sensor_server)
+        sensor_server_ip = "10.0.1.20"
+        self.add_link(LinkConfig(
+            node1_id=switch_id,
+            node2_id=node_id,
+            ip4_2=sensor_server_ip,
+        ))
+        # Add startup script to configure MQTT broker address
+        sensor_startup = f'''#!/bin/bash
+# Configure IoT Sensor Server to connect to MQTT broker
+export MQTT_BROKER="{mqtt_broker_ip}"
+export MQTT_PORT="1883"
+export MQTT_TOPIC="core/sensors/#"
+
+echo "[IoT Server] Starting with MQTT broker at $MQTT_BROKER:$MQTT_PORT"
+# The container entrypoint will use these environment variables
+'''
+        self.add_startup_script(node_id, sensor_startup, delay_seconds=5)
+        node_id += 1
+
+        # HMI Workstations - arranged at bottom
+        for i in range(hmi_count):
+            angle = math.pi/4 + (math.pi/2 * i) / max(hmi_count, 1)
+            x = center_x + 180 * math.cos(angle)
+            y = center_y + 180 * math.sin(angle)
+
+            hmi = NodeConfig(
+                node_id=node_id,
+                name=f"hmi{i+1}",
+                node_type="docker",
+                image="hmi-workstation:latest",
+                x=x,
+                y=y,
+            )
+            self.add_node(hmi)
+            hmi_ip = f"10.0.1.{50 + i}"
+            self.add_link(LinkConfig(
+                node1_id=switch_id,
+                node2_id=node_id,
+                ip4_2=hmi_ip,
+            ))
+            node_id += 1
+
+        # Build result message with usage instructions
+        result = f"""Created IoT Sensor Network with MQTT broker, sensor server, and {hmi_count} HMI workstation(s)
+
+=== NETWORK LAYOUT ===
+- mqtt-broker    @ {mqtt_broker_ip}:1883 (MQTT), :9001 (WebSocket)
+- sensor-server  @ {sensor_server_ip}:80 (Web Display)
+- hmi1-{hmi_count}        @ 10.0.1.50-{50+hmi_count-1} (VNC on :6080)
+
+=== DATA FLOW ===
+Physical Sensor -> Web UI -> REST API -> MQTT -> Sensor Server -> HMI Display
+
+=== QUICK START ===
+1. Start this CORE session
+2. Open the Web UI micro:bit page in your browser
+3. Connect your micro:bit via WebSerial
+4. Configure MQTT broker IP in Web UI settings: {mqtt_broker_ip}
+5. Access HMI workstation via noVNC (port 6080)
+6. In HMI Firefox, browse to: http://{sensor_server_ip}/
+
+=== ALTERNATIVE: Direct HTTP Mode ===
+If MQTT is not available, sensor-server supports HTTP polling:
+- Browse to http://{sensor_server_ip}/ with ?mode=http query param
+"""
+
+        return result
 
     def _generate_docker_app_topology(self, node_count: int, description: str, app_name: str) -> str:
         """
@@ -991,6 +1853,11 @@ session = core.create_session()
                     # Add image and docker-specific attributes
                     if node.image:
                         device_attrs["image"] = node.image
+                    # Add compose attributes for appliances
+                    if node.compose:
+                        device_attrs["compose"] = node.compose
+                    if node.compose_name:
+                        device_attrs["compose_name"] = node.compose_name
                 else:
                     xml_type = node.node_type
                     device_attrs = {

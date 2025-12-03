@@ -1,0 +1,1423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Micro:bit Control Center - CORE Digital Twin</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1600px; margin: 0 auto; }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 { font-size: 1.6rem; display: flex; align-items: center; gap: 12px; }
+        .logo {
+            width: 40px; height: 40px;
+            background: linear-gradient(135deg, #00d4aa 0%, #00a884 100%);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 20px;
+        }
+        .nav-links { display: flex; gap: 15px; }
+        .nav-links a {
+            color: #aaa; text-decoration: none;
+            padding: 8px 16px; border-radius: 6px;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active { color: #fff; background: rgba(255,255,255,0.1); }
+
+        /* Main Grid Layout */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr 320px;
+            gap: 20px;
+        }
+        @media (max-width: 1200px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 16px;
+        }
+        .card h2 {
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Status indicators */
+        .status-indicator {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .status-dot {
+            width: 10px; height: 10px;
+            border-radius: 50%;
+            background: #ff4757;
+        }
+        .status-dot.connected { background: #2ed573; }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 12px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-primary { background: linear-gradient(135deg, #00d4aa 0%, #00a884 100%); color: #000; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(0,212,170,0.3); }
+        .btn-danger { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); color: #fff; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+        .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+
+        /* Sensor Data Grid */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .sensor-item {
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .sensor-item .label { font-size: 0.7rem; color: #888; margin-bottom: 2px; }
+        .sensor-item .value { font-size: 1.2rem; font-weight: 700; font-family: 'Monaco', monospace; }
+        .sensor-item.x .value { color: #ff6b6b; }
+        .sensor-item.y .value { color: #2ed573; }
+        .sensor-item.z .value { color: #70a1ff; }
+        .sensor-item.temp .value { color: #ffa502; }
+        .sensor-item.light .value { color: #fffa65; }
+        .sensor-item.sound .value { color: #ff6b81; }
+        .sensor-item.compass .value { color: #a29bfe; }
+
+        /* Button states */
+        .button-state {
+            display: flex; gap: 12px;
+            justify-content: center;
+            margin: 10px 0;
+        }
+        .hw-button {
+            width: 50px; height: 50px;
+            border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold;
+            font-size: 1.2rem;
+            transition: all 0.1s;
+        }
+        .hw-button.a { background: #333; border: 3px solid #555; }
+        .hw-button.b { background: #333; border: 3px solid #555; }
+        .hw-button.logo { background: #c9a227; border: 3px solid #dab32a; font-size: 0.8rem; }
+        .hw-button.pressed { background: #00d4aa; border-color: #00ffcc; transform: scale(0.95); }
+
+        /* LED Matrix */
+        .led-matrix-container { text-align: center; }
+        .led-matrix {
+            display: inline-grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 4px;
+            padding: 15px;
+            background: #111;
+            border-radius: 12px;
+            border: 3px solid #333;
+        }
+        .led {
+            width: 28px; height: 28px;
+            border-radius: 4px;
+            background: #2a2a2a;
+            cursor: pointer;
+            transition: all 0.1s;
+            border: 1px solid #333;
+        }
+        .led.on { background: #ff3333; box-shadow: 0 0 10px #ff3333, 0 0 20px #ff333366; }
+        .led:hover { background: #444; }
+        .led.on:hover { background: #ff5555; }
+
+        .led-controls {
+            display: flex; gap: 8px;
+            justify-content: center;
+            margin-top: 12px;
+            flex-wrap: wrap;
+        }
+
+        /* Speaker Controls */
+        .speaker-controls { display: flex; flex-direction: column; gap: 10px; }
+        .sound-buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+        .sound-btn {
+            padding: 8px;
+            background: rgba(112, 161, 255, 0.2);
+            border: 1px solid rgba(112, 161, 255, 0.4);
+            border-radius: 6px;
+            color: #70a1ff;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+        .sound-btn:hover { background: rgba(112, 161, 255, 0.4); }
+
+        .tone-control {
+            display: flex; gap: 8px;
+            align-items: center;
+        }
+        .tone-control input[type="range"] {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.2);
+            -webkit-appearance: none;
+        }
+        .tone-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px; height: 16px;
+            border-radius: 50%;
+            background: #70a1ff;
+            cursor: pointer;
+        }
+
+        /* Charts */
+        .chart-container { position: relative; height: 180px; margin-bottom: 10px; }
+        .chart-tabs {
+            display: flex; gap: 4px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+        .chart-tab {
+            padding: 6px 12px;
+            background: rgba(255,255,255,0.05);
+            border: none;
+            border-radius: 6px;
+            color: #888;
+            cursor: pointer;
+            font-size: 0.75rem;
+            transition: all 0.2s;
+        }
+        .chart-tab.active { background: rgba(255,255,255,0.15); color: #fff; }
+
+        /* MQTT Topic Config */
+        .topic-config {
+            font-size: 0.8rem;
+        }
+        .topic-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .topic-row:last-child { border-bottom: none; }
+        .topic-row .sensor-name { color: #aaa; }
+        .topic-row input {
+            width: 140px;
+            padding: 4px 8px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 4px;
+            color: #fff;
+            font-size: 0.75rem;
+            font-family: monospace;
+        }
+
+        /* GPIO */
+        .gpio-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .gpio-pin {
+            background: rgba(0,0,0,0.2);
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .gpio-pin .label { font-size: 0.7rem; color: #888; }
+        .gpio-pin .value { font-size: 1rem; font-weight: 600; color: #a29bfe; }
+
+        /* Console */
+        .console-output {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 10px;
+            max-height: 150px;
+            overflow-y: auto;
+            font-family: 'Monaco', monospace;
+            font-size: 0.75rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .console-line { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .console-line.error { color: #ff6b6b; }
+        .console-line.success { color: #2ed573; }
+        .console-line.info { color: #70a1ff; }
+
+        /* Tabs for code */
+        .code-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+        .code-tab {
+            padding: 8px 16px;
+            background: rgba(255,255,255,0.05);
+            border: none;
+            border-radius: 6px 6px 0 0;
+            color: #aaa;
+            cursor: pointer;
+        }
+        .code-tab.active { background: rgba(255,255,255,0.1); color: #fff; }
+        .code-content { display: none; }
+        .code-content.active { display: block; }
+        .code-block {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: 'Monaco', monospace;
+            font-size: 0.75rem;
+            overflow-x: auto;
+            position: relative;
+            border: 1px solid rgba(255,255,255,0.1);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .code-block pre { margin: 0; white-space: pre-wrap; }
+        .copy-btn {
+            position: absolute;
+            top: 8px; right: 8px;
+            padding: 4px 10px;
+            font-size: 0.7rem;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .copy-btn:hover { background: rgba(255,255,255,0.2); }
+
+        /* Config Mode Toggle */
+        .config-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 22px;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333;
+            border-radius: 22px;
+            transition: 0.3s;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px; width: 16px;
+            left: 3px; bottom: 3px;
+            background-color: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider { background-color: #00d4aa; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }
+
+        .warning-box {
+            background: rgba(255, 193, 7, 0.1);
+            border: 1px solid rgba(255, 193, 7, 0.3);
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+            color: #ffc107;
+        }
+
+        /* Middle column - full width charts */
+        .center-column .card { margin-bottom: 16px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                <div class="logo">M</div>
+                Micro:bit Control Center
+            </h1>
+            <nav class="nav-links">
+                <a href="/">Dashboard</a>
+                <a href="/builder">Builder</a>
+                <a href="/microbit" class="active">Micro:bit</a>
+                <a href="/sensor-display">Sensor Display</a>
+            </nav>
+        </header>
+
+        <div class="main-grid">
+            <!-- Left Column - Connection & Sensors -->
+            <div class="left-column">
+                <!-- Connection Card -->
+                <div class="card">
+                    <h2>Connection</h2>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <span id="statusText">Disconnected</span>
+                    </div>
+                    <button class="btn btn-primary" id="connectBtn" onclick="toggleConnection()">
+                        Connect Micro:bit
+                    </button>
+                    <div id="browserWarning" class="warning-box" style="display: none; margin-top: 12px;">
+                        Web Serial API not supported. Use Chrome, Edge, or Opera.
+                    </div>
+                </div>
+
+                <!-- Accelerometer -->
+                <div class="card">
+                    <h2>Accelerometer (mg)</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-item x"><div class="label">X</div><div class="value" id="accelX">--</div></div>
+                        <div class="sensor-item y"><div class="label">Y</div><div class="value" id="accelY">--</div></div>
+                        <div class="sensor-item z"><div class="label">Z</div><div class="value" id="accelZ">--</div></div>
+                    </div>
+                </div>
+
+                <!-- Environment Sensors -->
+                <div class="card">
+                    <h2>Environment</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-item temp"><div class="label">Temp °C</div><div class="value" id="temperature">--</div></div>
+                        <div class="sensor-item light"><div class="label">Light</div><div class="value" id="light">--</div></div>
+                        <div class="sensor-item sound"><div class="label">Sound</div><div class="value" id="sound">--</div></div>
+                    </div>
+                    <div class="config-toggle" style="margin-top: 10px;">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="lightModeToggle" onchange="toggleLightMode(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span style="font-size: 0.8rem; color: #888;">Light sensor mode (disables LED display)</span>
+                    </div>
+                </div>
+
+                <!-- Compass & Touch -->
+                <div class="card">
+                    <h2>Compass & Touch</h2>
+                    <div class="sensor-grid">
+                        <div class="sensor-item compass"><div class="label">Heading°</div><div class="value" id="compass">--</div></div>
+                        <div class="sensor-item"><div class="label">Mag Str</div><div class="value" id="magStrength">--</div></div>
+                        <div class="sensor-item"><div class="label">Logo</div><div class="value" id="touchLogo">--</div></div>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="card">
+                    <h2>Buttons</h2>
+                    <div class="button-state">
+                        <div class="hw-button a" id="btnA">A</div>
+                        <div class="hw-button logo" id="btnLogo">LOGO</div>
+                        <div class="hw-button b" id="btnB">B</div>
+                    </div>
+                </div>
+
+                <!-- GPIO Pins -->
+                <div class="card">
+                    <h2>GPIO Pins (Analog)</h2>
+                    <div class="gpio-grid">
+                        <div class="gpio-pin"><div class="label">P0</div><div class="value" id="pin0">--</div></div>
+                        <div class="gpio-pin"><div class="label">P1</div><div class="value" id="pin1">--</div></div>
+                        <div class="gpio-pin"><div class="label">P2</div><div class="value" id="pin2">--</div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center Column - Charts -->
+            <div class="center-column">
+                <!-- Main Chart -->
+                <div class="card">
+                    <h2>Sensor History (1 second window)</h2>
+                    <div class="chart-tabs">
+                        <button class="chart-tab active" onclick="showChart('accel')">Accelerometer</button>
+                        <button class="chart-tab" onclick="showChart('env')">Environment</button>
+                        <button class="chart-tab" onclick="showChart('compass')">Compass</button>
+                        <button class="chart-tab" onclick="showChart('gpio')">GPIO</button>
+                    </div>
+                    <div class="chart-container" id="chartAccel">
+                        <canvas id="accelChart"></canvas>
+                    </div>
+                    <div class="chart-container" id="chartEnv" style="display:none;">
+                        <canvas id="envChart"></canvas>
+                    </div>
+                    <div class="chart-container" id="chartCompass" style="display:none;">
+                        <canvas id="compassChart"></canvas>
+                    </div>
+                    <div class="chart-container" id="chartGpio" style="display:none;">
+                        <canvas id="gpioChart"></canvas>
+                    </div>
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button class="btn btn-primary btn-sm" onclick="clearCharts()" style="flex:1;">Clear</button>
+                        <button class="btn btn-primary btn-sm" onclick="exportData()" style="flex:1;">Export CSV</button>
+                    </div>
+                </div>
+
+                <!-- MQTT Topic Configuration -->
+                <div class="card">
+                    <h2>MQTT Topic Mapping</h2>
+                    <p style="font-size: 0.75rem; color: #888; margin-bottom: 10px;">
+                        Configure MQTT topics for each sensor. Data is published to: <code style="color: #00d4aa;">core/sensors/{sensor_id}/{topic}</code>
+                    </p>
+                    <div class="topic-config">
+                        <div class="topic-row"><span class="sensor-name">Accelerometer</span><input type="text" id="topicAccel" value="accel" onchange="updateTopics()"></div>
+                        <div class="topic-row"><span class="sensor-name">Temperature</span><input type="text" id="topicTemp" value="temp" onchange="updateTopics()"></div>
+                        <div class="topic-row"><span class="sensor-name">Light</span><input type="text" id="topicLight" value="light" onchange="updateTopics()"></div>
+                        <div class="topic-row"><span class="sensor-name">Sound</span><input type="text" id="topicSound" value="sound" onchange="updateTopics()"></div>
+                        <div class="topic-row"><span class="sensor-name">Compass</span><input type="text" id="topicCompass" value="compass" onchange="updateTopics()"></div>
+                        <div class="topic-row"><span class="sensor-name">Buttons</span><input type="text" id="topicButtons" value="buttons" onchange="updateTopics()"></div>
+                        <div class="topic-row"><span class="sensor-name">GPIO</span><input type="text" id="topicGpio" value="gpio" onchange="updateTopics()"></div>
+                    </div>
+                </div>
+
+                <!-- MakeCode -->
+                <div class="card">
+                    <h2>Micro:bit Firmware (MakeCode)</h2>
+                    <div class="code-tabs">
+                        <button class="code-tab active" onclick="showCodeTab('full')">Full Sensors</button>
+                        <button class="code-tab" onclick="showCodeTab('basic')">Basic Only</button>
+                    </div>
+                    <div id="code-full" class="code-content active">
+                        <div class="code-block">
+                            <button class="copy-btn" onclick="copyCode('fullCode')">Copy</button>
+                            <pre id="fullCode">// Micro:bit V2 Full Sensor + Control Firmware
+// Sends all sensor data, receives LED/speaker commands
+
+let sampleInterval = 100  // 10Hz default
+let lightMode = false     // When true, use light sensor instead of LEDs
+let ledState: number[] = []  // 25 LED states
+
+// Initialize LED state array
+for (let i = 0; i < 25; i++) { ledState.push(0) }
+
+// Process incoming commands
+serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function() {
+    let cmd = serial.readLine()
+
+    // Rate command: RATE:100
+    if (cmd.indexOf("RATE:") == 0) {
+        let ms = parseFloat(cmd.substr(5))
+        if (ms >= 50 && ms <= 5000) {
+            sampleInterval = ms
+            serial.writeLine('{"ack":"rate","v":' + sampleInterval + '}')
+        }
+    }
+    // Light mode: LIGHTMODE:1 or LIGHTMODE:0
+    else if (cmd.indexOf("LIGHTMODE:") == 0) {
+        lightMode = cmd.substr(10) == "1"
+        serial.writeLine('{"ack":"lightmode","v":' + (lightMode ? 1 : 0) + '}')
+        if (!lightMode) { renderLEDs() }
+    }
+    // LED command: LED:x,y,state (e.g., LED:2,2,1)
+    else if (cmd.indexOf("LED:") == 0) {
+        let parts = cmd.substr(4).split(",")
+        if (parts.length >= 3) {
+            let x = parseInt(parts[0])
+            let y = parseInt(parts[1])
+            let state = parseInt(parts[2])
+            if (x >= 0 && x < 5 && y >= 0 && y < 5) {
+                ledState[y * 5 + x] = state
+                if (!lightMode) { renderLEDs() }
+                serial.writeLine('{"ack":"led","x":' + x + ',"y":' + y + ',"v":' + state + '}')
+            }
+        }
+    }
+    // Clear all LEDs: LEDCLEAR
+    else if (cmd == "LEDCLEAR") {
+        for (let i = 0; i < 25; i++) { ledState[i] = 0 }
+        if (!lightMode) { basic.clearScreen() }
+        serial.writeLine('{"ack":"ledclear"}')
+    }
+    // Fill all LEDs: LEDFILL
+    else if (cmd == "LEDFILL") {
+        for (let i = 0; i < 25; i++) { ledState[i] = 1 }
+        if (!lightMode) { renderLEDs() }
+        serial.writeLine('{"ack":"ledfill"}')
+    }
+    // Play tone: TONE:frequency,duration (e.g., TONE:440,500)
+    else if (cmd.indexOf("TONE:") == 0) {
+        let tp = cmd.substr(5).split(",")
+        if (tp.length >= 2) {
+            let freq = parseInt(tp[0])
+            let dur = parseInt(tp[1])
+            music.playTone(freq, dur)
+            serial.writeLine('{"ack":"tone","f":' + freq + ',"d":' + dur + '}')
+        }
+    }
+    // Play melody: MELODY:name (e.g., MELODY:DADADADUM)
+    else if (cmd.indexOf("MELODY:") == 0) {
+        let mel = cmd.substr(7)
+        playMelodyByName(mel)
+        serial.writeLine('{"ack":"melody","m":"' + mel + '"}')
+    }
+    // Play sound effect (V2): SOUND:name
+    else if (cmd.indexOf("SOUND:") == 0) {
+        let snd = cmd.substr(6)
+        playSoundByName(snd)
+        serial.writeLine('{"ack":"sound","s":"' + snd + '"}')
+    }
+    // Speaker on/off: SPEAKER:1 or SPEAKER:0
+    else if (cmd.indexOf("SPEAKER:") == 0) {
+        let on = cmd.substr(8) == "1"
+        music.setBuiltInSpeakerEnabled(on)
+        serial.writeLine('{"ack":"speaker","v":' + (on ? 1 : 0) + '}')
+    }
+})
+
+// Render LED matrix from state array
+function renderLEDs() {
+    for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+            if (ledState[y * 5 + x] > 0) {
+                led.plot(x, y)
+            } else {
+                led.unplot(x, y)
+            }
+        }
+    }
+}
+
+// Play melody by name
+function playMelodyByName(name: string) {
+    if (name == "DADADADUM") music.startMelody(music.builtInMelody(Melodies.Dadadadum), MelodyOptions.Once)
+    else if (name == "ENTERTAINER") music.startMelody(music.builtInMelody(Melodies.Entertainer), MelodyOptions.Once)
+    else if (name == "PRELUDE") music.startMelody(music.builtInMelody(Melodies.Prelude), MelodyOptions.Once)
+    else if (name == "ODE") music.startMelody(music.builtInMelody(Melodies.Ode), MelodyOptions.Once)
+    else if (name == "NYAN") music.startMelody(music.builtInMelody(Melodies.Nyan), MelodyOptions.Once)
+    else if (name == "RINGTONE") music.startMelody(music.builtInMelody(Melodies.Ringtone), MelodyOptions.Once)
+    else if (name == "FUNK") music.startMelody(music.builtInMelody(Melodies.Funk), MelodyOptions.Once)
+    else if (name == "BLUES") music.startMelody(music.builtInMelody(Melodies.Blues), MelodyOptions.Once)
+    else if (name == "BIRTHDAY") music.startMelody(music.builtInMelody(Melodies.Birthday), MelodyOptions.Once)
+    else if (name == "WEDDING") music.startMelody(music.builtInMelody(Melodies.Wedding), MelodyOptions.Once)
+    else if (name == "FUNERAL") music.startMelody(music.builtInMelody(Melodies.Funeral), MelodyOptions.Once)
+    else if (name == "PUNCHLINE") music.startMelody(music.builtInMelody(Melodies.Punchline), MelodyOptions.Once)
+    else if (name == "BADDY") music.startMelody(music.builtInMelody(Melodies.Baddy), MelodyOptions.Once)
+    else if (name == "CHASE") music.startMelody(music.builtInMelody(Melodies.Chase), MelodyOptions.Once)
+    else if (name == "BADING") music.startMelody(music.builtInMelody(Melodies.BaDing), MelodyOptions.Once)
+    else if (name == "WAWAWAWAA") music.startMelody(music.builtInMelody(Melodies.Wawawawaa), MelodyOptions.Once)
+    else if (name == "JUMPUP") music.startMelody(music.builtInMelody(Melodies.JumpUp), MelodyOptions.Once)
+    else if (name == "JUMPDOWN") music.startMelody(music.builtInMelody(Melodies.JumpDown), MelodyOptions.Once)
+    else if (name == "POWERUP") music.startMelody(music.builtInMelody(Melodies.PowerUp), MelodyOptions.Once)
+    else if (name == "POWERDOWN") music.startMelody(music.builtInMelody(Melodies.PowerDown), MelodyOptions.Once)
+}
+
+// Play V2 sound effects
+function playSoundByName(name: string) {
+    if (name == "GIGGLE") soundExpression.giggle.play()
+    else if (name == "HAPPY") soundExpression.happy.play()
+    else if (name == "HELLO") soundExpression.hello.play()
+    else if (name == "MYSTERIOUS") soundExpression.mysterious.play()
+    else if (name == "SAD") soundExpression.sad.play()
+    else if (name == "SLIDE") soundExpression.slide.play()
+    else if (name == "SOARING") soundExpression.soaring.play()
+    else if (name == "SPRING") soundExpression.spring.play()
+    else if (name == "TWINKLE") soundExpression.twinkle.play()
+    else if (name == "YAWN") soundExpression.yawn.play()
+}
+
+// Main loop - send sensor data
+basic.forever(function() {
+    // Build JSON with all sensor data
+    let data = "{"
+
+    // Accelerometer
+    data += '"ax":' + input.acceleration(Dimension.X)
+    data += ',"ay":' + input.acceleration(Dimension.Y)
+    data += ',"az":' + input.acceleration(Dimension.Z)
+
+    // Temperature
+    data += ',"t":' + input.temperature()
+
+    // Light (only if in light mode)
+    if (lightMode) {
+        data += ',"l":' + input.lightLevel()
+    }
+
+    // Sound level (V2)
+    data += ',"s":' + input.soundLevel()
+
+    // Compass
+    data += ',"ch":' + input.compassHeading()
+    data += ',"cm":' + input.magneticForce(Dimension.Strength)
+
+    // Buttons
+    data += ',"ba":' + (input.buttonIsPressed(Button.A) ? 1 : 0)
+    data += ',"bb":' + (input.buttonIsPressed(Button.B) ? 1 : 0)
+    data += ',"bl":' + (input.logoIsPressed() ? 1 : 0)
+
+    // Analog pins
+    data += ',"p0":' + pins.analogReadPin(AnalogPin.P0)
+    data += ',"p1":' + pins.analogReadPin(AnalogPin.P1)
+    data += ',"p2":' + pins.analogReadPin(AnalogPin.P2)
+
+    data += "}"
+    serial.writeLine(data)
+
+    basic.pause(sampleInterval)
+})</pre>
+                        </div>
+                    </div>
+                    <div id="code-basic" class="code-content">
+                        <div class="code-block">
+                            <button class="copy-btn" onclick="copyCode('basicCode')">Copy</button>
+                            <pre id="basicCode">// Basic accelerometer only (original)
+basic.forever(function () {
+    let x = input.acceleration(Dimension.X)
+    let y = input.acceleration(Dimension.Y)
+    let z = input.acceleration(Dimension.Z)
+    serial.writeLine('{"ax":' + x + ',"ay":' + y + ',"az":' + z + '}')
+    basic.pause(100)
+})</pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Console -->
+                <div class="card">
+                    <h2>Console</h2>
+                    <div class="console-output" id="console"></div>
+                </div>
+            </div>
+
+            <!-- Right Column - Controls -->
+            <div class="right-column">
+                <!-- LED Matrix Control -->
+                <div class="card">
+                    <h2>LED Matrix Control</h2>
+                    <div class="led-matrix-container">
+                        <div class="led-matrix" id="ledMatrix"></div>
+                    </div>
+                    <div class="led-controls">
+                        <button class="btn btn-sm btn-primary" onclick="sendLedClear()">Clear</button>
+                        <button class="btn btn-sm btn-primary" onclick="sendLedFill()">Fill</button>
+                        <button class="btn btn-sm btn-primary" onclick="sendLedPattern('heart')">❤️</button>
+                        <button class="btn btn-sm btn-primary" onclick="sendLedPattern('smile')">😊</button>
+                        <button class="btn btn-sm btn-primary" onclick="sendLedPattern('check')">✓</button>
+                    </div>
+                </div>
+
+                <!-- Speaker Control -->
+                <div class="card">
+                    <h2>Speaker Control</h2>
+                    <div class="speaker-controls">
+                        <div class="config-toggle">
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="speakerToggle" checked onchange="toggleSpeaker(this.checked)">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <span style="font-size: 0.8rem; color: #888;">Speaker enabled</span>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: #aaa; margin-bottom: 5px;">Sound Effects (V2)</div>
+                        <div class="sound-buttons">
+                            <button class="sound-btn" onclick="playSound('GIGGLE')">Giggle</button>
+                            <button class="sound-btn" onclick="playSound('HAPPY')">Happy</button>
+                            <button class="sound-btn" onclick="playSound('HELLO')">Hello</button>
+                            <button class="sound-btn" onclick="playSound('SAD')">Sad</button>
+                            <button class="sound-btn" onclick="playSound('TWINKLE')">Twinkle</button>
+                            <button class="sound-btn" onclick="playSound('YAWN')">Yawn</button>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: #aaa; margin: 10px 0 5px;">Melodies</div>
+                        <div class="sound-buttons">
+                            <button class="sound-btn" onclick="playMelody('DADADADUM')">Beethoven</button>
+                            <button class="sound-btn" onclick="playMelody('BIRTHDAY')">Birthday</button>
+                            <button class="sound-btn" onclick="playMelody('NYAN')">Nyan</button>
+                            <button class="sound-btn" onclick="playMelody('FUNK')">Funk</button>
+                            <button class="sound-btn" onclick="playMelody('BLUES')">Blues</button>
+                            <button class="sound-btn" onclick="playMelody('POWERUP')">Power Up</button>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: #aaa; margin: 10px 0 5px;">Custom Tone</div>
+                        <div class="tone-control">
+                            <span style="font-size: 0.75rem; min-width: 40px;" id="freqLabel">440</span>
+                            <input type="range" id="toneFreq" min="100" max="2000" value="440"
+                                   oninput="document.getElementById('freqLabel').textContent=this.value">
+                            <button class="btn btn-sm btn-primary" onclick="playTone()" style="padding: 6px 12px;">Play</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sample Rate -->
+                <div class="card">
+                    <h2>Sample Rate</h2>
+                    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                        <input type="range" id="sampleRate" min="50" max="1000" step="50" value="100"
+                               oninput="updateRateDisplay(this.value)" style="flex: 1;">
+                        <span id="rateDisplay" style="min-width: 60px; font-weight: 600; color: #00d4aa;">10 Hz</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm" onclick="sendSampleRate()">Apply Rate</button>
+                </div>
+
+                <!-- CORE Integration Status -->
+                <div class="card">
+                    <h2>CORE Network</h2>
+                    <div class="status-indicator">
+                        <div class="status-dot" id="coreDot"></div>
+                        <span id="coreStatus">Checking...</span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #888; margin-bottom: 8px;">
+                        Sensor ID: <code id="sensorIdDisplay" style="color: #00d4aa;">--</code>
+                    </div>
+                    <div class="config-toggle">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="relayToggle" checked onchange="toggleRelay(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span style="font-size: 0.8rem; color: #888;">Send to CORE network</span>
+                    </div>
+                </div>
+
+                <!-- Stats -->
+                <div class="card">
+                    <h2>Statistics</h2>
+                    <div class="sensor-grid" style="grid-template-columns: repeat(2, 1fr);">
+                        <div class="sensor-item"><div class="label">Samples</div><div class="value" id="sampleCount">0</div></div>
+                        <div class="sensor-item"><div class="label">Rate</div><div class="value" id="actualRate">--</div></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== State ====================
+        let port = null;
+        let reader = null;
+        let writer = null;
+        let keepReading = false;
+        let sampleCount = 0;
+        let sampleTimes = [];
+
+        // Sensor ID for MQTT
+        const sensorId = 'microbit-' + Math.random().toString(36).substr(2, 9);
+        let relayEnabled = true;
+
+        // LED Matrix state (5x5 = 25 LEDs)
+        let ledMatrix = new Array(25).fill(0);
+
+        // MQTT Topics
+        let topics = {
+            accel: 'accel',
+            temp: 'temp',
+            light: 'light',
+            sound: 'sound',
+            compass: 'compass',
+            buttons: 'buttons',
+            gpio: 'gpio'
+        };
+
+        // Chart data - 1 second history at 10Hz = 10 points, but we'll keep 100 for smoother display
+        const MAX_POINTS = 100;
+        let chartData = {
+            accel: { labels: [], x: [], y: [], z: [] },
+            env: { labels: [], temp: [], light: [], sound: [] },
+            compass: { labels: [], heading: [], strength: [] },
+            gpio: { labels: [], p0: [], p1: [], p2: [] }
+        };
+
+        // ==================== Charts ====================
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+                x: { display: true, ticks: { maxTicksLimit: 5, color: '#888' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                y: { display: true, ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.1)' } }
+            },
+            plugins: { legend: { labels: { color: '#fff', boxWidth: 12 } } },
+            elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } }
+        };
+
+        const accelChart = new Chart(document.getElementById('accelChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'X', data: [], borderColor: '#ff6b6b', fill: false },
+                    { label: 'Y', data: [], borderColor: '#2ed573', fill: false },
+                    { label: 'Z', data: [], borderColor: '#70a1ff', fill: false }
+                ]
+            },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: -2000, max: 2000 } } }
+        });
+
+        const envChart = new Chart(document.getElementById('envChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Temp °C', data: [], borderColor: '#ffa502', fill: false, yAxisID: 'y' },
+                    { label: 'Light', data: [], borderColor: '#fffa65', fill: false, yAxisID: 'y1' },
+                    { label: 'Sound', data: [], borderColor: '#ff6b81', fill: false, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                ...chartOptions,
+                scales: {
+                    x: chartOptions.scales.x,
+                    y: { type: 'linear', position: 'left', min: 0, max: 50, ticks: { color: '#ffa502' }, grid: { color: 'rgba(255,255,255,0.1)' } },
+                    y1: { type: 'linear', position: 'right', min: 0, max: 255, ticks: { color: '#fffa65' }, grid: { display: false } }
+                }
+            }
+        });
+
+        const compassChart = new Chart(document.getElementById('compassChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Heading°', data: [], borderColor: '#a29bfe', fill: false }
+                ]
+            },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max: 360 } } }
+        });
+
+        const gpioChart = new Chart(document.getElementById('gpioChart'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'P0', data: [], borderColor: '#ff6b6b', fill: false },
+                    { label: 'P1', data: [], borderColor: '#2ed573', fill: false },
+                    { label: 'P2', data: [], borderColor: '#70a1ff', fill: false }
+                ]
+            },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max: 1023 } } }
+        });
+
+        // ==================== LED Matrix UI ====================
+        function initLedMatrix() {
+            const container = document.getElementById('ledMatrix');
+            container.innerHTML = '';
+            for (let i = 0; i < 25; i++) {
+                const led = document.createElement('div');
+                led.className = 'led';
+                led.dataset.index = i;
+                led.onclick = () => toggleLed(i);
+                container.appendChild(led);
+            }
+        }
+
+        function toggleLed(index) {
+            ledMatrix[index] = ledMatrix[index] ? 0 : 1;
+            updateLedUI();
+            const x = index % 5;
+            const y = Math.floor(index / 5);
+            sendCommand(`LED:${x},${y},${ledMatrix[index]}`);
+        }
+
+        function updateLedUI() {
+            const leds = document.querySelectorAll('.led-matrix .led');
+            leds.forEach((led, i) => {
+                led.classList.toggle('on', ledMatrix[i] === 1);
+            });
+        }
+
+        function sendLedClear() {
+            ledMatrix.fill(0);
+            updateLedUI();
+            sendCommand('LEDCLEAR');
+        }
+
+        function sendLedFill() {
+            ledMatrix.fill(1);
+            updateLedUI();
+            sendCommand('LEDFILL');
+        }
+
+        function sendLedPattern(pattern) {
+            const patterns = {
+                heart: [0,1,0,1,0, 1,1,1,1,1, 1,1,1,1,1, 0,1,1,1,0, 0,0,1,0,0],
+                smile: [0,0,0,0,0, 0,1,0,1,0, 0,0,0,0,0, 1,0,0,0,1, 0,1,1,1,0],
+                check: [0,0,0,0,0, 0,0,0,0,1, 0,0,0,1,0, 1,0,1,0,0, 0,1,0,0,0]
+            };
+            if (patterns[pattern]) {
+                ledMatrix = [...patterns[pattern]];
+                updateLedUI();
+                // Send each LED state
+                for (let y = 0; y < 5; y++) {
+                    for (let x = 0; x < 5; x++) {
+                        sendCommand(`LED:${x},${y},${ledMatrix[y * 5 + x]}`);
+                    }
+                }
+            }
+        }
+
+        // ==================== Speaker Controls ====================
+        function toggleSpeaker(enabled) {
+            sendCommand(`SPEAKER:${enabled ? 1 : 0}`);
+        }
+
+        function playSound(name) {
+            sendCommand(`SOUND:${name}`);
+        }
+
+        function playMelody(name) {
+            sendCommand(`MELODY:${name}`);
+        }
+
+        function playTone() {
+            const freq = document.getElementById('toneFreq').value;
+            sendCommand(`TONE:${freq},500`);
+        }
+
+        function toggleLightMode(enabled) {
+            sendCommand(`LIGHTMODE:${enabled ? 1 : 0}`);
+        }
+
+        // ==================== Serial Communication ====================
+        async function toggleConnection() {
+            if (port) {
+                await disconnect();
+            } else {
+                await connect();
+            }
+        }
+
+        async function connect() {
+            try {
+                logConsole('Requesting serial port...', 'info');
+                port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x0d28 }] });
+                await port.open({ baudRate: 115200 });
+                logConsole('Connected to micro:bit!', 'success');
+                updateConnectionUI(true);
+                keepReading = true;
+
+                const textEncoder = new TextEncoderStream();
+                textEncoder.readable.pipeTo(port.writable);
+                writer = textEncoder.writable.getWriter();
+
+                readLoop();
+            } catch (error) {
+                logConsole('Connection failed: ' + error.message, 'error');
+                port = null;
+            }
+        }
+
+        async function disconnect() {
+            keepReading = false;
+            try {
+                if (reader) { await reader.cancel(); reader = null; }
+                if (writer) { await writer.close(); writer = null; }
+                if (port) { await port.close(); port = null; }
+                logConsole('Disconnected', 'info');
+            } catch (error) {
+                logConsole('Disconnect error: ' + error.message, 'error');
+            }
+            updateConnectionUI(false);
+        }
+
+        async function readLoop() {
+            const textDecoder = new TextDecoderStream();
+            port.readable.pipeTo(textDecoder.writable);
+            reader = textDecoder.readable.getReader();
+            let buffer = '';
+
+            try {
+                while (keepReading) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    if (value) {
+                        buffer += value;
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        for (const line of lines) {
+                            handleData(line.trim());
+                        }
+                    }
+                }
+            } catch (error) {
+                if (keepReading) logConsole('Read error: ' + error.message, 'error');
+            } finally {
+                if (reader) reader.releaseLock();
+            }
+        }
+
+        async function sendCommand(cmd) {
+            if (!writer) {
+                logConsole('Not connected', 'error');
+                return;
+            }
+            try {
+                await writer.write(cmd + '\n');
+                logConsole('Sent: ' + cmd, 'info');
+            } catch (error) {
+                logConsole('Send failed: ' + error.message, 'error');
+            }
+        }
+
+        // ==================== Data Handling ====================
+        function handleData(line) {
+            if (!line) return;
+            try {
+                const data = JSON.parse(line);
+
+                // Handle acknowledgments
+                if (data.ack) {
+                    logConsole('ACK: ' + data.ack + ' = ' + JSON.stringify(data), 'success');
+                    return;
+                }
+
+                // Update displays
+                const now = new Date();
+                const timeStr = now.toLocaleTimeString('en-US', { hour12: false }) + '.' + String(now.getMilliseconds()).slice(0, 1);
+
+                // Accelerometer
+                if ('ax' in data) {
+                    document.getElementById('accelX').textContent = data.ax;
+                    document.getElementById('accelY').textContent = data.ay;
+                    document.getElementById('accelZ').textContent = data.az;
+                    addChartData(accelChart, chartData.accel, timeStr, [data.ax, data.ay, data.az]);
+                }
+
+                // Temperature
+                if ('t' in data) {
+                    document.getElementById('temperature').textContent = data.t;
+                    chartData.env.temp.push(data.t);
+                }
+
+                // Light
+                if ('l' in data) {
+                    document.getElementById('light').textContent = data.l;
+                    chartData.env.light.push(data.l);
+                } else {
+                    chartData.env.light.push(null);
+                }
+
+                // Sound
+                if ('s' in data) {
+                    document.getElementById('sound').textContent = data.s;
+                    chartData.env.sound.push(data.s);
+                }
+
+                // Update env chart
+                if ('t' in data || 's' in data) {
+                    chartData.env.labels.push(timeStr);
+                    while (chartData.env.labels.length > MAX_POINTS) {
+                        chartData.env.labels.shift();
+                        chartData.env.temp.shift();
+                        chartData.env.light.shift();
+                        chartData.env.sound.shift();
+                    }
+                    envChart.data.labels = chartData.env.labels;
+                    envChart.data.datasets[0].data = chartData.env.temp;
+                    envChart.data.datasets[1].data = chartData.env.light;
+                    envChart.data.datasets[2].data = chartData.env.sound;
+                    envChart.update('none');
+                }
+
+                // Compass
+                if ('ch' in data) {
+                    document.getElementById('compass').textContent = data.ch;
+                    document.getElementById('magStrength').textContent = data.cm;
+                    addChartData(compassChart, chartData.compass, timeStr, [data.ch]);
+                }
+
+                // Buttons
+                if ('ba' in data) {
+                    document.getElementById('btnA').classList.toggle('pressed', data.ba === 1);
+                    document.getElementById('btnB').classList.toggle('pressed', data.bb === 1);
+                    document.getElementById('btnLogo').classList.toggle('pressed', data.bl === 1);
+                    document.getElementById('touchLogo').textContent = data.bl === 1 ? 'Yes' : 'No';
+                }
+
+                // GPIO
+                if ('p0' in data) {
+                    document.getElementById('pin0').textContent = data.p0;
+                    document.getElementById('pin1').textContent = data.p1;
+                    document.getElementById('pin2').textContent = data.p2;
+                    addChartData(gpioChart, chartData.gpio, timeStr, [data.p0, data.p1, data.p2]);
+                }
+
+                // Stats
+                sampleCount++;
+                sampleTimes.push(now.getTime());
+                if (sampleTimes.length > 10) sampleTimes.shift();
+                document.getElementById('sampleCount').textContent = sampleCount;
+                if (sampleTimes.length >= 2) {
+                    const dt = (sampleTimes[sampleTimes.length - 1] - sampleTimes[0]) / (sampleTimes.length - 1);
+                    document.getElementById('actualRate').textContent = (1000 / dt).toFixed(1) + ' Hz';
+                }
+
+                // Relay to CORE
+                if (relayEnabled) {
+                    relayToCORE(data);
+                }
+
+            } catch (e) {
+                logConsole('Parse error: ' + line, 'error');
+            }
+        }
+
+        function addChartData(chart, dataStore, label, values) {
+            dataStore.labels.push(label);
+            chart.data.labels.push(label);
+            values.forEach((v, i) => {
+                if (!dataStore[i]) dataStore[i] = [];
+                dataStore[i].push(v);
+                chart.data.datasets[i].data.push(v);
+            });
+
+            while (chart.data.labels.length > MAX_POINTS) {
+                chart.data.labels.shift();
+                dataStore.labels.shift();
+                chart.data.datasets.forEach((ds, i) => {
+                    ds.data.shift();
+                    if (dataStore[i]) dataStore[i].shift();
+                });
+            }
+            chart.update('none');
+        }
+
+        // ==================== CORE Integration ====================
+        async function relayToCORE(data) {
+            const promises = [];
+
+            // Main sensor data endpoint
+            promises.push(fetch(`/api/sensors/${sensorId}/data`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(() => null));
+
+            // Injector endpoint for CORE network traffic
+            promises.push(fetch(`/api/inject/${sensorId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            }).catch(() => null));
+
+            await Promise.all(promises);
+        }
+
+        function toggleRelay(enabled) {
+            relayEnabled = enabled;
+            const dot = document.getElementById('coreDot');
+            dot.classList.toggle('connected', enabled);
+            document.getElementById('coreStatus').textContent = enabled ? 'Relay Active' : 'Relay Disabled';
+        }
+
+        async function checkCoreStatus() {
+            try {
+                const response = await fetch('/api/inject/status');
+                const data = await response.json();
+                const dot = document.getElementById('coreDot');
+                dot.classList.toggle('connected', data.running);
+                document.getElementById('coreStatus').textContent = data.running ?
+                    `Active (${data.message_count} msgs)` : 'Not connected';
+            } catch (e) {
+                document.getElementById('coreStatus').textContent = 'Error';
+            }
+        }
+
+        // ==================== UI Helpers ====================
+        function updateConnectionUI(connected) {
+            const btn = document.getElementById('connectBtn');
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            if (connected) {
+                btn.textContent = 'Disconnect';
+                btn.className = 'btn btn-danger';
+                dot.classList.add('connected');
+                text.textContent = 'Connected';
+            } else {
+                btn.textContent = 'Connect Micro:bit';
+                btn.className = 'btn btn-primary';
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function updateRateDisplay(ms) {
+            const hz = (1000 / parseInt(ms)).toFixed(1);
+            document.getElementById('rateDisplay').textContent = hz + ' Hz';
+        }
+
+        function sendSampleRate() {
+            const ms = document.getElementById('sampleRate').value;
+            sendCommand('RATE:' + ms);
+        }
+
+        function showChart(type) {
+            document.querySelectorAll('.chart-container').forEach(c => c.style.display = 'none');
+            document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('chart' + type.charAt(0).toUpperCase() + type.slice(1)).style.display = 'block';
+            event.target.classList.add('active');
+        }
+
+        function showCodeTab(tab) {
+            document.querySelectorAll('.code-content').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('.code-tab').forEach(t => t.classList.remove('active'));
+            document.getElementById('code-' + tab).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        function copyCode(elementId) {
+            const code = document.getElementById(elementId).textContent;
+            navigator.clipboard.writeText(code).then(() => {
+                const btn = event.target;
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = 'Copy', 2000);
+            });
+        }
+
+        function clearCharts() {
+            [accelChart, envChart, compassChart, gpioChart].forEach(chart => {
+                chart.data.labels = [];
+                chart.data.datasets.forEach(ds => ds.data = []);
+                chart.update('none');
+            });
+            chartData = {
+                accel: { labels: [], x: [], y: [], z: [] },
+                env: { labels: [], temp: [], light: [], sound: [] },
+                compass: { labels: [], heading: [], strength: [] },
+                gpio: { labels: [], p0: [], p1: [], p2: [] }
+            };
+            sampleCount = 0;
+            sampleTimes = [];
+            document.getElementById('sampleCount').textContent = '0';
+            document.getElementById('actualRate').textContent = '--';
+            logConsole('Charts cleared', 'info');
+        }
+
+        function exportData() {
+            // Export all sensor data as CSV
+            let csv = 'Time,AccelX,AccelY,AccelZ,Temp,Light,Sound,Compass,P0,P1,P2\n';
+            const len = Math.max(
+                chartData.accel.labels.length,
+                chartData.env.labels.length,
+                chartData.compass.labels.length,
+                chartData.gpio.labels.length
+            );
+            for (let i = 0; i < len; i++) {
+                csv += [
+                    chartData.accel.labels[i] || '',
+                    chartData.accel.x?.[i] ?? '', chartData.accel.y?.[i] ?? '', chartData.accel.z?.[i] ?? '',
+                    chartData.env.temp?.[i] ?? '', chartData.env.light?.[i] ?? '', chartData.env.sound?.[i] ?? '',
+                    chartData.compass.heading?.[i] ?? '',
+                    chartData.gpio.p0?.[i] ?? '', chartData.gpio.p1?.[i] ?? '', chartData.gpio.p2?.[i] ?? ''
+                ].join(',') + '\n';
+            }
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'microbit_data_' + new Date().toISOString().slice(0, 19).replace(/:/g, '-') + '.csv';
+            a.click();
+            logConsole('Exported data to CSV', 'success');
+        }
+
+        function updateTopics() {
+            topics = {
+                accel: document.getElementById('topicAccel').value,
+                temp: document.getElementById('topicTemp').value,
+                light: document.getElementById('topicLight').value,
+                sound: document.getElementById('topicSound').value,
+                compass: document.getElementById('topicCompass').value,
+                buttons: document.getElementById('topicButtons').value,
+                gpio: document.getElementById('topicGpio').value
+            };
+            logConsole('Topics updated', 'info');
+        }
+
+        function logConsole(message, type = '') {
+            const consoleEl = document.getElementById('console');
+            const line = document.createElement('div');
+            line.className = 'console-line ' + type;
+            line.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            while (consoleEl.children.length > 50) consoleEl.removeChild(consoleEl.firstChild);
+        }
+
+        // ==================== Remote Control Polling ====================
+        // Poll for control commands from CORE network (via sensor_display.html on HMI)
+        let controlPollingEnabled = true;
+        let controlPollingInterval = null;
+
+        async function pollControlCommands() {
+            if (!controlPollingEnabled || !writer) return;  // Only poll if connected to micro:bit
+
+            try {
+                const response = await fetch(`/api/control/${sensorId}/pending`);
+                const data = await response.json();
+
+                if (data.commands && data.commands.length > 0) {
+                    for (const cmd of data.commands) {
+                        logConsole(`Remote control: ${cmd.command}`, 'info');
+                        await sendCommand(cmd.command);
+                    }
+                }
+            } catch (error) {
+                // Silently ignore polling errors
+            }
+        }
+
+        function startControlPolling() {
+            if (controlPollingInterval) clearInterval(controlPollingInterval);
+            controlPollingInterval = setInterval(pollControlCommands, 500);  // Poll every 500ms
+            logConsole('Control polling started', 'info');
+        }
+
+        function stopControlPolling() {
+            if (controlPollingInterval) {
+                clearInterval(controlPollingInterval);
+                controlPollingInterval = null;
+            }
+        }
+
+        // ==================== Initialization ====================
+        if (!('serial' in navigator)) {
+            document.getElementById('browserWarning').style.display = 'block';
+            document.getElementById('connectBtn').disabled = true;
+        }
+
+        initLedMatrix();
+        document.getElementById('sensorIdDisplay').textContent = sensorId;
+        checkCoreStatus();
+        setInterval(checkCoreStatus, 10000);
+        startControlPolling();  // Start polling for remote control commands
+        logConsole('Micro:bit Control Center ready', 'info');
+        logConsole('Sensor ID: ' + sensorId, 'info');
+        logConsole('Waiting for micro:bit connection to enable remote control...', 'info');
+    </script>
+</body>
+</html>

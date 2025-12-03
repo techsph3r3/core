@@ -1,0 +1,3251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin Platform - Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- noVNC -->
+    <script src="https://cdn.jsdelivr.net/npm/@nickvergessen/novnc@1.3.0/lib/rfb.js"></script>
+    <style>
+        [v-cloak] { display: none; }
+
+        /* Tab styling */
+        .tab-button {
+            @apply px-4 py-2 text-sm font-medium rounded-t-lg transition-colors;
+        }
+        .tab-button.active {
+            @apply bg-gray-800 text-white border-b-2 border-blue-500;
+        }
+        .tab-button:not(.active) {
+            @apply bg-gray-700 text-gray-300 hover:bg-gray-600;
+        }
+        .tab-button.vnc-tab {
+            @apply bg-green-800 text-white;
+        }
+        .tab-button.vnc-tab.active {
+            @apply bg-green-700 border-b-2 border-green-400;
+        }
+
+        /* VNC container */
+        .vnc-container {
+            width: 100%;
+            height: calc(100vh - 120px);
+            background: #1a1a2e;
+        }
+        .vnc-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Status indicator */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .status-dot.connected { background: #22c55e; }
+        .status-dot.disconnected { background: #ef4444; }
+        .status-dot.connecting { background: #eab308; animation: pulse 1s infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        /* Builder iframe */
+        .builder-frame {
+            width: 100%;
+            height: calc(100vh - 120px);
+            border: none;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white">
+{% raw %}
+    <div id="app" v-cloak>
+        <!-- Header -->
+        <header class="bg-gray-800 border-b border-gray-700 px-4 py-2">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-4">
+                    <h1 class="text-xl font-bold text-blue-400">Digital Twin Platform</h1>
+                    <span class="text-gray-500">|</span>
+                    <span class="text-sm text-gray-400">CORE Network Emulator Dashboard</span>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <!-- AI Help Button -->
+                    <button @click="showAiHelpModal = true"
+                            class="px-3 py-1 bg-purple-600 hover:bg-purple-500 rounded text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        AI Help
+                    </button>
+                    <!-- Add Host Button -->
+                    <button @click="showAddHostModal = true"
+                            class="px-3 py-1 bg-green-600 hover:bg-green-500 rounded text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add VNC Host
+                    </button>
+                    <!-- Session Status -->
+                    <div class="text-sm">
+                        <span class="status-dot" :class="coreStatus"></span>
+                        <span class="text-gray-400">CORE: </span>
+                        <span :class="coreStatus === 'connected' ? 'text-green-400' : 'text-red-400'">
+                            {{ coreStatusText }}
+                        </span>
+                    </div>
+                    <!-- Micro:bit Status -->
+                    <div class="text-sm flex items-center gap-2 border-l border-gray-600 pl-4 ml-2 relative">
+                        <span class="status-dot" :class="microbitConnected ? 'connected' : ''"></span>
+                        <span class="text-gray-400">Micro:bit: </span>
+                        <span :class="microbitConnected ? 'text-green-400' : 'text-gray-500'">
+                            {{ microbitConnected ? 'Connected' : 'Disconnected' }}
+                        </span>
+                        <button v-if="!microbitConnected"
+                                @click="connectMicrobit"
+                                class="px-2 py-0.5 bg-teal-600 hover:bg-teal-500 rounded text-xs font-medium">
+                            Connect
+                        </button>
+                        <button v-else
+                                @click="disconnectMicrobit"
+                                class="px-2 py-0.5 bg-red-600 hover:bg-red-500 rounded text-xs font-medium">
+                            Disconnect
+                        </button>
+                        <!-- Sample count with hover preview -->
+                        <div v-if="microbitConnected && microbitSampleCount > 0"
+                             class="relative group cursor-pointer"
+                             @mouseenter="showMicrobitPreview = true"
+                             @mouseleave="showMicrobitPreview = false">
+                            <span class="text-xs text-gray-400 hover:text-teal-400 transition-colors">
+                                ({{ microbitSampleCount }} samples)
+                            </span>
+                            <!-- Hover Preview Popup -->
+                            <div v-show="showMicrobitPreview"
+                                 class="absolute top-full right-0 mt-2 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-3">
+                                <div class="text-xs font-medium text-teal-400 mb-2 border-b border-gray-700 pb-1">Live Sensor Data</div>
+                                <div class="grid grid-cols-3 gap-2 text-center">
+                                    <div class="bg-gray-900 rounded p-2">
+                                        <div class="text-xs text-gray-500">X</div>
+                                        <div class="text-lg font-mono text-red-400">{{ microbitLastData.x || '--' }}</div>
+                                    </div>
+                                    <div class="bg-gray-900 rounded p-2">
+                                        <div class="text-xs text-gray-500">Y</div>
+                                        <div class="text-lg font-mono text-green-400">{{ microbitLastData.y || '--' }}</div>
+                                    </div>
+                                    <div class="bg-gray-900 rounded p-2">
+                                        <div class="text-xs text-gray-500">Z</div>
+                                        <div class="text-lg font-mono text-blue-400">{{ microbitLastData.z || '--' }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-xs text-gray-500 mt-2 text-center">
+                                    ID: {{ microbitSensorId }}
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Settings Button - Toggle dropdown panel -->
+                        <button @click="showMicrobitPanel = !showMicrobitPanel"
+                                :class="['px-2 py-0.5 rounded text-xs font-medium ml-1', showMicrobitPanel ? 'bg-teal-600 text-white' : 'bg-gray-700 hover:bg-gray-600']"
+                                title="Micro:bit Configuration">
+                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </button>
+                        <!-- Inline Config Panel - Always visible dropdown -->
+                        <div v-show="showMicrobitPanel"
+                             class="absolute top-full right-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-4">
+                            <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-700">
+                                <span class="text-sm font-medium text-teal-400">Micro:bit Configuration</span>
+                                <button @click="showMicrobitPanel = false" class="text-gray-500 hover:text-white">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+
+                            <!-- Connection Status -->
+                            <div class="mb-3 p-2 bg-gray-900 rounded text-xs">
+                                <div class="flex justify-between mb-1">
+                                    <span class="text-gray-500">Status</span>
+                                    <span :class="microbitConnected ? 'text-green-400' : 'text-gray-500'">
+                                        {{ microbitConnected ? 'Connected' : 'Disconnected' }}
+                                    </span>
+                                </div>
+                                <div class="flex justify-between mb-1">
+                                    <span class="text-gray-500">Sensor ID</span>
+                                    <span class="text-white font-mono">{{ microbitSensorId }}</span>
+                                </div>
+                                <div class="flex justify-between">
+                                    <span class="text-gray-500">Samples</span>
+                                    <span class="text-white">{{ microbitSampleCount }}</span>
+                                </div>
+                            </div>
+
+                            <!-- Live Data -->
+                            <div class="mb-3">
+                                <div class="text-xs text-gray-500 mb-2">Live Data</div>
+                                <div class="grid grid-cols-3 gap-2 text-center">
+                                    <div class="bg-gray-900 rounded p-2">
+                                        <div class="text-xs text-gray-600">X</div>
+                                        <div class="text-base font-mono text-red-400">{{ microbitLastData.x || '--' }}</div>
+                                    </div>
+                                    <div class="bg-gray-900 rounded p-2">
+                                        <div class="text-xs text-gray-600">Y</div>
+                                        <div class="text-base font-mono text-green-400">{{ microbitLastData.y || '--' }}</div>
+                                    </div>
+                                    <div class="bg-gray-900 rounded p-2">
+                                        <div class="text-xs text-gray-600">Z</div>
+                                        <div class="text-base font-mono text-blue-400">{{ microbitLastData.z || '--' }}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Data Routing Toggle -->
+                            <div class="mb-3">
+                                <div class="flex items-center justify-between">
+                                    <span class="text-xs text-gray-500">Send to CORE Network</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" v-model="microbitConfig.sendToCore" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-600"></div>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Axis Enable/Disable -->
+                            <div class="mb-3">
+                                <div class="text-xs text-gray-500 mb-2">Axis Selection</div>
+                                <div class="flex gap-3">
+                                    <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                        <input type="checkbox" v-model="microbitConfig.xEnabled" class="rounded w-3 h-3">
+                                        <span class="text-red-400">X</span>
+                                    </label>
+                                    <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                        <input type="checkbox" v-model="microbitConfig.yEnabled" class="rounded w-3 h-3">
+                                        <span class="text-green-400">Y</span>
+                                    </label>
+                                    <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                        <input type="checkbox" v-model="microbitConfig.zEnabled" class="rounded w-3 h-3">
+                                        <span class="text-blue-400">Z</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <!-- Advanced Settings Link -->
+                            <button @click="showMicrobitSettings = true; showMicrobitPanel = false"
+                                    class="w-full text-xs text-center text-teal-400 hover:text-teal-300 py-2 border-t border-gray-700">
+                                Advanced Settings →
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Tab Bar -->
+        <div class="bg-gray-800 px-4 pt-2 flex items-end space-x-1 border-b border-gray-700">
+            <!-- Quick Start Tab -->
+            <button @click="activeTab = 'quickstart'"
+                    :class="['tab-button', activeTab === 'quickstart' ? 'active' : '', 'bg-gradient-to-r from-pink-600 to-purple-600']"
+                    style="background: linear-gradient(135deg, #e94560 0%, #0f3460 100%);">
+                <span class="flex items-center text-white">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    Quick Start
+                </span>
+            </button>
+
+            <!-- Builder Tab -->
+            <button @click="activeTab = 'builder'"
+                    :class="['tab-button', activeTab === 'builder' ? 'active' : '']">
+                <span class="flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                    </svg>
+                    Topology Builder
+                </span>
+            </button>
+
+            <!-- CORE GUI Tab -->
+            <button @click="activeTab = 'core'"
+                    :class="['tab-button', activeTab === 'core' ? 'active' : '']">
+                <span class="flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
+                    CORE GUI
+                </span>
+            </button>
+
+            <!-- Dynamic VNC Host Tabs -->
+            <div v-for="host in vncHosts" :key="host.id"
+                 @click="activeTab = 'vnc-' + host.id"
+                 :class="['tab-button vnc-tab cursor-pointer', activeTab === 'vnc-' + host.id ? 'active' : '']">
+                <span class="flex items-center">
+                    <span class="status-dot" :class="host.status"></span>
+                    {{ host.name }}
+                    <span @click.stop="removeHost(host.id)"
+                          class="ml-2 text-gray-400 hover:text-red-400 cursor-pointer p-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </span>
+                </span>
+            </div>
+        </div>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- Quick Start Tab -->
+            <div v-show="activeTab === 'quickstart'" class="vnc-container p-6 overflow-auto">
+                <div class="max-w-6xl mx-auto">
+                    <h2 class="text-2xl font-bold mb-2 text-pink-400">Quick Start Templates</h2>
+                    <p class="text-gray-400 mb-6">Deploy a pre-configured topology with one click, or customize it first</p>
+
+                    <!-- Category Filter -->
+                    <div class="flex gap-2 mb-6 flex-wrap">
+                        <button v-for="cat in ['All', 'Basic', 'IT', 'OT', 'IoT', 'Security']" :key="cat"
+                                @click="templateFilter = cat"
+                                :class="['px-4 py-2 rounded-full text-sm transition-colors',
+                                         templateFilter === cat ? 'bg-pink-600 text-white' : 'bg-gray-700 text-gray-300 hover:bg-gray-600']">
+                            {{ cat }}
+                        </button>
+                    </div>
+
+                    <!-- Template Grid -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                        <div v-for="template in filteredTemplates" :key="template.id"
+                             class="bg-gray-800 rounded-xl p-4 border-2 border-transparent hover:border-pink-500 transition-all cursor-pointer">
+                            <div class="flex items-center gap-3 mb-3">
+                                <div class="w-10 h-10 rounded-lg bg-pink-600 flex items-center justify-center text-xl">
+                                    {{ getTemplateIcon(template.icon) }}
+                                </div>
+                                <div>
+                                    <h3 class="font-semibold text-white">{{ template.name }}</h3>
+                                    <span class="text-xs text-gray-500">{{ template.category }}</span>
+                                </div>
+                            </div>
+                            <p class="text-sm text-gray-400 mb-3">{{ template.description }}</p>
+                            <div class="flex items-center justify-between text-xs text-gray-500 mb-3">
+                                <span>{{ template.nodes?.length || template.node_count }} nodes</span>
+                                <span>{{ template.links?.length || template.link_count }} links</span>
+                                <div class="flex gap-1">
+                                    <span v-for="i in 4" :key="i"
+                                          :class="['w-2 h-2 rounded-full', i <= template.complexity ? 'bg-pink-500' : 'bg-gray-600']"></span>
+                                </div>
+                            </div>
+                            <div class="flex gap-2">
+                                <button @click="deployTemplate(template.id)"
+                                        class="flex-1 py-2 bg-pink-600 hover:bg-pink-500 rounded-lg text-sm font-medium transition-colors">
+                                    Deploy
+                                </button>
+                                <button @click="customizeTemplate(template.id)"
+                                        class="flex-1 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">
+                                    Customize
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Deploy Status Overlay -->
+                    <div v-if="deploying" class="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+                        <div class="bg-gray-800 rounded-xl p-8 text-center">
+                            <div class="w-12 h-12 border-4 border-gray-600 border-t-pink-500 rounded-full animate-spin mx-auto mb-4"></div>
+                            <h3 class="text-xl font-semibold mb-2">{{ deployStatus.title }}</h3>
+                            <p class="text-gray-400">{{ deployStatus.message }}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Builder Tab -->
+            <div v-show="activeTab === 'builder'" class="vnc-container">
+                <iframe src="/builder" class="builder-frame"></iframe>
+            </div>
+
+            <!-- CORE GUI Tab with Optional Sidebar -->
+            <div v-show="activeTab === 'core'" class="vnc-container flex">
+                <!-- Main VNC View -->
+                <div :class="['transition-all duration-300', sidebarOpen ? 'flex-1' : 'w-full']">
+                    <iframe :src="coreVncUrl" class="w-full h-full border-none" @load="onCoreLoad"></iframe>
+                </div>
+
+                <!-- Collapsible Sidebar Toggle -->
+                <button @click="sidebarOpen = !sidebarOpen"
+                        class="absolute right-0 top-1/2 -translate-y-1/2 z-20 bg-gray-800 hover:bg-gray-700 p-2 rounded-l-lg border border-r-0 border-gray-600"
+                        :class="sidebarOpen ? 'right-[350px]' : 'right-0'">
+                    <svg class="w-4 h-4 transition-transform" :class="sidebarOpen ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+
+                <!-- Modular Sidebar Panel -->
+                <div v-show="sidebarOpen" class="w-[350px] bg-gray-800 border-l border-gray-700 flex flex-col overflow-hidden">
+                    <!-- Panel Selector Tabs -->
+                    <div class="flex border-b border-gray-700 bg-gray-900">
+                        <button v-for="panel in availablePanels" :key="panel.id"
+                                @click="activePanel = panel.id"
+                                :class="['flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                                         activePanel === panel.id ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white']">
+                            <span class="flex items-center justify-center gap-1">
+                                <span v-html="panel.icon"></span>
+                                {{ panel.name }}
+                            </span>
+                        </button>
+                    </div>
+
+                    <!-- Panel Content -->
+                    <div class="flex-1 overflow-y-auto">
+                        <!-- AI Builder Panel -->
+                        <div v-show="activePanel === 'ai-builder'" class="p-4 space-y-4">
+                            <div class="text-sm text-gray-400 mb-2">Describe what to add to your topology:</div>
+                            <textarea v-model="aiPrompt"
+                                      placeholder="e.g., Add a Kali Linux workstation to the OT network for penetration testing..."
+                                      class="w-full h-24 px-3 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-blue-500 focus:outline-none text-sm resize-none"></textarea>
+                            <button @click="submitAiPrompt"
+                                    :disabled="!aiPrompt || aiProcessing"
+                                    :class="['w-full py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2',
+                                             aiPrompt && !aiProcessing ? 'bg-blue-600 hover:bg-blue-500' : 'bg-gray-600 cursor-not-allowed']">
+                                <span v-if="aiProcessing" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                                {{ aiProcessing ? 'Processing...' : 'Add to Topology' }}
+                            </button>
+
+                            <!-- AI Response -->
+                            <div v-if="aiResponse" class="mt-4 p-3 bg-gray-700 rounded-lg text-sm">
+                                <div class="text-green-400 font-medium mb-1">Result:</div>
+                                <div class="text-gray-300">{{ aiResponse }}</div>
+                            </div>
+
+                            <!-- Quick Actions -->
+                            <div class="border-t border-gray-700 pt-4 mt-4">
+                                <div class="text-xs text-gray-500 mb-2">Quick Actions:</div>
+                                <div class="grid grid-cols-2 gap-2">
+                                    <button @click="quickAction('kali')" class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">+ Kali Linux</button>
+                                    <button @click="quickAction('plc')" class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">+ OpenPLC</button>
+                                    <button @click="quickAction('hmi')" class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">+ HMI Station</button>
+                                    <button @click="quickAction('router')" class="px-2 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">+ Router</button>
+                                </div>
+                            </div>
+
+                            <!-- Current Topology Summary -->
+                            <div class="border-t border-gray-700 pt-4 mt-4">
+                                <div class="text-xs text-gray-500 mb-2">Current Topology:</div>
+                                <div class="space-y-1 text-xs">
+                                    <div class="flex justify-between text-gray-400">
+                                        <span>Networks:</span>
+                                        <span class="text-white">{{ topologyNetworks.length }}</span>
+                                    </div>
+                                    <div v-for="net in topologyNetworks" :key="net.id" class="pl-2 text-gray-500">
+                                        {{ net.display_name || net.name }} ({{ net.subnet || 'auto' }})
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Packet Capture Panel -->
+                        <div v-show="activePanel === 'capture'" class="p-4 space-y-4 overflow-y-auto" style="max-height: calc(100vh - 200px);">
+                            <!-- Refresh Bridges Button -->
+                            <button @click="refreshCaptureBridges"
+                                    class="w-full py-2 bg-purple-600 hover:bg-purple-500 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" :class="{'animate-spin': loadingBridges}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                {{ loadingBridges ? 'Scanning...' : 'Scan Network Bridges' }}
+                            </button>
+
+                            <!-- Active Captures Section -->
+                            <div v-if="activeCaptures.length > 0" class="border-b border-gray-700 pb-4">
+                                <div class="text-xs text-gray-400 mb-2 flex items-center gap-2">
+                                    <span class="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                                    Active Captures ({{ activeCaptures.length }})
+                                </div>
+                                <div v-for="cap in activeCaptures" :key="cap.capture_id"
+                                     class="mb-2 p-3 bg-red-900/30 rounded-lg border border-red-700">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="font-medium text-sm text-red-300">{{ cap.bridge }}</div>
+                                            <div class="text-xs text-gray-400">{{ cap.file_size_human }} captured</div>
+                                        </div>
+                                        <button @click="stopCapture(cap.capture_id)"
+                                                class="px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-xs font-medium">
+                                            Stop
+                                        </button>
+                                    </div>
+                                </div>
+                                <button @click="stopAllCaptures"
+                                        class="w-full py-1.5 bg-red-700 hover:bg-red-600 rounded text-xs font-medium mt-2">
+                                    Stop All Captures
+                                </button>
+                            </div>
+
+                            <!-- Available Bridges -->
+                            <div>
+                                <div class="text-xs text-gray-400 mb-2 flex items-center gap-2">
+                                    <span class="w-2 h-2 bg-purple-500 rounded-full"></span>
+                                    Network Bridges ({{ captureBridges.length }})
+                                </div>
+
+                                <div v-if="captureBridges.length === 0 && !loadingBridges" class="text-gray-500 text-sm text-center py-3 bg-gray-800 rounded-lg">
+                                    <div class="text-2xl mb-1">🔌</div>
+                                    <div>No network bridges found</div>
+                                    <div class="text-xs mt-1">Start a CORE session first</div>
+                                </div>
+
+                                <!-- Optional Filter Input -->
+                                <div v-if="captureBridges.length > 0" class="mb-3">
+                                    <input v-model="captureFilter"
+                                           type="text"
+                                           placeholder="BPF filter (e.g., port 1883, icmp)"
+                                           class="w-full px-3 py-2 bg-gray-700 rounded border border-gray-600 text-xs focus:border-purple-500 focus:outline-none">
+                                </div>
+
+                                <div v-for="bridge in captureBridges" :key="bridge.name"
+                                     class="mb-2 p-3 bg-gray-700 rounded-lg border-l-4"
+                                     :class="bridge.capturing ? 'border-red-500' : (bridge.wireshark_active ? 'border-green-500' : 'border-purple-500')">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="font-medium text-sm flex items-center gap-2">
+                                                <span>{{ bridge.network_type === 'switch' ? '🔀' : (bridge.network_type === 'hub' ? '🔗' : '📡') }}</span>
+                                                {{ bridge.display_name }}
+                                            </div>
+                                            <div class="text-xs text-gray-400 mt-1">
+                                                {{ bridge.name }}
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <!-- View Live button - launches Wireshark GUI -->
+                                            <button v-if="!bridge.wireshark_active"
+                                                    @click="launchWireshark(bridge.name)"
+                                                    class="px-2 py-1.5 bg-green-600 hover:bg-green-500 rounded text-xs font-medium flex items-center gap-1"
+                                                    title="Open Wireshark in noVNC desktop">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
+                                                </svg>
+                                                View
+                                            </button>
+                                            <button v-else
+                                                    @click="stopWireshark(bridge.name)"
+                                                    class="px-2 py-1.5 bg-green-700 hover:bg-green-600 rounded text-xs font-medium flex items-center gap-1"
+                                                    title="Wireshark running - click to stop">
+                                                <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                                                Live
+                                            </button>
+                                            <!-- Capture button - saves to PCAP file -->
+                                            <button v-if="!bridge.capturing"
+                                                    @click="startCapture(bridge.name)"
+                                                    class="px-2 py-1.5 bg-purple-600 hover:bg-purple-500 rounded text-xs font-medium"
+                                                    title="Save to PCAP file">
+                                                Save
+                                            </button>
+                                            <span v-else class="px-2 py-1.5 bg-red-600 rounded text-xs font-medium flex items-center gap-1">
+                                                <span class="w-2 h-2 bg-white rounded-full animate-pulse"></span>
+                                                Rec
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Node PCAP Service Section -->
+                            <div class="border-t border-gray-700 pt-4 mt-4">
+                                <div class="text-xs text-gray-400 mb-2 flex items-center justify-between">
+                                    <div class="flex items-center gap-2">
+                                        <span class="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                        Node PCAP Service
+                                    </div>
+                                    <button @click="enablePcapAllNodes"
+                                            class="px-2 py-1 bg-blue-600 hover:bg-blue-500 rounded text-xs">
+                                        Enable All
+                                    </button>
+                                </div>
+                                <div class="text-xs text-gray-500 mb-2">
+                                    Enable auto-capture on node interfaces (saved when session stops)
+                                </div>
+                                <div v-if="pcapNodes.length === 0" class="text-gray-500 text-xs text-center py-2">
+                                    Deploy a topology to configure node PCAP
+                                </div>
+                                <div v-for="node in pcapNodes" :key="node.id"
+                                     class="flex items-center justify-between py-1 px-2 bg-gray-800 rounded mb-1">
+                                    <span class="text-xs">{{ node.name }}</span>
+                                    <button @click="toggleNodePcap(node)"
+                                            :class="['px-2 py-0.5 rounded text-xs',
+                                                     node.pcap_enabled ? 'bg-green-600' : 'bg-gray-600']">
+                                        {{ node.pcap_enabled ? 'ON' : 'OFF' }}
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Quick Tips -->
+                            <div class="border-t border-gray-700 pt-4 mt-4">
+                                <div class="text-xs text-gray-500 mb-2">Quick Tips:</div>
+                                <div class="text-xs text-gray-400 space-y-1">
+                                    <div>• <b>Bridge capture</b>: All traffic on network segment</div>
+                                    <div>• <b>Node PCAP</b>: Per-interface capture, saved on stop</div>
+                                    <div>• BPF filters: <code class="bg-gray-800 px-1 rounded">port 80</code>, <code class="bg-gray-800 px-1 rounded">host 10.0.1.10</code></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lab Instructions Panel (Future) -->
+                        <div v-show="activePanel === 'lab'" class="p-4">
+                            <div class="text-center text-gray-500 py-8">
+                                <svg class="w-12 h-12 mx-auto mb-3 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/>
+                                </svg>
+                                <div class="text-sm">Lab Instructions</div>
+                                <div class="text-xs mt-1">Coming soon - guided exercises</div>
+                            </div>
+                        </div>
+
+                        <!-- VNC Hosts Panel -->
+                        <div v-show="activePanel === 'hosts'" class="p-4 space-y-3 overflow-y-auto" style="max-height: calc(100vh - 200px);">
+                            <!-- Refresh button -->
+                            <button @click="refreshCoreVncNodes"
+                                    class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                <svg class="w-4 h-4" :class="{'animate-spin': loadingCoreNodes}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                </svg>
+                                {{ loadingCoreNodes ? 'Scanning...' : 'Scan for VNC Nodes' }}
+                            </button>
+
+                            <!-- CORE VNC Nodes Section -->
+                            <div class="mt-4">
+                                <div class="text-xs text-gray-400 mb-2 flex items-center gap-2">
+                                    <span class="w-2 h-2 bg-purple-500 rounded-full"></span>
+                                    CORE Network Nodes ({{ coreVncNodes.length }})
+                                </div>
+
+                                <div v-if="coreVncNodes.length === 0 && !loadingCoreNodes" class="text-gray-500 text-sm text-center py-3 bg-gray-800 rounded-lg">
+                                    <div class="text-2xl mb-1">🖥️</div>
+                                    <div>No VNC-capable nodes found</div>
+                                    <div class="text-xs mt-1">Start a topology with HMI or Kali nodes</div>
+                                </div>
+
+                                <div v-for="node in coreVncNodes" :key="node.name"
+                                     class="mb-2 p-3 bg-gray-700 rounded-lg border-l-4"
+                                     :class="node.vnc_started ? 'border-green-500' : 'border-purple-500'">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <div class="font-medium text-sm flex items-center gap-2">
+                                                <span>{{ node.type === 'hmi' ? '🖥️' : node.type === 'kali' ? '🐉' : '💻' }}</span>
+                                                {{ node.name }}
+                                            </div>
+                                            <div class="text-xs text-gray-400 mt-1">
+                                                {{ node.image }} • {{ node.ip || 'No IP' }}
+                                            </div>
+                                        </div>
+                                        <div v-if="node.vnc_starting" class="text-xs text-yellow-400 flex items-center gap-1">
+                                            <svg class="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Starting...
+                                        </div>
+                                    </div>
+
+                                    <div class="flex gap-2 mt-2">
+                                        <button v-if="!node.vnc_started && !node.vnc_starting"
+                                                @click="startNodeVnc(node)"
+                                                class="flex-1 py-1.5 bg-green-600 hover:bg-green-500 rounded text-xs font-medium">
+                                            Start VNC Desktop
+                                        </button>
+                                        <button v-else-if="node.vnc_started"
+                                                @click="openNodeVnc(node)"
+                                                class="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-xs font-medium"
+                                                title="Opens in new tab with Lab Guide sidebar">
+                                            Open Desktop ↗
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Manual VNC Hosts Section -->
+                            <div class="mt-4 pt-4 border-t border-gray-600">
+                                <div class="text-xs text-gray-400 mb-2 flex items-center gap-2">
+                                    <span class="w-2 h-2 bg-green-500 rounded-full"></span>
+                                    Manual VNC Sessions
+                                </div>
+
+                                <button @click="showAddHostModal = true"
+                                        class="w-full py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm flex items-center justify-center gap-2 mb-2">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                                    </svg>
+                                    Add External VNC Host
+                                </button>
+
+                                <div v-if="vncHosts.length === 0" class="text-gray-500 text-xs text-center py-2">
+                                    No manual hosts added
+                                </div>
+                                <div v-for="host in vncHosts" :key="host.id"
+                                     class="flex items-center justify-between p-2 bg-gray-700 rounded-lg mb-1">
+                                    <div class="flex items-center gap-2">
+                                        <span class="status-dot" :class="host.status"></span>
+                                        <span class="text-sm">{{ host.name }}</span>
+                                    </div>
+                                    <div class="flex gap-1">
+                                        <button @click="activeTab = 'vnc-' + host.id" class="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs">View</button>
+                                        <button @click="removeHost(host.id)" class="px-2 py-1 bg-red-600/50 hover:bg-red-600 rounded text-xs">×</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic VNC Host Tabs with Sidebar -->
+            <div v-for="host in vncHosts" :key="host.id"
+                 v-show="activeTab === 'vnc-' + host.id"
+                 class="vnc-container flex relative">
+                <!-- Main VNC View -->
+                <div :class="['transition-all duration-300 h-full', host.sidebarOpen ? 'flex-1' : 'w-full']">
+                    <iframe :src="host.url" class="w-full h-full border-none" @load="() => onHostLoad(host)"></iframe>
+                </div>
+
+                <!-- Sidebar Toggle Button -->
+                <button @click="host.sidebarOpen = !host.sidebarOpen"
+                        class="absolute top-1/2 -translate-y-1/2 z-20 bg-gray-800 hover:bg-gray-700 p-2 rounded-l-lg border border-r-0 border-gray-600 transition-all"
+                        :style="{ right: host.sidebarOpen ? '320px' : '0' }">
+                    <svg class="w-4 h-4 transition-transform" :class="host.sidebarOpen ? '' : 'rotate-180'" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                    </svg>
+                </button>
+
+                <!-- Host Info Sidebar -->
+                <div v-show="host.sidebarOpen" class="w-[320px] bg-gray-800 border-l border-gray-700 flex flex-col overflow-hidden">
+                    <!-- Sidebar Header -->
+                    <div class="p-3 border-b border-gray-700 bg-gray-900">
+                        <div class="flex items-center gap-2">
+                            <span class="text-lg">{{ host.type === 'hmi' ? '🖥️' : host.type === 'kali' ? '🐉' : '💻' }}</span>
+                            <div>
+                                <div class="font-semibold text-white">{{ host.name }}</div>
+                                <div v-if="host.nodeIp" class="text-xs text-gray-400 font-mono">{{ host.nodeIp }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Sidebar Tabs -->
+                    <div class="flex border-b border-gray-700 bg-gray-900">
+                        <button @click="host.activePanel = 'info'"
+                                :class="['flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                                         host.activePanel === 'info' || !host.activePanel ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white']">
+                            Info
+                        </button>
+                        <button @click="host.activePanel = 'lab'"
+                                :class="['flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                                         host.activePanel === 'lab' ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white']">
+                            Lab Guide
+                        </button>
+                        <button @click="host.activePanel = 'ai'"
+                                :class="['flex-1 px-3 py-2 text-xs font-medium transition-colors',
+                                         host.activePanel === 'ai' ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white']">
+                            AI Help
+                        </button>
+                    </div>
+
+                    <!-- Panel Content -->
+                    <div class="flex-1 overflow-y-auto p-4">
+                        <!-- Info Panel -->
+                        <div v-show="host.activePanel === 'info' || !host.activePanel" class="space-y-4">
+                            <div class="bg-gray-900 rounded-lg p-4">
+                                <h4 class="text-gray-400 text-xs uppercase mb-3">Node Details</h4>
+                                <div class="space-y-2 text-sm">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Name:</span>
+                                        <span class="text-white font-mono">{{ host.name }}</span>
+                                    </div>
+                                    <div v-if="host.nodeIp" class="flex justify-between">
+                                        <span class="text-gray-400">IP Address:</span>
+                                        <span class="text-white font-mono">{{ host.nodeIp }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Type:</span>
+                                        <span class="text-white capitalize">{{ host.type || 'Workstation' }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-400">Status:</span>
+                                        <span :class="host.status === 'connected' ? 'text-green-400' : 'text-yellow-400'">{{ host.status }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-900 rounded-lg p-4">
+                                <h4 class="text-gray-400 text-xs uppercase mb-3">Quick Actions</h4>
+                                <div class="space-y-2">
+                                    <button @click="window.open(host.url, '_blank')"
+                                            class="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-left flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/>
+                                        </svg>
+                                        Open in New Tab
+                                    </button>
+                                    <button @click="refreshVncHost(host)"
+                                            class="w-full px-3 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm text-left flex items-center gap-2">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                        </svg>
+                                        Refresh Connection
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="bg-gray-900 rounded-lg p-4">
+                                <h4 class="text-gray-400 text-xs uppercase mb-3">Keyboard Shortcuts</h4>
+                                <div class="space-y-1 text-xs text-gray-400">
+                                    <div>Ctrl+Alt+Del: Send to VM</div>
+                                    <div>Ctrl+Enter: Send AI message</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Lab Guide Panel -->
+                        <div v-show="host.activePanel === 'lab'" class="space-y-4">
+                            <div v-if="!currentLabTitle" class="text-gray-400 text-sm text-center py-8">
+                                <svg class="w-12 h-12 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                                </svg>
+                                <p>No lab is currently active.</p>
+                                <p class="text-xs mt-2">Start a lab from Quick Start to see instructions here.</p>
+                            </div>
+                            <div v-else class="text-gray-300 text-sm">
+                                <h3 class="text-white font-medium mb-2">{{ currentLabTitle }}</h3>
+                                <p class="text-gray-400 text-xs">Lab instructions will appear here.</p>
+                            </div>
+                        </div>
+
+                        <!-- AI Help Panel -->
+                        <div v-show="host.activePanel === 'ai'" class="space-y-4">
+                            <div class="text-gray-400 text-sm text-center py-4">
+                                <svg class="w-12 h-12 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                          d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                                <p>Ask questions about {{ host.name }}</p>
+                                <button @click="showAiHelpModal = true"
+                                        class="mt-3 px-4 py-2 bg-purple-600 hover:bg-purple-500 rounded text-sm">
+                                    Open AI Help
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Host Wizard Modal -->
+        <div v-if="showAddHostModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 rounded-xl p-6 w-[600px] max-w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <!-- Header -->
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-green-400">Add Host to Topology</h2>
+                    <button @click="closeAddHostModal" class="text-gray-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Step Indicator -->
+                <div class="flex items-center justify-center mb-6">
+                    <div v-for="(stepName, idx) in ['Type', 'Network', 'Details', 'Review']" :key="idx"
+                         class="flex items-center">
+                        <div :class="['w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium',
+                                      wizardStep > idx ? 'bg-green-600 text-white' :
+                                      wizardStep === idx ? 'bg-green-500 text-white' : 'bg-gray-700 text-gray-400']">
+                            {{ idx + 1 }}
+                        </div>
+                        <span :class="['text-xs ml-1 mr-3', wizardStep >= idx ? 'text-white' : 'text-gray-500']">{{ stepName }}</span>
+                        <div v-if="idx < 3" class="w-8 h-0.5 bg-gray-700 mr-3">
+                            <div :class="['h-full bg-green-500 transition-all', wizardStep > idx ? 'w-full' : 'w-0']"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 0: Choose Host Type -->
+                <div v-show="wizardStep === 0" class="space-y-4">
+                    <h3 class="text-lg font-medium text-gray-200 mb-4">What type of host do you want to add?</h3>
+
+                    <!-- Quick Add - Running VNC Hosts -->
+                    <div v-if="availableHosts.length > 0" class="mb-4">
+                        <label class="block text-sm text-gray-400 mb-2">Quick Add (Running VNC Hosts)</label>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button v-for="host in availableHosts" :key="host.name"
+                                    @click="quickAddHost(host)"
+                                    class="text-left px-3 py-2 bg-green-900 hover:bg-green-800 rounded border border-green-700 flex items-center justify-between">
+                                <span>
+                                    <span class="font-medium text-green-300">{{ host.name }}</span>
+                                    <span class="text-xs text-gray-400 block">{{ host.ip }}</span>
+                                </span>
+                                <span class="text-xs text-green-400">VNC :{{ host.port }}</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-gray-700 pt-4">
+                        <label class="block text-sm text-gray-400 mb-3">Or add a new host to the topology</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <button @click="selectHostType('docker')"
+                                    :class="['p-4 rounded-lg border-2 text-left transition-all',
+                                             newHostWizard.type === 'docker' ? 'border-green-500 bg-green-900/30' : 'border-gray-700 hover:border-gray-500']">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <span class="text-2xl">🐳</span>
+                                    <span class="font-medium">Docker Container</span>
+                                </div>
+                                <p class="text-xs text-gray-400">Add a Docker-based node like OpenPLC, Kali, HMI Workstation</p>
+                            </button>
+                            <button @click="selectHostType('host')"
+                                    :class="['p-4 rounded-lg border-2 text-left transition-all',
+                                             newHostWizard.type === 'host' ? 'border-green-500 bg-green-900/30' : 'border-gray-700 hover:border-gray-500']">
+                                <div class="flex items-center gap-3 mb-2">
+                                    <span class="text-2xl">💻</span>
+                                    <span class="font-medium">Standard Host</span>
+                                </div>
+                                <p class="text-xs text-gray-400">Add a basic Linux host with shell access</p>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 1: Select Docker Image (only for docker type) OR Network -->
+                <div v-show="wizardStep === 1" class="space-y-4">
+                    <div v-if="newHostWizard.type === 'docker'">
+                        <h3 class="text-lg font-medium text-gray-200 mb-4">Select Docker Image</h3>
+                        <div v-for="category in dockerImages" :key="category.category" class="mb-4">
+                            <label class="block text-sm text-gray-400 mb-2">{{ category.category }}</label>
+                            <div class="grid grid-cols-1 gap-2">
+                                <button v-for="img in category.images" :key="img.id"
+                                        @click="selectDockerImage(img)"
+                                        :class="['w-full text-left px-4 py-3 rounded-lg border-2 transition-all',
+                                                 newHostWizard.docker_image === img.id ? 'border-green-500 bg-green-900/30' : 'border-gray-700 hover:border-gray-500']">
+                                    <div class="flex items-center justify-between">
+                                        <div>
+                                            <span class="font-medium text-white">{{ img.name }}</span>
+                                            <p class="text-xs text-gray-400">{{ img.description }}</p>
+                                        </div>
+                                        <span v-if="img.ports?.length" class="text-xs text-green-400 bg-green-900/50 px-2 py-1 rounded">
+                                            {{ img.ports.join(', ') }}
+                                        </span>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else>
+                        <h3 class="text-lg font-medium text-gray-200 mb-4">Select Network to Connect</h3>
+                        <div v-if="topologyNetworks.length === 0" class="text-center py-8 text-gray-400">
+                            <p class="mb-2">No topology deployed yet.</p>
+                            <p class="text-sm">Deploy a template first, then add hosts.</p>
+                        </div>
+                        <div v-else class="space-y-2">
+                            <button v-for="net in topologyNetworks" :key="net.id"
+                                    @click="selectNetwork(net)"
+                                    :class="['w-full text-left px-4 py-3 rounded-lg border-2 transition-all',
+                                             newHostWizard.network_id === net.id ? 'border-green-500 bg-green-900/30' : 'border-gray-700 hover:border-gray-500']">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <span class="font-medium text-white">{{ net.display_name || net.name }}</span>
+                                        <p class="text-xs text-gray-400">{{ net.type }} - {{ net.name }}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <span v-if="net.subnet" class="text-xs text-blue-400">{{ net.subnet }}</span>
+                                        <p v-if="net.next_ip" class="text-xs text-gray-500">Next: {{ net.next_ip }}</p>
+                                    </div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Select Network (for Docker) OR Host Details -->
+                <div v-show="wizardStep === 2" class="space-y-4">
+                    <div v-if="newHostWizard.type === 'docker'">
+                        <h3 class="text-lg font-medium text-gray-200 mb-4">Select Network to Connect</h3>
+                        <div v-if="topologyNetworks.length === 0" class="text-center py-8 text-gray-400">
+                            <p class="mb-2">No topology deployed yet.</p>
+                            <p class="text-sm">Deploy a template first, then add hosts.</p>
+                        </div>
+                        <div v-else class="space-y-2">
+                            <button v-for="net in topologyNetworks" :key="net.id"
+                                    @click="selectNetwork(net)"
+                                    :class="['w-full text-left px-4 py-3 rounded-lg border-2 transition-all',
+                                             newHostWizard.network_id === net.id ? 'border-green-500 bg-green-900/30' : 'border-gray-700 hover:border-gray-500']">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <span class="font-medium text-white">{{ net.display_name || net.name }}</span>
+                                        <p class="text-xs text-gray-400">{{ net.type }} - {{ net.name }}</p>
+                                    </div>
+                                    <div class="text-right">
+                                        <span v-if="net.subnet" class="text-xs text-blue-400">{{ net.subnet }}</span>
+                                        <p v-if="net.next_ip" class="text-xs text-gray-500">Next: {{ net.next_ip }}</p>
+                                    </div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-else>
+                        <h3 class="text-lg font-medium text-gray-200 mb-4">Host Details</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">Host Name</label>
+                                <input v-model="newHostWizard.name" type="text" placeholder="my-host"
+                                       class="w-full px-4 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-green-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">IP Address</label>
+                                <input v-model="newHostWizard.ip" type="text" :placeholder="newHostWizard.suggested_ip || '10.0.0.50'"
+                                       class="w-full px-4 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-green-500 focus:outline-none">
+                                <p v-if="newHostWizard.suggested_ip" class="text-xs text-gray-500 mt-1">Suggested: {{ newHostWizard.suggested_ip }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Host Details (for Docker) OR Review -->
+                <div v-show="wizardStep === 3" class="space-y-4">
+                    <div v-if="newHostWizard.type === 'docker'">
+                        <h3 class="text-lg font-medium text-gray-200 mb-4">Host Details</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">Host Name</label>
+                                <input v-model="newHostWizard.name" type="text" placeholder="my-container"
+                                       class="w-full px-4 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-green-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-400 mb-1">IP Address</label>
+                                <input v-model="newHostWizard.ip" type="text" :placeholder="newHostWizard.suggested_ip || '10.0.0.50'"
+                                       class="w-full px-4 py-2 bg-gray-700 rounded-lg border border-gray-600 focus:border-green-500 focus:outline-none">
+                                <p v-if="newHostWizard.suggested_ip" class="text-xs text-gray-500 mt-1">Suggested: {{ newHostWizard.suggested_ip }}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-else>
+                        <!-- Review for standard host -->
+                        <h3 class="text-lg font-medium text-gray-200 mb-4">Review & Confirm</h3>
+                        <div class="bg-gray-700 rounded-lg p-4 space-y-3">
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Type:</span>
+                                <span class="text-white">Standard Host</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Name:</span>
+                                <span class="text-white">{{ newHostWizard.name }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">Network:</span>
+                                <span class="text-white">{{ newHostWizard.network_name }}</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-gray-400">IP Address:</span>
+                                <span class="text-green-400">{{ newHostWizard.ip }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: Final Review (only for Docker) -->
+                <div v-show="wizardStep === 4 && newHostWizard.type === 'docker'" class="space-y-4">
+                    <h3 class="text-lg font-medium text-gray-200 mb-4">Review & Confirm</h3>
+                    <div class="bg-gray-700 rounded-lg p-4 space-y-3">
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Type:</span>
+                            <span class="text-white">Docker Container</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Image:</span>
+                            <span class="text-blue-400">{{ newHostWizard.docker_image }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Name:</span>
+                            <span class="text-white">{{ newHostWizard.name }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">Network:</span>
+                            <span class="text-white">{{ newHostWizard.network_name }}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-400">IP Address:</span>
+                            <span class="text-green-400">{{ newHostWizard.ip }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Navigation Buttons -->
+                <div class="flex justify-between mt-6 pt-4 border-t border-gray-700">
+                    <button @click="wizardBack"
+                            :class="['px-4 py-2 rounded-lg', wizardStep === 0 ? 'invisible' : 'bg-gray-700 hover:bg-gray-600']">
+                        Back
+                    </button>
+                    <div class="flex gap-2">
+                        <button @click="closeAddHostModal"
+                                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
+                            Cancel
+                        </button>
+                        <button v-if="!isLastWizardStep"
+                                @click="wizardNext"
+                                :disabled="!canProceedWizard"
+                                :class="['px-4 py-2 rounded-lg', canProceedWizard ? 'bg-green-600 hover:bg-green-500' : 'bg-gray-600 cursor-not-allowed']">
+                            Next
+                        </button>
+                        <button v-else
+                                @click="submitAddHost"
+                                :disabled="addingHost"
+                                class="px-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg flex items-center gap-2">
+                            <span v-if="addingHost" class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                            {{ addingHost ? 'Adding...' : 'Add Host' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Help Modal -->
+        <div v-if="showAiHelpModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 rounded-xl w-[600px] max-w-full mx-4 max-h-[85vh] flex flex-col">
+                <div class="flex items-center justify-between p-4 border-b border-gray-700">
+                    <h2 class="text-xl font-bold text-purple-400 flex items-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        AI Help
+                    </h2>
+                    <button @click="showAiHelpModal = false" class="text-gray-400 hover:text-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Chat Messages -->
+                <div class="flex-1 overflow-y-auto p-4 space-y-4" ref="aiChatMessages">
+                    <div v-if="aiConversation.length === 0" class="text-center text-gray-500 py-8">
+                        <svg class="w-16 h-16 mx-auto mb-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-lg">Ask a question about your lab</p>
+                        <p class="text-sm mt-2">You can include a screenshot for context</p>
+                    </div>
+
+                    <div v-for="(msg, index) in aiConversation" :key="index"
+                         :class="['p-3 rounded-lg', msg.role === 'user' ? 'bg-purple-900 ml-8' : 'bg-gray-700 mr-8']">
+                        <div v-if="msg.screenshot" class="mb-2">
+                            <img :src="msg.screenshot" class="rounded border border-gray-600 max-w-full max-h-32" />
+                        </div>
+                        <div v-html="formatAiMessage(msg.content)" class="text-sm"></div>
+                    </div>
+
+                    <div v-if="aiLoading" class="bg-gray-700 mr-8 p-3 rounded-lg">
+                        <span class="text-sm text-gray-400 animate-pulse">Thinking...</span>
+                    </div>
+                </div>
+
+                <!-- Input Area -->
+                <div class="p-4 border-t border-gray-700">
+                    <!-- Screenshot Button -->
+                    <div class="mb-3">
+                        <button @click="captureAiScreenshot"
+                                :class="['flex items-center gap-2 px-3 py-2 rounded border text-sm transition-colors',
+                                         aiScreenshotAttached ? 'bg-green-900 border-green-600 text-green-300' : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600']">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                            {{ aiScreenshotAttached ? 'Screenshot attached (CORE tab)' : 'Capture CORE screenshot' }}
+                        </button>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <textarea v-model="aiQuestion"
+                                  @keydown.enter.ctrl="sendAiHelpQuestion"
+                                  placeholder="Ask a question... (Ctrl+Enter to send)"
+                                  rows="2"
+                                  class="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded text-white text-sm resize-none focus:border-purple-500 focus:outline-none"></textarea>
+                        <button @click="sendAiHelpQuestion"
+                                :disabled="!aiQuestion.trim() && !aiScreenshotAttached"
+                                class="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded text-sm font-medium">
+                            Send
+                        </button>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-2 text-right">
+                        Context: {{ currentLabTitle || 'No active lab' }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Micro:bit Settings Modal - Full Control Center -->
+        <div v-if="showMicrobitSettings" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div class="bg-gray-800 rounded-xl p-6 w-[900px] max-w-full mx-4 max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xl font-bold text-teal-400 flex items-center gap-3">
+                        <div class="w-8 h-8 bg-teal-600 rounded-lg flex items-center justify-center text-white font-bold">M</div>
+                        Micro:bit Control Center
+                    </h2>
+                    <div class="flex items-center gap-4">
+                        <button @click="showMicrobitSettings = false" class="text-gray-400 hover:text-white">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Connection Status Bar -->
+                <div class="mb-4 p-3 bg-gray-900 rounded-lg flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div :class="['w-3 h-3 rounded-full', microbitConnected ? 'bg-green-500' : 'bg-gray-600']"></div>
+                        <span :class="microbitConnected ? 'text-green-400' : 'text-gray-400'">
+                            {{ microbitConnected ? 'Connected' : 'Disconnected' }}
+                        </span>
+                        <span class="text-gray-500 text-sm">|</span>
+                        <span class="text-gray-400 text-sm">ID: <code class="text-teal-400">{{ microbitSensorId }}</code></span>
+                        <span class="text-gray-500 text-sm">|</span>
+                        <span class="text-gray-400 text-sm">{{ microbitSampleCount }} samples</span>
+                    </div>
+                    <button v-if="!microbitConnected" @click="connectMicrobit"
+                            class="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 rounded text-sm font-medium">
+                        Connect
+                    </button>
+                    <button v-else @click="disconnectMicrobit"
+                            class="px-4 py-1.5 bg-red-600 hover:bg-red-500 rounded text-sm font-medium">
+                        Disconnect
+                    </button>
+                </div>
+
+                <!-- Two Column Layout -->
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- Left Column - Sensors -->
+                    <div>
+                        <!-- Accelerometer -->
+                        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Accelerometer (mg)</h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">X</div>
+                                    <div class="text-xl font-mono text-red-400">{{ microbitLastData.x || '--' }}</div>
+                                </div>
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">Y</div>
+                                    <div class="text-xl font-mono text-green-400">{{ microbitLastData.y || '--' }}</div>
+                                </div>
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">Z</div>
+                                    <div class="text-xl font-mono text-blue-400">{{ microbitLastData.z || '--' }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Environment Sensors -->
+                        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Environment</h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">Temp</div>
+                                    <div class="text-xl font-mono text-orange-400">{{ microbitLastData.temperature || '--' }}°</div>
+                                </div>
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">Light</div>
+                                    <div class="text-xl font-mono text-yellow-400">{{ microbitLastData.light || '--' }}</div>
+                                </div>
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">Sound</div>
+                                    <div class="text-xl font-mono text-pink-400">{{ microbitLastData.sound || '--' }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Compass & Buttons -->
+                        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Compass & Buttons</h3>
+                            <div class="grid grid-cols-4 gap-2">
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">Heading</div>
+                                    <div class="text-lg font-mono text-purple-400">{{ microbitLastData.compass || '--' }}°</div>
+                                </div>
+                                <div :class="['rounded p-3 text-center transition-all', microbitLastData.buttonA ? 'bg-green-600' : 'bg-gray-800']">
+                                    <div class="text-xs" :class="microbitLastData.buttonA ? 'text-white' : 'text-gray-500'">A</div>
+                                    <div class="text-lg font-bold" :class="microbitLastData.buttonA ? 'text-white' : 'text-gray-600'">{{ microbitLastData.buttonA ? 'ON' : 'OFF' }}</div>
+                                </div>
+                                <div :class="['rounded p-3 text-center transition-all', microbitLastData.buttonB ? 'bg-green-600' : 'bg-gray-800']">
+                                    <div class="text-xs" :class="microbitLastData.buttonB ? 'text-white' : 'text-gray-500'">B</div>
+                                    <div class="text-lg font-bold" :class="microbitLastData.buttonB ? 'text-white' : 'text-gray-600'">{{ microbitLastData.buttonB ? 'ON' : 'OFF' }}</div>
+                                </div>
+                                <div :class="['rounded p-3 text-center transition-all', microbitLastData.logoTouch ? 'bg-yellow-600' : 'bg-gray-800']">
+                                    <div class="text-xs" :class="microbitLastData.logoTouch ? 'text-white' : 'text-gray-500'">Logo</div>
+                                    <div class="text-lg font-bold" :class="microbitLastData.logoTouch ? 'text-white' : 'text-gray-600'">{{ microbitLastData.logoTouch ? 'ON' : 'OFF' }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- GPIO Pins -->
+                        <div class="bg-gray-900 rounded-lg p-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">GPIO Pins</h3>
+                            <div class="grid grid-cols-3 gap-2">
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">P0</div>
+                                    <div class="text-lg font-mono text-purple-300">{{ microbitLastData.gpio?.p0 || '--' }}</div>
+                                </div>
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">P1</div>
+                                    <div class="text-lg font-mono text-purple-300">{{ microbitLastData.gpio?.p1 || '--' }}</div>
+                                </div>
+                                <div class="bg-gray-800 rounded p-3 text-center">
+                                    <div class="text-xs text-gray-500">P2</div>
+                                    <div class="text-lg font-mono text-purple-300">{{ microbitLastData.gpio?.p2 || '--' }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column - Controls -->
+                    <div>
+                        <!-- LED Matrix Control -->
+                        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">LED Matrix Control</h3>
+                            <div class="flex justify-center mb-3">
+                                <div class="inline-grid grid-cols-5 gap-1 p-3 bg-gray-950 rounded-lg">
+                                    <template v-for="row in 5">
+                                        <template v-for="col in 5">
+                                            <button @click="toggleLed(col-1, row-1)"
+                                                    :class="['w-6 h-6 rounded transition-all', ledMatrix[(row-1)*5+(col-1)] ? 'bg-red-500 shadow-lg shadow-red-500/50' : 'bg-gray-700 hover:bg-gray-600']">
+                                            </button>
+                                        </template>
+                                    </template>
+                                </div>
+                            </div>
+                            <div class="flex gap-2 justify-center flex-wrap">
+                                <button @click="sendMicrobitCommand('LEDCLEAR')" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">Clear</button>
+                                <button @click="sendMicrobitCommand('LEDFILL')" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">Fill</button>
+                                <button @click="sendLedPattern('heart')" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">Heart</button>
+                                <button @click="sendLedPattern('smile')" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">Smile</button>
+                                <button @click="sendLedPattern('check')" class="px-3 py-1.5 bg-gray-700 hover:bg-gray-600 rounded text-xs">Check</button>
+                            </div>
+                        </div>
+
+                        <!-- Speaker Control -->
+                        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Speaker Control</h3>
+                            <div class="mb-3">
+                                <div class="text-xs text-gray-500 mb-2">Sound Effects (V2)</div>
+                                <div class="grid grid-cols-3 gap-1">
+                                    <button @click="sendMicrobitCommand('SOUND:GIGGLE')" class="px-2 py-1.5 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-700/50 rounded text-xs text-blue-300">Giggle</button>
+                                    <button @click="sendMicrobitCommand('SOUND:HAPPY')" class="px-2 py-1.5 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-700/50 rounded text-xs text-blue-300">Happy</button>
+                                    <button @click="sendMicrobitCommand('SOUND:HELLO')" class="px-2 py-1.5 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-700/50 rounded text-xs text-blue-300">Hello</button>
+                                    <button @click="sendMicrobitCommand('SOUND:SAD')" class="px-2 py-1.5 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-700/50 rounded text-xs text-blue-300">Sad</button>
+                                    <button @click="sendMicrobitCommand('SOUND:TWINKLE')" class="px-2 py-1.5 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-700/50 rounded text-xs text-blue-300">Twinkle</button>
+                                    <button @click="sendMicrobitCommand('SOUND:YAWN')" class="px-2 py-1.5 bg-blue-900/30 hover:bg-blue-800/50 border border-blue-700/50 rounded text-xs text-blue-300">Yawn</button>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <div class="text-xs text-gray-500 mb-2">Melodies</div>
+                                <div class="grid grid-cols-3 gap-1">
+                                    <button @click="sendMicrobitCommand('MELODY:DADADADUM')" class="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-800/50 border border-purple-700/50 rounded text-xs text-purple-300">Beethoven</button>
+                                    <button @click="sendMicrobitCommand('MELODY:BIRTHDAY')" class="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-800/50 border border-purple-700/50 rounded text-xs text-purple-300">Birthday</button>
+                                    <button @click="sendMicrobitCommand('MELODY:NYAN')" class="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-800/50 border border-purple-700/50 rounded text-xs text-purple-300">Nyan</button>
+                                    <button @click="sendMicrobitCommand('MELODY:FUNK')" class="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-800/50 border border-purple-700/50 rounded text-xs text-purple-300">Funk</button>
+                                    <button @click="sendMicrobitCommand('MELODY:BLUES')" class="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-800/50 border border-purple-700/50 rounded text-xs text-purple-300">Blues</button>
+                                    <button @click="sendMicrobitCommand('MELODY:POWERUP')" class="px-2 py-1.5 bg-purple-900/30 hover:bg-purple-800/50 border border-purple-700/50 rounded text-xs text-purple-300">Power Up</button>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-gray-500 mb-2">Custom Tone</div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs text-gray-400 w-10">{{ microbitToneFreq }}Hz</span>
+                                    <input type="range" v-model="microbitToneFreq" min="100" max="2000" step="10"
+                                           class="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                    <button @click="sendMicrobitCommand('TONE:' + microbitToneFreq + ',200')"
+                                            class="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 rounded text-xs">Play</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Polling Interval -->
+                        <div class="bg-gray-900 rounded-lg p-4 mb-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">Polling Interval</h3>
+                            <div class="flex items-center gap-2 mb-2">
+                                <input type="range" v-model="microbitSampleRate" min="1000" max="5000" step="500"
+                                       class="flex-1 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer">
+                                <span class="text-sm text-teal-400 w-20 text-right">{{ (1000/microbitSampleRate).toFixed(2) }} Hz</span>
+                            </div>
+                            <div class="text-xs text-gray-500 mb-2">
+                                {{ microbitSampleRate }}ms interval (min 1 second)
+                            </div>
+                            <button @click="sendMicrobitCommand('RATE:' + microbitSampleRate)"
+                                    class="w-full px-3 py-1.5 bg-teal-600 hover:bg-teal-500 rounded text-xs">Apply Rate</button>
+                        </div>
+
+                        <!-- CORE Network Status -->
+                        <div class="bg-gray-900 rounded-lg p-4">
+                            <h3 class="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">CORE Network</h3>
+                            <div class="flex items-center justify-between mb-3">
+                                <span class="text-sm text-gray-300">Send to CORE</span>
+                                <label class="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" v-model="microbitConfig.sendToCore" class="sr-only peer">
+                                    <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:bg-teal-600 peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all"></div>
+                                </label>
+                            </div>
+                            <div class="text-xs text-gray-500">
+                                MQTT Topic: <code class="text-teal-400">core/sensors/{{ microbitSensorId }}</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Advanced Settings (Collapsible) -->
+                <details class="mt-4">
+                    <summary class="text-sm text-gray-400 cursor-pointer hover:text-white mb-4">Advanced Settings</summary>
+                    <div class="bg-gray-900 rounded-lg p-4">
+
+                <!-- Value Adjustments -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-medium text-gray-300 mb-3">Value Adjustments</h3>
+                    <div class="space-y-4">
+                        <!-- X-Axis Adjustments -->
+                        <div class="grid grid-cols-4 gap-2 items-center">
+                            <span class="text-sm text-red-400">X-Axis</span>
+                            <div>
+                                <label class="text-xs text-gray-500">Offset</label>
+                                <input v-model.number="microbitConfig.xOffset" type="number" step="1"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">Scale</label>
+                                <input v-model.number="microbitConfig.xScale" type="number" step="0.1" min="0.1"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div class="flex items-end">
+                                <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                                    <input type="checkbox" v-model="microbitConfig.xEnabled" class="rounded">
+                                    Send
+                                </label>
+                            </div>
+                        </div>
+                        <!-- Y-Axis Adjustments -->
+                        <div class="grid grid-cols-4 gap-2 items-center">
+                            <span class="text-sm text-green-400">Y-Axis</span>
+                            <div>
+                                <label class="text-xs text-gray-500">Offset</label>
+                                <input v-model.number="microbitConfig.yOffset" type="number" step="1"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">Scale</label>
+                                <input v-model.number="microbitConfig.yScale" type="number" step="0.1" min="0.1"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div class="flex items-end">
+                                <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                                    <input type="checkbox" v-model="microbitConfig.yEnabled" class="rounded">
+                                    Send
+                                </label>
+                            </div>
+                        </div>
+                        <!-- Z-Axis Adjustments -->
+                        <div class="grid grid-cols-4 gap-2 items-center">
+                            <span class="text-sm text-blue-400">Z-Axis</span>
+                            <div>
+                                <label class="text-xs text-gray-500">Offset</label>
+                                <input v-model.number="microbitConfig.zOffset" type="number" step="1"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500">Scale</label>
+                                <input v-model.number="microbitConfig.zScale" type="number" step="0.1" min="0.1"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div class="flex items-end">
+                                <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                                    <input type="checkbox" v-model="microbitConfig.zEnabled" class="rounded">
+                                    Send
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    <button @click="resetMicrobitAdjustments" class="mt-3 text-xs text-gray-500 hover:text-gray-300">
+                        Reset to defaults
+                    </button>
+                </div>
+
+                <!-- Data Routing -->
+                <div class="mb-6">
+                    <h3 class="text-sm font-medium text-gray-300 mb-3">Data Routing</h3>
+                    <p class="text-xs text-gray-500 mb-3">Route sensor data to different MQTT topics or REST endpoints</p>
+
+                    <!-- Routing Entries -->
+                    <div class="space-y-3">
+                        <div v-for="(route, idx) in microbitRoutes" :key="idx"
+                             class="p-3 bg-gray-900 rounded-lg border border-gray-700">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm font-medium text-white">Route {{ idx + 1 }}</span>
+                                <button @click="removeMicrobitRoute(idx)" class="text-gray-500 hover:text-red-400">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                    </svg>
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="text-xs text-gray-500">Data Fields</label>
+                                    <div class="flex gap-2 mt-1">
+                                        <label class="flex items-center gap-1 text-xs">
+                                            <input type="checkbox" v-model="route.sendX" class="rounded text-teal-500">
+                                            <span class="text-red-400">X</span>
+                                        </label>
+                                        <label class="flex items-center gap-1 text-xs">
+                                            <input type="checkbox" v-model="route.sendY" class="rounded text-teal-500">
+                                            <span class="text-green-400">Y</span>
+                                        </label>
+                                        <label class="flex items-center gap-1 text-xs">
+                                            <input type="checkbox" v-model="route.sendZ" class="rounded text-teal-500">
+                                            <span class="text-blue-400">Z</span>
+                                        </label>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-500">Type</label>
+                                    <select v-model="route.type" class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                                        <option value="mqtt">MQTT Topic</option>
+                                        <option value="rest">REST Endpoint</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                <label class="text-xs text-gray-500">{{ route.type === 'mqtt' ? 'Topic' : 'URL' }}</label>
+                                <input v-model="route.destination" type="text"
+                                       :placeholder="route.type === 'mqtt' ? 'core/sensors/custom' : 'http://10.0.1.20/api/data'"
+                                       class="w-full px-2 py-1 bg-gray-700 rounded border border-gray-600 text-sm focus:border-teal-500 focus:outline-none">
+                            </div>
+                            <div class="flex items-center justify-between mt-2">
+                                <label class="flex items-center gap-2 text-xs text-gray-500 cursor-pointer">
+                                    <input type="checkbox" v-model="route.enabled" class="rounded">
+                                    Enabled
+                                </label>
+                                <span v-if="route.lastSent" class="text-xs text-gray-600">
+                                    Last: {{ route.lastSent }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button @click="addMicrobitRoute"
+                            class="mt-3 w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        Add Route
+                    </button>
+                </div>
+
+                <!-- Default Route Info -->
+                <div class="p-3 bg-gray-900 rounded-lg border border-gray-700">
+                    <div class="text-xs text-gray-500 mb-1">Default Route (always active)</div>
+                    <div class="text-sm text-gray-300">
+                        <div>MQTT: <code class="bg-gray-800 px-1 rounded">core/sensors/{{ microbitSensorId }}</code></div>
+                        <div class="mt-1">REST: <code class="bg-gray-800 px-1 rounded">/api/inject/{{ microbitSensorId }}</code></div>
+                    </div>
+                </div>
+                    </div>
+                </details>
+
+                <!-- Firmware Code Section -->
+                <div class="mt-4 bg-gray-900 rounded-lg p-4">
+                    <h3 class="text-sm font-medium text-gray-300 mb-3">Micro:bit Firmware (MakeCode)</h3>
+
+                    <!-- Firmware Type Tabs -->
+                    <div class="flex gap-2 mb-3">
+                        <button @click="firmwareTab = 'basic'"
+                                :class="['px-3 py-1.5 rounded text-sm', firmwareTab === 'basic' ? 'bg-teal-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600']">
+                            Basic (Recommended)
+                        </button>
+                        <button @click="firmwareTab = 'full'"
+                                :class="['px-3 py-1.5 rounded text-sm', firmwareTab === 'full' ? 'bg-teal-600 text-white' : 'bg-gray-700 text-gray-400 hover:bg-gray-600']">
+                            Full (All Sensors)
+                        </button>
+                    </div>
+
+                    <!-- Basic Firmware -->
+                    <div v-if="firmwareTab === 'basic'" class="relative">
+                        <p class="text-xs text-gray-500 mb-2">Simple accelerometer only - perfect for getting started.</p>
+                        <div class="bg-black p-3 rounded text-xs overflow-x-auto text-yellow-400 font-mono leading-relaxed">
+                            <pre>// Basic accelerometer firmware
+basic.forever(function () {
+    let x = input.acceleration(Dimension.X)
+    let y = input.acceleration(Dimension.Y)
+    let z = input.acceleration(Dimension.Z)
+    serial.writeLine('{"ax":' + x + ',"ay":' + y + ',"az":' + z + '}')
+    basic.pause(100)
+})</pre>
+                        </div>
+                        <button @click="copyBasicFirmware()"
+                                class="absolute top-8 right-2 px-2 py-1 bg-teal-600 hover:bg-teal-500 rounded text-xs">
+                            Copy
+                        </button>
+                    </div>
+
+                    <!-- Full Firmware -->
+                    <div v-if="firmwareTab === 'full'" class="relative">
+                        <p class="text-xs text-gray-500 mb-2">All sensors + bidirectional control (LEDs, speaker).</p>
+                        <div class="bg-black p-3 rounded text-xs overflow-x-auto text-yellow-400 font-mono leading-relaxed max-h-48 overflow-y-auto">
+                            <pre>{{ makecodeCode }}</pre>
+                        </div>
+                        <button @click="copyFirmwareCode()"
+                                class="absolute top-8 right-2 px-2 py-1 bg-teal-600 hover:bg-teal-500 rounded text-xs">
+                            Copy
+                        </button>
+                    </div>
+
+                    <div class="mt-3 p-3 bg-gray-800 rounded-lg">
+                        <div class="text-xs text-teal-400 font-medium mb-2">How to flash:</div>
+                        <ol class="text-xs text-gray-400 space-y-1">
+                            <li>1. Go to <a href="https://makecode.microbit.org/" target="_blank" class="text-teal-400 hover:underline">makecode.microbit.org</a></li>
+                            <li>2. Click "JavaScript" tab (top of editor)</li>
+                            <li>3. Delete existing code, paste copied code</li>
+                            <li>4. Click "Download" and copy .hex file to micro:bit</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <!-- Save/Close -->
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="showMicrobitSettings = false"
+                            class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg">
+                        Close
+                    </button>
+                    <button @click="saveMicrobitConfig"
+                            class="px-4 py-2 bg-teal-600 hover:bg-teal-500 rounded-lg">
+                        Save Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+{% endraw %}
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch } = Vue;
+
+        createApp({
+            setup() {
+                const activeTab = ref('quickstart');
+                const showAddHostModal = ref(false);
+                const vncHosts = ref([]);
+                const availableHosts = ref([]);
+                const coreStatus = ref('connecting');
+                const coreStatusText = ref('Connecting...');
+
+                // CORE VNC Nodes state
+                const coreVncNodes = ref([]);
+                const loadingCoreNodes = ref(false);
+
+                // Quick Start Templates
+                const templates = ref([]);
+                const templateFilter = ref('All');
+                const deploying = ref(false);
+                const deployStatus = ref({ title: '', message: '' });
+
+                // Sidebar Panel System
+                const sidebarOpen = ref(false);
+                const activePanel = ref('ai-builder');
+                const availablePanels = ref([
+                    { id: 'ai-builder', name: 'AI Builder', icon: '&#x2728;' },
+                    { id: 'capture', name: 'Capture', icon: '&#x1F50D;' },
+                    { id: 'hosts', name: 'VNC Hosts', icon: '&#x1F5A5;' },
+                    { id: 'lab', name: 'Lab', icon: '&#x1F4D6;' }
+                ]);
+
+                // Packet Capture State
+                const captureBridges = ref([]);
+                const activeCaptures = ref([]);
+                const loadingBridges = ref(false);
+                const captureFilter = ref('');
+                const pcapNodes = ref([]);
+                const activeWiresharks = ref([]);  // Track running Wireshark instances
+
+                // AI Builder State
+                const aiPrompt = ref('');
+                const aiProcessing = ref(false);
+                const aiResponse = ref('');
+
+                // Micro:bit WebSerial State
+                const microbitConnected = ref(false);
+                const microbitSampleCount = ref(0);
+                let microbitPort = null;
+                let microbitReader = null;
+                let microbitWriter = null;
+                let microbitKeepReading = false;
+                const microbitSensorId = 'microbit-' + Math.random().toString(36).substr(2, 9);
+
+                // Micro:bit Preview and Settings State
+                const showMicrobitPreview = ref(false);
+                const showMicrobitSettings = ref(false);
+                const showMicrobitPanel = ref(false);
+                const microbitLastData = ref({
+                    x: null, y: null, z: null,
+                    temperature: null, light: null, sound: null,
+                    compass: null,
+                    buttonA: false, buttonB: false, logoTouch: false,
+                    gpio: { p0: null, p1: null, p2: null }
+                });
+
+                // Micro:bit Configuration (value adjustments)
+                const microbitConfig = ref({
+                    xOffset: 0, xScale: 1, xEnabled: true,
+                    yOffset: 0, yScale: 1, yEnabled: true,
+                    zOffset: 0, zScale: 1, zEnabled: true,
+                    sendToCore: true  // Send data to CORE network via MQTT
+                });
+
+                // Micro:bit Control State
+                const ledMatrix = ref(Array(25).fill(false));
+                const microbitToneFreq = ref(440);
+                const microbitSampleRate = ref(1000);  // Default 1000ms = 1 Hz (minimum)
+                const firmwareTab = ref('basic');  // 'basic' or 'full'
+
+                // Micro:bit Data Routes
+                const microbitRoutes = ref([]);
+
+                // AI Help State
+                const showAiHelpModal = ref(false);
+                const aiConversation = ref([]);
+                const aiQuestion = ref('');
+                const aiLoading = ref(false);
+                const aiScreenshotData = ref(null);
+                const aiScreenshotAttached = ref(false);
+                const aiChatMessages = ref(null);
+                const currentLabTitle = ref(null);
+
+                // Icon mapping
+                const iconMap = {
+                    'network': '🔗', 'star': '⭐', 'ring': '⭕', 'line': '➖',
+                    'office': '🏢', 'shield': '🛡️', 'factory': '🏭', 'water': '💧',
+                    'layers': '📚', 'target': '🎯', 'skull': '💀'
+                };
+
+                function getTemplateIcon(icon) {
+                    return iconMap[icon] || '📦';
+                }
+
+                const filteredTemplates = computed(() => {
+                    if (templateFilter.value === 'All') return templates.value;
+                    return templates.value.filter(t => t.category === templateFilter.value);
+                });
+
+                async function loadTemplates() {
+                    try {
+                        const response = await fetch('/api/templates');
+                        const data = await response.json();
+                        templates.value = data.templates || [];
+                    } catch (e) {
+                        console.error('Failed to load templates:', e);
+                    }
+                }
+
+                async function deployTemplate(templateId) {
+                    deploying.value = true;
+                    deployStatus.value = { title: 'Deploying...', message: 'Creating topology and loading into CORE' };
+
+                    try {
+                        const response = await fetch(`/api/templates/${templateId}/deploy`, { method: 'POST' });
+                        const result = await response.json();
+
+                        if (result.success) {
+                            deployStatus.value = { title: 'Success!', message: `${result.template_name} deployed to CORE` };
+                            setTimeout(() => {
+                                deploying.value = false;
+                                activeTab.value = 'core';
+                            }, 1500);
+                        } else {
+                            deployStatus.value = { title: 'Failed', message: result.error || 'Unknown error' };
+                            setTimeout(() => deploying.value = false, 2000);
+                        }
+                    } catch (e) {
+                        deployStatus.value = { title: 'Error', message: e.message };
+                        setTimeout(() => deploying.value = false, 2000);
+                    }
+                }
+
+                function customizeTemplate(templateId) {
+                    // Switch to builder tab - the builder will handle customization
+                    activeTab.value = 'builder';
+                    // Could post message to builder iframe to load template
+                }
+
+                // Determine URLs based on environment
+                const isCodespaces = window.location.hostname.includes('github.dev');
+                const baseHost = window.location.hostname;
+
+                // CORE noVNC URL - include password for auto-login
+                const coreVncUrl = computed(() => {
+                    if (isCodespaces) {
+                        // GitHub Codespaces: replace port in hostname
+                        // Current: musical-robot-97wwqxg47x7wh97q5-8080.app.github.dev
+                        // Target:  musical-robot-97wwqxg47x7wh97q5-6080.app.github.dev
+                        const match = baseHost.match(/^(.+)-(\d+)(\.app\.github\.dev)$/);
+                        if (match) {
+                            const newHost = `${match[1]}-6080${match[3]}`;
+                            return `https://${newHost}/vnc.html?autoconnect=true&resize=scale&password=core123`;
+                        }
+                    }
+                    return 'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&password=core123';
+                });
+
+                const newHost = ref({
+                    name: '',
+                    url: '',
+                    type: 'workstation'
+                });
+
+                // Add Host Wizard State
+                const wizardStep = ref(0);
+                const addingHost = ref(false);
+                const dockerImages = ref([]);
+                const topologyNetworks = ref([]);
+                const newHostWizard = ref({
+                    type: null,           // 'docker' or 'host'
+                    docker_image: null,
+                    network_id: null,
+                    network_name: null,
+                    name: '',
+                    ip: '',
+                    suggested_ip: null
+                });
+
+                // Computed properties for wizard
+                const isLastWizardStep = computed(() => {
+                    if (newHostWizard.value.type === 'docker') {
+                        return wizardStep.value === 4;  // Docker has 5 steps (0-4)
+                    }
+                    return wizardStep.value === 3;  // Standard host has 4 steps (0-3)
+                });
+
+                const canProceedWizard = computed(() => {
+                    const step = wizardStep.value;
+                    const w = newHostWizard.value;
+
+                    if (step === 0) return w.type !== null;
+                    if (step === 1) {
+                        if (w.type === 'docker') return w.docker_image !== null;
+                        return w.network_id !== null;
+                    }
+                    if (step === 2) {
+                        if (w.type === 'docker') return w.network_id !== null;
+                        return w.name && w.ip;
+                    }
+                    if (step === 3) {
+                        if (w.type === 'docker') return w.name && w.ip;
+                        return true;  // Review step
+                    }
+                    return true;
+                });
+
+                // Wizard functions
+                function selectHostType(type) {
+                    newHostWizard.value.type = type;
+                }
+
+                function selectDockerImage(img) {
+                    newHostWizard.value.docker_image = img.id;
+                    // Auto-generate name from image
+                    const baseName = img.id.split(':')[0].split('/').pop();
+                    newHostWizard.value.name = baseName + '-' + Math.floor(Math.random() * 1000);
+                }
+
+                function selectNetwork(net) {
+                    newHostWizard.value.network_id = net.id;
+                    newHostWizard.value.network_name = net.display_name || net.name;
+                    newHostWizard.value.suggested_ip = net.next_ip;
+                    if (!newHostWizard.value.ip && net.next_ip) {
+                        newHostWizard.value.ip = net.next_ip;
+                    }
+                }
+
+                function wizardNext() {
+                    if (canProceedWizard.value) {
+                        wizardStep.value++;
+                    }
+                }
+
+                function wizardBack() {
+                    if (wizardStep.value > 0) {
+                        wizardStep.value--;
+                    }
+                }
+
+                function closeAddHostModal() {
+                    showAddHostModal.value = false;
+                    resetWizard();
+                }
+
+                function resetWizard() {
+                    wizardStep.value = 0;
+                    newHostWizard.value = {
+                        type: null,
+                        docker_image: null,
+                        network_id: null,
+                        network_name: null,
+                        name: '',
+                        ip: '',
+                        suggested_ip: null
+                    };
+                }
+
+                async function loadDockerImages() {
+                    try {
+                        const response = await fetch('/api/topology/docker-images');
+                        const data = await response.json();
+                        dockerImages.value = data.categories || [];
+                    } catch (e) {
+                        console.error('Failed to load docker images:', e);
+                    }
+                }
+
+                async function loadTopologyNetworks() {
+                    try {
+                        const response = await fetch('/api/topology/networks');
+                        const data = await response.json();
+                        topologyNetworks.value = data.networks || [];
+                    } catch (e) {
+                        console.error('Failed to load topology networks:', e);
+                    }
+                }
+
+                async function submitAddHost() {
+                    const w = newHostWizard.value;
+                    if (!w.name || !w.network_id) return;
+
+                    addingHost.value = true;
+
+                    try {
+                        const response = await fetch('/api/topology/add-host', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                name: w.name,
+                                type: w.type,
+                                network_id: w.network_id,
+                                ip: w.ip,
+                                docker_image: w.docker_image
+                            })
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            // Close modal and refresh
+                            closeAddHostModal();
+                            // Refresh topology networks for next time
+                            loadTopologyNetworks();
+                            // Show success notification (could add a toast here)
+                            alert(`Host "${w.name}" added successfully!`);
+                        } else {
+                            alert('Failed to add host: ' + (result.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        console.error('Failed to add host:', e);
+                        alert('Failed to add host: ' + e.message);
+                    } finally {
+                        addingHost.value = false;
+                    }
+                }
+
+                // Watch for modal open to load data
+                watch(showAddHostModal, (newVal) => {
+                    if (newVal) {
+                        loadDockerImages();
+                        loadTopologyNetworks();
+                        resetWizard();
+                    }
+                });
+
+                // AI Builder Functions
+                async function submitAiPrompt() {
+                    if (!aiPrompt.value || aiProcessing.value) return;
+
+                    aiProcessing.value = true;
+                    aiResponse.value = '';
+
+                    try {
+                        // First, fetch the current topology XML to provide context
+                        let currentXml = null;
+                        try {
+                            const xmlResponse = await fetch('/api/topology/current-xml');
+                            const xmlData = await xmlResponse.json();
+                            if (xmlData.success && xmlData.xml) {
+                                currentXml = xmlData.xml;
+                            }
+                        } catch (e) {
+                            console.warn('Could not fetch current XML:', e);
+                        }
+
+                        // Build the request with XML context
+                        const requestBody = {
+                            prompt: aiPrompt.value,
+                            current_networks: topologyNetworks.value,
+                            current_xml: currentXml,
+                            context: 'This is an NRL CORE network emulator topology. The XML follows the CORE XML schema with nodes (routers, switches, hosts, docker containers) and links connecting them.'
+                        };
+
+                        const response = await fetch('/api/topology/ai-add', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(requestBody)
+                        });
+
+                        const result = await response.json();
+
+                        if (result.success) {
+                            aiResponse.value = result.message;
+                            aiPrompt.value = '';
+                            // Refresh topology networks
+                            loadTopologyNetworks();
+                        } else {
+                            aiResponse.value = 'Error: ' + (result.error || 'Unknown error');
+                        }
+                    } catch (e) {
+                        aiResponse.value = 'Error: ' + e.message;
+                    } finally {
+                        aiProcessing.value = false;
+                    }
+                }
+
+                async function quickAction(type) {
+                    const prompts = {
+                        'kali': 'Add a Kali Linux workstation for penetration testing',
+                        'plc': 'Add an OpenPLC controller to the OT network',
+                        'hmi': 'Add an HMI workstation with VNC access',
+                        'router': 'Add a router to connect networks'
+                    };
+                    aiPrompt.value = prompts[type] || '';
+                    await submitAiPrompt();
+                }
+
+                // Packet Capture Functions
+                async function refreshCaptureBridges() {
+                    loadingBridges.value = true;
+                    try {
+                        const response = await fetch('/api/capture/bridges');
+                        const data = await response.json();
+                        if (data.success) {
+                            captureBridges.value = data.bridges || [];
+                        }
+                        // Also refresh active captures, Wireshark status, and PCAP nodes
+                        await refreshActiveCaptures();
+                        await refreshWiresharkStatus();
+                        await refreshPcapNodes();
+                    } catch (e) {
+                        console.error('Failed to load bridges:', e);
+                    } finally {
+                        loadingBridges.value = false;
+                    }
+                }
+
+                async function refreshActiveCaptures() {
+                    try {
+                        const response = await fetch('/api/capture/status');
+                        const data = await response.json();
+                        if (data.success) {
+                            activeCaptures.value = data.captures || [];
+                            // Update bridge capturing status
+                            captureBridges.value.forEach(bridge => {
+                                bridge.capturing = activeCaptures.value.some(c => c.bridge === bridge.name);
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Failed to get capture status:', e);
+                    }
+                }
+
+                async function startCapture(bridgeName) {
+                    try {
+                        const response = await fetch('/api/capture/start', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                bridge: bridgeName,
+                                filter: captureFilter.value || ''
+                            })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            // Refresh to show new capture
+                            await refreshCaptureBridges();
+                        } else {
+                            alert('Failed to start capture: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        console.error('Failed to start capture:', e);
+                        alert('Failed to start capture: ' + e.message);
+                    }
+                }
+
+                async function stopCapture(captureId) {
+                    try {
+                        const response = await fetch('/api/capture/stop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ capture_id: captureId })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            await refreshCaptureBridges();
+                        }
+                    } catch (e) {
+                        console.error('Failed to stop capture:', e);
+                    }
+                }
+
+                async function stopAllCaptures() {
+                    try {
+                        const response = await fetch('/api/capture/stop-all', { method: 'POST' });
+                        const data = await response.json();
+                        if (data.success) {
+                            await refreshCaptureBridges();
+                        }
+                    } catch (e) {
+                        console.error('Failed to stop captures:', e);
+                    }
+                }
+
+                // PCAP Node Service Functions
+                async function refreshPcapNodes() {
+                    try {
+                        const response = await fetch('/api/topology/pcap-status');
+                        const data = await response.json();
+                        if (data.success) {
+                            pcapNodes.value = data.nodes || [];
+                        }
+                    } catch (e) {
+                        console.error('Failed to get PCAP status:', e);
+                    }
+                }
+
+                async function toggleNodePcap(node) {
+                    try {
+                        const endpoint = node.pcap_enabled ? '/api/topology/disable-pcap' : '/api/topology/enable-pcap';
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ nodes: [node.name] })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            await refreshPcapNodes();
+                        }
+                    } catch (e) {
+                        console.error('Failed to toggle PCAP:', e);
+                    }
+                }
+
+                async function enablePcapAllNodes() {
+                    try {
+                        const response = await fetch('/api/topology/enable-pcap', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ all: true })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            await refreshPcapNodes();
+                        }
+                    } catch (e) {
+                        console.error('Failed to enable PCAP on all nodes:', e);
+                    }
+                }
+
+                // Wireshark Live View Functions
+                async function refreshWiresharkStatus() {
+                    try {
+                        const response = await fetch('/api/capture/wireshark/status');
+                        const data = await response.json();
+                        if (data.success) {
+                            activeWiresharks.value = data.wiresharks || [];
+                            // Update bridge wireshark_active status
+                            captureBridges.value.forEach(bridge => {
+                                bridge.wireshark_active = activeWiresharks.value.some(ws => ws.bridge === bridge.name);
+                            });
+                        }
+                    } catch (e) {
+                        console.error('Failed to get Wireshark status:', e);
+                    }
+                }
+
+                async function launchWireshark(bridgeName) {
+                    try {
+                        const response = await fetch('/api/capture/wireshark', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                bridge: bridgeName,
+                                filter: captureFilter.value || ''
+                            })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            // Show hint to user about noVNC
+                            alert(`Wireshark launched on ${bridgeName}!\n\nView it in the CORE noVNC desktop (port 6080).\n\nTip: Click the "CORE Desktop" tab to see the Wireshark window.`);
+                            // Refresh status to update UI
+                            await refreshWiresharkStatus();
+                            await refreshCaptureBridges();
+                        } else {
+                            alert('Failed to launch Wireshark: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        console.error('Failed to launch Wireshark:', e);
+                        alert('Failed to launch Wireshark: ' + e.message);
+                    }
+                }
+
+                async function stopWireshark(bridgeName) {
+                    try {
+                        const response = await fetch('/api/capture/wireshark/stop', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ bridge: bridgeName })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            await refreshWiresharkStatus();
+                            await refreshCaptureBridges();
+                        }
+                    } catch (e) {
+                        console.error('Failed to stop Wireshark:', e);
+                    }
+                }
+
+                // Micro:bit WebSerial Functions
+                async function connectMicrobit() {
+                    if (!('serial' in navigator)) {
+                        alert('Web Serial API not supported. Please use Chrome, Edge, or Opera.');
+                        return;
+                    }
+
+                    try {
+                        microbitPort = await navigator.serial.requestPort({
+                            filters: [{ usbVendorId: 0x0d28 }]  // Micro:bit Vendor ID
+                        });
+
+                        await microbitPort.open({ baudRate: 115200 });
+                        microbitConnected.value = true;
+                        microbitKeepReading = true;
+
+                        // Set up writer for sending commands
+                        const textEncoder = new TextEncoderStream();
+                        textEncoder.readable.pipeTo(microbitPort.writable);
+                        microbitWriter = textEncoder.writable.getWriter();
+
+                        // Start reading
+                        microbitReadLoop();
+
+                        console.log('Micro:bit connected, sensor ID:', microbitSensorId);
+                    } catch (error) {
+                        console.error('Micro:bit connection failed:', error);
+                        microbitPort = null;
+                    }
+                }
+
+                async function disconnectMicrobit() {
+                    microbitKeepReading = false;
+
+                    try {
+                        if (microbitReader) {
+                            await microbitReader.cancel();
+                            microbitReader = null;
+                        }
+                        if (microbitWriter) {
+                            await microbitWriter.close();
+                            microbitWriter = null;
+                        }
+                        if (microbitPort) {
+                            await microbitPort.close();
+                            microbitPort = null;
+                        }
+                    } catch (error) {
+                        console.error('Micro:bit disconnect error:', error);
+                    }
+
+                    microbitConnected.value = false;
+                }
+
+                async function microbitReadLoop() {
+                    const textDecoder = new TextDecoderStream();
+                    microbitPort.readable.pipeTo(textDecoder.writable);
+                    microbitReader = textDecoder.readable.getReader();
+
+                    let buffer = '';
+
+                    try {
+                        while (microbitKeepReading) {
+                            const { value, done } = await microbitReader.read();
+                            if (done) break;
+
+                            if (value) {
+                                buffer += value;
+                                const lines = buffer.split('\n');
+                                buffer = lines.pop();  // Keep incomplete line
+
+                                for (const line of lines) {
+                                    handleMicrobitData(line.trim());
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        if (microbitKeepReading) {
+                            console.error('Micro:bit read error:', error);
+                        }
+                    } finally {
+                        if (microbitReader) {
+                            microbitReader.releaseLock();
+                        }
+                    }
+                }
+
+                async function handleMicrobitData(line) {
+                    if (!line) return;
+
+                    try {
+                        const data = JSON.parse(line);
+
+                        // Handle acknowledgements from commands
+                        if ('ack' in data) {
+                            console.log('Micro:bit ACK:', data);
+                            return;
+                        }
+
+                        // Handle sensor data (full micro:bit V2 firmware format)
+                        // ax/ay/az = accelerometer, t = temp, l = light, s = sound,
+                        // ch = compass heading, ba/bb/bl = buttons, p0/p1/p2 = GPIO
+                        if ('ax' in data || 'x' in data) {
+                            microbitSampleCount.value++;
+
+                            // Store all sensor data for preview
+                            microbitLastData.value = {
+                                // Accelerometer (handle both formats: ax/ay/az or x/y/z)
+                                x: data.ax !== undefined ? data.ax : data.x,
+                                y: data.ay !== undefined ? data.ay : data.y,
+                                z: data.az !== undefined ? data.az : data.z,
+                                // Environment
+                                temperature: data.t !== undefined ? data.t : null,
+                                light: data.l !== undefined ? data.l : null,
+                                sound: data.s !== undefined ? data.s : null,
+                                // Compass
+                                compass: data.ch !== undefined ? data.ch : null,
+                                // Buttons
+                                buttonA: data.ba === 1,
+                                buttonB: data.bb === 1,
+                                logoTouch: data.bl === 1,
+                                // GPIO
+                                gpio: {
+                                    p0: data.p0 !== undefined ? data.p0 : null,
+                                    p1: data.p1 !== undefined ? data.p1 : null,
+                                    p2: data.p2 !== undefined ? data.p2 : null
+                                }
+                            };
+
+                            // Apply adjustments and build payload with ALL sensor data
+                            const cfg = microbitConfig.value;
+                            const payload = {
+                                timestamp: Date.now()
+                            };
+
+                            // Accelerometer (with adjustments)
+                            if (cfg.xEnabled && microbitLastData.value.x !== null) {
+                                payload.x = Math.round(microbitLastData.value.x * cfg.xScale + cfg.xOffset);
+                            }
+                            if (cfg.yEnabled && microbitLastData.value.y !== null) {
+                                payload.y = Math.round(microbitLastData.value.y * cfg.yScale + cfg.yOffset);
+                            }
+                            if (cfg.zEnabled && microbitLastData.value.z !== null) {
+                                payload.z = Math.round(microbitLastData.value.z * cfg.zScale + cfg.zOffset);
+                            }
+
+                            // Environment sensors
+                            if (microbitLastData.value.temperature !== null) {
+                                payload.temperature = microbitLastData.value.temperature;
+                            }
+                            if (microbitLastData.value.light !== null) {
+                                payload.light = microbitLastData.value.light;
+                            }
+                            if (microbitLastData.value.sound !== null) {
+                                payload.sound = microbitLastData.value.sound;
+                            }
+                            if (microbitLastData.value.compass !== null) {
+                                payload.compass = microbitLastData.value.compass;
+                            }
+
+                            // Buttons
+                            payload.buttonA = microbitLastData.value.buttonA;
+                            payload.buttonB = microbitLastData.value.buttonB;
+                            payload.logoTouch = microbitLastData.value.logoTouch;
+
+                            // GPIO
+                            if (microbitLastData.value.gpio) {
+                                payload.gpio = microbitLastData.value.gpio;
+                            }
+
+                            // Send to default routes (REST API and CORE Injector)
+                            try {
+                                await Promise.all([
+                                    fetch(`/api/sensors/${microbitSensorId}/data`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(payload)
+                                    }).catch(() => null),
+                                    fetch(`/api/inject/${microbitSensorId}`, {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify(payload)
+                                    }).catch(() => null)
+                                ]);
+                            } catch (e) {
+                                // Silently ignore relay errors
+                            }
+
+                            // Send to custom routes
+                            for (const route of microbitRoutes.value) {
+                                if (!route.enabled || !route.destination) continue;
+
+                                // Build route-specific payload
+                                const routePayload = { timestamp: Date.now() };
+                                if (route.sendX && cfg.xEnabled) routePayload.x = payload.x;
+                                if (route.sendY && cfg.yEnabled) routePayload.y = payload.y;
+                                if (route.sendZ && cfg.zEnabled) routePayload.z = payload.z;
+
+                                try {
+                                    if (route.type === 'mqtt') {
+                                        // Send via injector API with custom topic
+                                        await fetch(`/api/inject-custom`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({
+                                                topic: route.destination,
+                                                payload: routePayload
+                                            })
+                                        }).catch(() => null);
+                                    } else if (route.type === 'rest') {
+                                        // Direct REST call
+                                        await fetch(route.destination, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(routePayload)
+                                        }).catch(() => null);
+                                    }
+                                    route.lastSent = new Date().toLocaleTimeString();
+                                } catch (e) {
+                                    // Silently ignore route errors
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        // Not JSON, ignore
+                    }
+                }
+
+                // Micro:bit Settings Functions
+                function resetMicrobitAdjustments() {
+                    microbitConfig.value = {
+                        xOffset: 0, xScale: 1, xEnabled: true,
+                        yOffset: 0, yScale: 1, yEnabled: true,
+                        zOffset: 0, zScale: 1, zEnabled: true
+                    };
+                }
+
+                // Full Micro:bit V2 Firmware with bidirectional control
+                const makecodeCode = `// Micro:bit V2 Full Sensor + Control Firmware
+// Sends all sensor data, receives LED/speaker commands
+
+let sampleInterval = 100  // 10Hz default
+let lightMode = false     // When true, use light sensor instead of LEDs
+let ledState: number[] = []  // 25 LED states
+
+// Initialize LED state array
+for (let i = 0; i < 25; i++) { ledState.push(0) }
+
+// Process incoming commands
+serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function () {
+    let cmd = serial.readLine()
+
+    // Rate command: RATE:100
+    if (cmd.indexOf("RATE:") == 0) {
+        let ms = parseFloat(cmd.substr(5))
+        if (ms >= 50 && ms <= 5000) {
+            sampleInterval = ms
+            serial.writeLine('{"ack":"rate","v":' + sampleInterval + '}')
+        }
+    }
+    // Light mode: LIGHTMODE:1 or LIGHTMODE:0
+    else if (cmd.indexOf("LIGHTMODE:") == 0) {
+        lightMode = cmd.substr(10) == "1"
+        serial.writeLine('{"ack":"lightmode","v":' + (lightMode ? 1 : 0) + '}')
+        if (!lightMode) { renderLEDs() }
+    }
+    // LED command: LED:x,y,state (e.g., LED:2,2,1)
+    else if (cmd.indexOf("LED:") == 0) {
+        let parts = cmd.substr(4).split(",")
+        if (parts.length >= 3) {
+            let x = parseInt(parts[0])
+            let y = parseInt(parts[1])
+            let state = parseInt(parts[2])
+            if (x >= 0 && x < 5 && y >= 0 && y < 5) {
+                ledState[y * 5 + x] = state
+                if (!lightMode) { renderLEDs() }
+                serial.writeLine('{"ack":"led","x":' + x + ',"y":' + y + ',"v":' + state + '}')
+            }
+        }
+    }
+    // Clear all LEDs: LEDCLEAR
+    else if (cmd == "LEDCLEAR") {
+        for (let i = 0; i < 25; i++) { ledState[i] = 0 }
+        if (!lightMode) { basic.clearScreen() }
+        serial.writeLine('{"ack":"ledclear"}')
+    }
+    // Fill all LEDs: LEDFILL
+    else if (cmd == "LEDFILL") {
+        for (let i = 0; i < 25; i++) { ledState[i] = 1 }
+        if (!lightMode) { renderLEDs() }
+        serial.writeLine('{"ack":"ledfill"}')
+    }
+    // Play tone: TONE:frequency,duration (e.g., TONE:440,500)
+    else if (cmd.indexOf("TONE:") == 0) {
+        let tp = cmd.substr(5).split(",")
+        if (tp.length >= 2) {
+            let freq = parseInt(tp[0])
+            let dur = parseInt(tp[1])
+            music.playTone(freq, dur)
+            serial.writeLine('{"ack":"tone","f":' + freq + ',"d":' + dur + '}')
+        }
+    }
+    // Play melody: MELODY:name (e.g., MELODY:DADADADUM)
+    else if (cmd.indexOf("MELODY:") == 0) {
+        let mel = cmd.substr(7)
+        playMelodyByName(mel)
+        serial.writeLine('{"ack":"melody","m":"' + mel + '"}')
+    }
+    // Play sound effect (V2): SOUND:name
+    else if (cmd.indexOf("SOUND:") == 0) {
+        let snd = cmd.substr(6)
+        playSoundByName(snd)
+        serial.writeLine('{"ack":"sound","s":"' + snd + '"}')
+    }
+    // Speaker on/off: SPEAKER:1 or SPEAKER:0
+    else if (cmd.indexOf("SPEAKER:") == 0) {
+        let on = cmd.substr(8) == "1"
+        music.setBuiltInSpeakerEnabled(on)
+        serial.writeLine('{"ack":"speaker","v":' + (on ? 1 : 0) + '}')
+    }
+})
+
+// Render LED matrix from state array
+function renderLEDs() {
+    for (let y = 0; y < 5; y++) {
+        for (let x = 0; x < 5; x++) {
+            if (ledState[y * 5 + x] > 0) {
+                led.plot(x, y)
+            } else {
+                led.unplot(x, y)
+            }
+        }
+    }
+}
+
+// Play melody by name
+function playMelodyByName(name: string) {
+    if (name == "DADADADUM") music.startMelody(music.builtInMelody(Melodies.Dadadadum), MelodyOptions.Once)
+    else if (name == "ENTERTAINER") music.startMelody(music.builtInMelody(Melodies.Entertainer), MelodyOptions.Once)
+    else if (name == "PRELUDE") music.startMelody(music.builtInMelody(Melodies.Prelude), MelodyOptions.Once)
+    else if (name == "ODE") music.startMelody(music.builtInMelody(Melodies.Ode), MelodyOptions.Once)
+    else if (name == "NYAN") music.startMelody(music.builtInMelody(Melodies.Nyan), MelodyOptions.Once)
+    else if (name == "RINGTONE") music.startMelody(music.builtInMelody(Melodies.Ringtone), MelodyOptions.Once)
+    else if (name == "FUNK") music.startMelody(music.builtInMelody(Melodies.Funk), MelodyOptions.Once)
+    else if (name == "BLUES") music.startMelody(music.builtInMelody(Melodies.Blues), MelodyOptions.Once)
+    else if (name == "BIRTHDAY") music.startMelody(music.builtInMelody(Melodies.Birthday), MelodyOptions.Once)
+    else if (name == "WEDDING") music.startMelody(music.builtInMelody(Melodies.Wedding), MelodyOptions.Once)
+    else if (name == "FUNERAL") music.startMelody(music.builtInMelody(Melodies.Funeral), MelodyOptions.Once)
+    else if (name == "PUNCHLINE") music.startMelody(music.builtInMelody(Melodies.Punchline), MelodyOptions.Once)
+    else if (name == "BADDY") music.startMelody(music.builtInMelody(Melodies.Baddy), MelodyOptions.Once)
+    else if (name == "CHASE") music.startMelody(music.builtInMelody(Melodies.Chase), MelodyOptions.Once)
+    else if (name == "BADING") music.startMelody(music.builtInMelody(Melodies.BaDing), MelodyOptions.Once)
+    else if (name == "WAWAWAWAA") music.startMelody(music.builtInMelody(Melodies.Wawawawaa), MelodyOptions.Once)
+    else if (name == "JUMPUP") music.startMelody(music.builtInMelody(Melodies.JumpUp), MelodyOptions.Once)
+    else if (name == "JUMPDOWN") music.startMelody(music.builtInMelody(Melodies.JumpDown), MelodyOptions.Once)
+    else if (name == "POWERUP") music.startMelody(music.builtInMelody(Melodies.PowerUp), MelodyOptions.Once)
+    else if (name == "POWERDOWN") music.startMelody(music.builtInMelody(Melodies.PowerDown), MelodyOptions.Once)
+}
+
+// Play V2 sound effects
+function playSoundByName(name: string) {
+    if (name == "GIGGLE") soundExpression.giggle.play()
+    else if (name == "HAPPY") soundExpression.happy.play()
+    else if (name == "HELLO") soundExpression.hello.play()
+    else if (name == "MYSTERIOUS") soundExpression.mysterious.play()
+    else if (name == "SAD") soundExpression.sad.play()
+    else if (name == "SLIDE") soundExpression.slide.play()
+    else if (name == "SOARING") soundExpression.soaring.play()
+    else if (name == "SPRING") soundExpression.spring.play()
+    else if (name == "TWINKLE") soundExpression.twinkle.play()
+    else if (name == "YAWN") soundExpression.yawn.play()
+}
+
+// Main loop - send sensor data
+basic.forever(function () {
+    // Build JSON with all sensor data
+    let data = "{"
+
+    // Accelerometer
+    data += '"ax":' + input.acceleration(Dimension.X)
+    data += ',"ay":' + input.acceleration(Dimension.Y)
+    data += ',"az":' + input.acceleration(Dimension.Z)
+
+    // Temperature
+    data += ',"t":' + input.temperature()
+
+    // Light (only if in light mode)
+    if (lightMode) {
+        data += ',"l":' + input.lightLevel()
+    }
+
+    // Sound level (V2)
+    data += ',"s":' + input.soundLevel()
+
+    // Compass
+    data += ',"ch":' + input.compassHeading()
+    data += ',"cm":' + input.magneticForce(Dimension.Strength)
+
+    // Buttons
+    data += ',"ba":' + (input.buttonIsPressed(Button.A) ? 1 : 0)
+    data += ',"bb":' + (input.buttonIsPressed(Button.B) ? 1 : 0)
+    data += ',"bl":' + (input.logoIsPressed() ? 1 : 0)
+
+    // Analog pins
+    data += ',"p0":' + pins.analogReadPin(AnalogPin.P0)
+    data += ',"p1":' + pins.analogReadPin(AnalogPin.P1)
+    data += ',"p2":' + pins.analogReadPin(AnalogPin.P2)
+
+    data += "}"
+    serial.writeLine(data)
+
+    basic.pause(sampleInterval)
+})`;
+
+                function copyFirmwareCode() {
+                    navigator.clipboard.writeText(makecodeCode).then(() => {
+                        alert('Firmware code copied to clipboard!');
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                    });
+                }
+
+                const basicFirmwareCode = `// Basic accelerometer firmware
+basic.forever(function () {
+    let x = input.acceleration(Dimension.X)
+    let y = input.acceleration(Dimension.Y)
+    let z = input.acceleration(Dimension.Z)
+    serial.writeLine('{"ax":' + x + ',"ay":' + y + ',"az":' + z + '}')
+    basic.pause(100)
+})`;
+
+                function copyBasicFirmware() {
+                    navigator.clipboard.writeText(basicFirmwareCode).then(() => {
+                        alert('Basic firmware copied! Paste into MakeCode JavaScript editor.');
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                    });
+                }
+
+                function addMicrobitRoute() {
+                    microbitRoutes.value.push({
+                        type: 'mqtt',
+                        destination: '',
+                        sendX: true,
+                        sendY: true,
+                        sendZ: true,
+                        enabled: true,
+                        lastSent: null
+                    });
+                }
+
+                function removeMicrobitRoute(idx) {
+                    microbitRoutes.value.splice(idx, 1);
+                }
+
+                function saveMicrobitConfig() {
+                    // Save to localStorage
+                    localStorage.setItem('microbitConfig', JSON.stringify(microbitConfig.value));
+                    localStorage.setItem('microbitRoutes', JSON.stringify(microbitRoutes.value));
+                    showMicrobitSettings.value = false;
+                }
+
+                function loadMicrobitConfig() {
+                    try {
+                        const savedConfig = localStorage.getItem('microbitConfig');
+                        if (savedConfig) {
+                            microbitConfig.value = JSON.parse(savedConfig);
+                        }
+                        const savedRoutes = localStorage.getItem('microbitRoutes');
+                        if (savedRoutes) {
+                            microbitRoutes.value = JSON.parse(savedRoutes);
+                        }
+                    } catch (e) {
+                        console.error('Failed to load microbit config:', e);
+                    }
+                }
+
+                // Micro:bit Control Functions
+                async function sendMicrobitCommand(command) {
+                    if (!microbitWriter || !microbitConnected.value) {
+                        console.warn('Micro:bit not connected');
+                        return;
+                    }
+                    try {
+                        await microbitWriter.write(command + '\n');
+                        console.log('Sent to micro:bit:', command);
+                    } catch (e) {
+                        console.error('Failed to send command:', e);
+                    }
+                }
+
+                function toggleLed(x, y) {
+                    const idx = y * 5 + x;
+                    ledMatrix.value[idx] = !ledMatrix.value[idx];
+                    const state = ledMatrix.value[idx] ? 1 : 0;
+                    sendMicrobitCommand(`LED:${x},${y},${state}`);
+                }
+
+                function sendLedPattern(pattern) {
+                    // Clear first
+                    ledMatrix.value = Array(25).fill(false);
+
+                    const patterns = {
+                        heart: [
+                            [0,1,0,1,0],
+                            [1,1,1,1,1],
+                            [1,1,1,1,1],
+                            [0,1,1,1,0],
+                            [0,0,1,0,0]
+                        ],
+                        smile: [
+                            [0,0,0,0,0],
+                            [0,1,0,1,0],
+                            [0,0,0,0,0],
+                            [1,0,0,0,1],
+                            [0,1,1,1,0]
+                        ],
+                        check: [
+                            [0,0,0,0,0],
+                            [0,0,0,0,1],
+                            [0,0,0,1,0],
+                            [1,0,1,0,0],
+                            [0,1,0,0,0]
+                        ]
+                    };
+
+                    if (patterns[pattern]) {
+                        // Clear all first
+                        sendMicrobitCommand('LEDCLEAR');
+
+                        // Set pattern
+                        for (let y = 0; y < 5; y++) {
+                            for (let x = 0; x < 5; x++) {
+                                if (patterns[pattern][y][x]) {
+                                    ledMatrix.value[y * 5 + x] = true;
+                                    sendMicrobitCommand(`LED:${x},${y},1`);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // AI Help Functions
+                function captureAiScreenshot() {
+                    // Try to capture the CORE tab iframe
+                    try {
+                        const coreIframe = document.querySelector('iframe[src*="6080"]');
+                        if (coreIframe && coreIframe.contentDocument) {
+                            const canvas = coreIframe.contentDocument.querySelector('canvas');
+                            if (canvas) {
+                                aiScreenshotData.value = canvas.toDataURL('image/png');
+                                aiScreenshotAttached.value = true;
+                                return;
+                            }
+                        }
+                        // If we can't capture, just mark as attached (placeholder for now)
+                        aiScreenshotAttached.value = true;
+                        aiScreenshotData.value = null;
+                    } catch (e) {
+                        console.error('Screenshot capture failed:', e);
+                        aiScreenshotAttached.value = true;
+                        aiScreenshotData.value = null;
+                    }
+                }
+
+                async function sendAiHelpQuestion() {
+                    if (!aiQuestion.value.trim() && !aiScreenshotAttached.value) return;
+
+                    // Add user message
+                    aiConversation.value.push({
+                        role: 'user',
+                        content: aiQuestion.value || '(Screenshot attached)',
+                        screenshot: aiScreenshotData.value
+                    });
+
+                    const question = aiQuestion.value;
+                    aiQuestion.value = '';
+                    const screenshot = aiScreenshotData.value;
+                    aiScreenshotData.value = null;
+                    aiScreenshotAttached.value = false;
+
+                    aiLoading.value = true;
+
+                    // Scroll to bottom
+                    await nextTick();
+                    if (aiChatMessages.value) {
+                        aiChatMessages.value.scrollTop = aiChatMessages.value.scrollHeight;
+                    }
+
+                    try {
+                        const context = {
+                            current_lab: currentLabTitle.value
+                        };
+
+                        const response = await fetch('/api/ai-help', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                question: question,
+                                screenshot: screenshot,
+                                context: context,
+                                conversation_history: aiConversation.value.slice(0, -1).map(m => ({
+                                    role: m.role,
+                                    content: m.content
+                                }))
+                            })
+                        });
+
+                        const data = await response.json();
+
+                        aiConversation.value.push({
+                            role: 'assistant',
+                            content: data.response || data.error || 'Sorry, I could not process your question.'
+                        });
+
+                    } catch (e) {
+                        aiConversation.value.push({
+                            role: 'assistant',
+                            content: 'Sorry, there was an error connecting to the AI service. Please try again.'
+                        });
+                    }
+
+                    aiLoading.value = false;
+
+                    // Scroll to bottom
+                    await nextTick();
+                    if (aiChatMessages.value) {
+                        aiChatMessages.value.scrollTop = aiChatMessages.value.scrollHeight;
+                    }
+                }
+
+                function formatAiMessage(content) {
+                    // Simple markdown-like formatting
+                    return content
+                        .replace(/```([^`]+)```/g, '<pre class="bg-gray-900 p-2 rounded my-2 overflow-x-auto text-xs"><code>$1</code></pre>')
+                        .replace(/`([^`]+)`/g, '<code class="bg-gray-900 px-1 rounded text-xs">$1</code>')
+                        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                        .replace(/\n/g, '<br>');
+                }
+
+                function loadLabState() {
+                    try {
+                        const labData = localStorage.getItem('current_lab');
+                        if (labData) {
+                            const lab = JSON.parse(labData);
+                            currentLabTitle.value = lab.title || null;
+                        }
+                    } catch (e) {
+                        currentLabTitle.value = null;
+                    }
+                }
+
+                // Add a new VNC host tab
+                function addHost() {
+                    if (!newHost.value.name || !newHost.value.url) return;
+
+                    const host = {
+                        id: Date.now(),
+                        name: newHost.value.name,
+                        url: newHost.value.url,
+                        type: newHost.value.type,
+                        status: 'connecting'
+                    };
+
+                    vncHosts.value.push(host);
+                    showAddHostModal.value = false;
+                    activeTab.value = 'vnc-' + host.id;
+
+                    // Reset form
+                    newHost.value = { name: '', url: '', type: 'workstation' };
+
+                    // Save to localStorage
+                    saveHosts();
+                }
+
+                // Quick add from detected hosts
+                function quickAddHost(host) {
+                    // Use helper function for consistent URL building
+                    const vncUrl = buildVncUrl(host.port);
+
+                    const newVncHost = {
+                        id: Date.now(),
+                        name: host.name,
+                        url: vncUrl,
+                        type: host.type || 'workstation',
+                        status: 'connecting',
+                        coreNode: host.coreNode || null
+                    };
+
+                    vncHosts.value.push(newVncHost);
+                    showAddHostModal.value = false;
+                    activeTab.value = 'vnc-' + newVncHost.id;
+                    saveHosts();
+                }
+
+                // Remove a VNC host tab
+                function removeHost(id) {
+                    const index = vncHosts.value.findIndex(h => h.id === id);
+                    if (index !== -1) {
+                        vncHosts.value.splice(index, 1);
+                        if (activeTab.value === 'vnc-' + id) {
+                            activeTab.value = 'builder';
+                        }
+                        saveHosts();
+                    }
+                }
+
+                // Handle host iframe load
+                function onHostLoad(host) {
+                    host.status = 'connected';
+                }
+
+                // Refresh a VNC host iframe
+                function refreshVncHost(host) {
+                    // Force reload by briefly clearing the URL
+                    const originalUrl = host.url;
+                    host.url = '';
+                    host.status = 'connecting';
+                    setTimeout(() => {
+                        host.url = originalUrl;
+                    }, 100);
+                }
+
+                // Handle CORE iframe load
+                function onCoreLoad() {
+                    coreStatus.value = 'connected';
+                    coreStatusText.value = 'Connected';
+                }
+
+                // Refresh available hosts from CORE
+                async function refreshHosts() {
+                    try {
+                        const response = await fetch('/api/vnc-hosts');
+                        const data = await response.json();
+                        availableHosts.value = data.hosts || [];
+                    } catch (e) {
+                        console.error('Failed to refresh hosts:', e);
+                        availableHosts.value = [];
+                    }
+                }
+
+                // Refresh CORE VNC-capable nodes
+                async function refreshCoreVncNodes() {
+                    loadingCoreNodes.value = true;
+                    try {
+                        const response = await fetch('/api/core-vnc-nodes');
+                        const data = await response.json();
+                        // Preserve vnc_started status for existing nodes
+                        const existingStatus = {};
+                        coreVncNodes.value.forEach(n => {
+                            existingStatus[n.name] = { vnc_started: n.vnc_started, vnc_url: n.vnc_url, proxy_port: n.proxy_port };
+                        });
+                        coreVncNodes.value = (data.nodes || []).map(node => ({
+                            ...node,
+                            vnc_started: existingStatus[node.name]?.vnc_started || false,
+                            vnc_starting: false,
+                            vnc_url: existingStatus[node.name]?.vnc_url || null,
+                            proxy_port: existingStatus[node.name]?.proxy_port || null
+                        }));
+                    } catch (e) {
+                        console.error('Failed to refresh CORE VNC nodes:', e);
+                    } finally {
+                        loadingCoreNodes.value = false;
+                    }
+                }
+
+                // Build VNC URL client-side for proper Codespaces support
+                function buildVncUrl(proxyPort) {
+                    if (isCodespaces) {
+                        // GitHub Codespaces: build URL with correct hostname format
+                        // Current hostname: musical-robot-97wwqxg47x7wh97q5-8080.app.github.dev
+                        // We need: musical-robot-97wwqxg47x7wh97q5-6081.app.github.dev
+                        // Strategy: Replace the port number in the hostname
+                        const hostname = baseHost;
+                        // Match pattern: codespace-name-PORT.app.github.dev
+                        const match = hostname.match(/^(.+)-(\d+)(\.app\.github\.dev)$/);
+                        if (match) {
+                            const newHostname = `${match[1]}-${proxyPort}${match[3]}`;
+                            return `https://${newHostname}/vnc_lite.html?scale=true`;
+                        }
+                        // Fallback if pattern doesn't match
+                        console.warn('Could not parse Codespaces hostname:', hostname);
+                        return `http://localhost:${proxyPort}/vnc_lite.html?scale=true`;
+                    } else {
+                        return `http://localhost:${proxyPort}/vnc_lite.html?scale=true`;
+                    }
+                }
+
+                // Start VNC desktop on a CORE node
+                async function startNodeVnc(node) {
+                    node.vnc_starting = true;
+                    try {
+                        const response = await fetch('/api/start-host-vnc', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                node_name: node.name,
+                                node_ip: node.ip
+                            })
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            node.vnc_started = true;
+                            node.proxy_port = data.proxy_port;
+                            // Use server-provided URL (correctly built with CODESPACE_NAME)
+                            node.vnc_url = data.vnc_url;
+                            // Show notification
+                            alert(`VNC started for ${node.name}!\nURL: ${node.vnc_url}`);
+                        } else {
+                            alert(`Failed to start VNC: ${data.error}`);
+                        }
+                    } catch (e) {
+                        console.error('Failed to start VNC:', e);
+                        alert(`Error starting VNC: ${e.message}`);
+                    } finally {
+                        node.vnc_starting = false;
+                    }
+                }
+
+                // Open VNC as a tab in the dashboard (not a new window)
+                // The "Open Desktop" button now adds the node as a tab with sidebar
+                function openNodeVnc(node) {
+                    if (!node.vnc_url) return;
+
+                    // Check if this node is already in vncHosts
+                    const existingHost = vncHosts.value.find(h => h.coreNode === node.name);
+                    if (existingHost) {
+                        // Just switch to the existing tab
+                        activeTab.value = 'vnc-' + existingHost.id;
+                        return;
+                    }
+
+                    // Add as a new VNC host tab
+                    const newVncHost = {
+                        id: Date.now(),
+                        name: node.name,
+                        url: node.vnc_url,
+                        type: node.type || 'workstation',
+                        status: 'connected',
+                        coreNode: node.name,
+                        nodeIp: node.ip,
+                        proxyPort: node.proxy_port
+                    };
+
+                    vncHosts.value.push(newVncHost);
+                    activeTab.value = 'vnc-' + newVncHost.id;
+                    saveHosts();
+                }
+
+                // Open VNC in new browser tab with sidebar wrapper
+                function openNodeVncNewTab(node) {
+                    if (node.vnc_url && node.proxy_port) {
+                        // Use the VNC desktop wrapper page with sidebar
+                        const wrapperUrl = `/vnc/${encodeURIComponent(node.name)}?ip=${encodeURIComponent(node.ip || '')}&port=${node.proxy_port}`;
+                        window.open(wrapperUrl, '_blank');
+                    } else if (node.vnc_url) {
+                        // Fallback to raw VNC
+                        window.open(node.vnc_url, '_blank');
+                    }
+                }
+
+                // Save hosts to localStorage
+                function saveHosts() {
+                    localStorage.setItem('vncHosts', JSON.stringify(vncHosts.value));
+                }
+
+                // Load hosts from localStorage
+                function loadHosts() {
+                    try {
+                        const saved = localStorage.getItem('vncHosts');
+                        if (saved) {
+                            vncHosts.value = JSON.parse(saved);
+                        }
+                    } catch (e) {
+                        console.error('Failed to load saved hosts:', e);
+                    }
+                }
+
+                onMounted(() => {
+                    loadHosts();
+                    refreshHosts();
+                    loadTemplates();
+                    // Auto-scan for CORE VNC nodes on load
+                    refreshCoreVncNodes();
+                    // Load micro:bit configuration
+                    loadMicrobitConfig();
+                    // Load lab state for AI help context
+                    loadLabState();
+
+                    // Refresh hosts periodically
+                    setInterval(refreshHosts, 30000);
+                    // Also refresh CORE VNC nodes periodically
+                    setInterval(refreshCoreVncNodes, 15000);
+
+                    // Listen for lab state changes from other tabs
+                    window.addEventListener('storage', (e) => {
+                        if (e.key === 'current_lab') {
+                            loadLabState();
+                        }
+                    });
+                });
+
+                return {
+                    activeTab,
+                    showAddHostModal,
+                    vncHosts,
+                    // Quick Start
+                    templates,
+                    templateFilter,
+                    filteredTemplates,
+                    deploying,
+                    deployStatus,
+                    getTemplateIcon,
+                    deployTemplate,
+                    customizeTemplate,
+                    availableHosts,
+                    coreStatus,
+                    coreStatusText,
+                    coreVncUrl,
+                    newHost,
+                    addHost,
+                    quickAddHost,
+                    removeHost,
+                    onHostLoad,
+                    refreshVncHost,
+                    onCoreLoad,
+                    refreshHosts,
+                    // CORE VNC Nodes
+                    coreVncNodes,
+                    loadingCoreNodes,
+                    refreshCoreVncNodes,
+                    startNodeVnc,
+                    openNodeVnc,
+                    openNodeVncNewTab,
+                    // Add Host Wizard
+                    wizardStep,
+                    addingHost,
+                    dockerImages,
+                    topologyNetworks,
+                    newHostWizard,
+                    isLastWizardStep,
+                    canProceedWizard,
+                    selectHostType,
+                    selectDockerImage,
+                    selectNetwork,
+                    wizardNext,
+                    wizardBack,
+                    closeAddHostModal,
+                    submitAddHost,
+                    // Sidebar Panel System
+                    sidebarOpen,
+                    activePanel,
+                    availablePanels,
+                    // AI Builder
+                    aiPrompt,
+                    aiProcessing,
+                    aiResponse,
+                    submitAiPrompt,
+                    quickAction,
+                    // Packet Capture
+                    captureBridges,
+                    activeCaptures,
+                    loadingBridges,
+                    captureFilter,
+                    refreshCaptureBridges,
+                    startCapture,
+                    stopCapture,
+                    stopAllCaptures,
+                    // PCAP Node Service
+                    pcapNodes,
+                    refreshPcapNodes,
+                    toggleNodePcap,
+                    enablePcapAllNodes,
+                    // Wireshark Live View
+                    activeWiresharks,
+                    refreshWiresharkStatus,
+                    launchWireshark,
+                    stopWireshark,
+                    // Micro:bit WebSerial
+                    microbitConnected,
+                    microbitSampleCount,
+                    connectMicrobit,
+                    disconnectMicrobit,
+                    // Micro:bit Settings & Preview
+                    showMicrobitPreview,
+                    showMicrobitSettings,
+                    showMicrobitPanel,
+                    microbitLastData,
+                    microbitConfig,
+                    microbitRoutes,
+                    microbitSensorId,
+                    resetMicrobitAdjustments,
+                    addMicrobitRoute,
+                    removeMicrobitRoute,
+                    saveMicrobitConfig,
+                    // Micro:bit Controls
+                    ledMatrix,
+                    microbitToneFreq,
+                    microbitSampleRate,
+                    firmwareTab,
+                    copyFirmwareCode,
+                    copyBasicFirmware,
+                    makecodeCode,
+                    sendMicrobitCommand,
+                    toggleLed,
+                    sendLedPattern,
+                    // AI Help
+                    showAiHelpModal,
+                    aiConversation,
+                    aiQuestion,
+                    aiLoading,
+                    aiScreenshotAttached,
+                    aiChatMessages,
+                    currentLabTitle,
+                    captureAiScreenshot,
+                    sendAiHelpQuestion,
+                    formatAiMessage
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>

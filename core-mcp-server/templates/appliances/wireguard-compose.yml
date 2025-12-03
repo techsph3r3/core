@@ -1,0 +1,53 @@
+# WireGuard VPN Gateway Compose Template
+# Mako variables: {{ node }}, {{ hostname }}, {{ appliance }}
+#
+# WireGuard is a modern, fast VPN protocol.
+
+version: '3.8'
+
+services:
+  wireguard:
+    image: linuxserver/wireguard:latest
+    hostname: ${hostname}
+    container_name: ${node.name}
+    privileged: true
+
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+      - net.ipv6.conf.all.disable_ipv6=0
+
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      # Server mode settings
+      - SERVERURL=auto
+      - SERVERPORT=51820
+      - PEERS=3
+      - PEERDNS=auto
+      - INTERNAL_SUBNET=10.13.13.0
+
+    volumes:
+      # WireGuard config and keys
+      - wireguard-config:/config
+      # Kernel modules (may be needed)
+      - /lib/modules:/lib/modules:ro
+
+    tty: true
+    stdin_open: true
+
+    healthcheck:
+      test: ["CMD", "wg", "show"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  wireguard-config:
+    name: ${node.name}-wireguard-config

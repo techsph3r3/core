@@ -1,0 +1,113 @@
+# Kali Linux with noVNC desktop wrapped for CORE network emulator compatibility
+# Provides full Kali desktop accessible via browser
+
+FROM kalilinux/kali-rolling:latest
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install Kali tools and desktop environment
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Kali metapackages (select tools, not full to keep size manageable)
+    kali-tools-top10 \
+    # Desktop environment
+    xfce4 \
+    xfce4-terminal \
+    dbus-x11 \
+    # VNC and noVNC - use x11vnc with Xvfb for better compatibility
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    # Networking tools for CORE compatibility
+    iproute2 \
+    iputils-ping \
+    net-tools \
+    ethtool \
+    tcpdump \
+    traceroute \
+    curl \
+    wget \
+    # Utilities
+    supervisor \
+    xfonts-base \
+    fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create supervisor configuration for VNC + noVNC
+RUN mkdir -p /var/log/supervisor /etc/supervisor/conf.d
+
+# Supervisor configuration for Xvfb + XFCE + x11vnc + noVNC
+COPY <<'SUPERVISORCONF' /etc/supervisor/conf.d/supervisord.conf
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+pidfile=/var/run/supervisord.pid
+
+[program:xvfb]
+command=/usr/bin/Xvfb :1 -screen 0 1920x1080x24
+autorestart=true
+priority=100
+stdout_logfile=/var/log/xvfb.log
+stderr_logfile=/var/log/xvfb_err.log
+
+[program:xfce4]
+command=/usr/bin/startxfce4
+environment=DISPLAY=":1",HOME="/root"
+autorestart=true
+priority=200
+stdout_logfile=/var/log/xfce4.log
+stderr_logfile=/var/log/xfce4_err.log
+
+[program:x11vnc]
+command=/usr/bin/x11vnc -display :1 -forever -shared -rfbport 5900 -nopw
+autorestart=true
+priority=300
+stdout_logfile=/var/log/x11vnc.log
+stderr_logfile=/var/log/x11vnc_err.log
+
+[program:novnc]
+command=/usr/bin/websockify --web=/usr/share/novnc/ 6080 localhost:5900
+autorestart=true
+priority=400
+stdout_logfile=/var/log/novnc.log
+stderr_logfile=/var/log/novnc_err.log
+SUPERVISORCONF
+
+# Create log directory
+RUN mkdir -p /var/log/supervisor
+
+# Create startup script that starts desktop in background
+COPY <<'STARTSCRIPT' /usr/local/bin/start-desktop.sh
+#!/bin/bash
+echo "Starting Kali Desktop..."
+nohup /usr/bin/supervisord -c /etc/supervisor/conf.d/supervisord.conf > /var/log/supervisor/supervisord.log 2>&1 &
+echo "Desktop services started (PID: $!)"
+STARTSCRIPT
+
+# Create entrypoint wrapper that starts desktop then runs CMD
+COPY <<'ENTRYPOINT_SCRIPT' /usr/local/bin/docker-entrypoint.sh
+#!/bin/bash
+# Start desktop services in background
+/usr/local/bin/start-desktop.sh
+
+# Execute the CMD passed to docker run (e.g., "tail -f /dev/null")
+exec "$@"
+ENTRYPOINT_SCRIPT
+
+RUN chmod +x /usr/local/bin/start-desktop.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+# Expose ports
+# 6080: noVNC web interface
+# 5900: VNC direct
+# 22: SSH (if sshd installed)
+EXPOSE 6080 5900 22
+
+# Set display
+ENV DISPLAY=:1
+
+WORKDIR /root
+
+# Use ENTRYPOINT to ensure desktop starts, then run whatever CMD is passed
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/usr/local/bin/start-desktop.sh"]

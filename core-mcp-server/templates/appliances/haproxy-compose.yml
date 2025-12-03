@@ -1,0 +1,37 @@
+# HAProxy Load Balancer Compose Template
+# Mako variables: {{ node }}, {{ hostname }}, {{ appliance }}
+#
+# HAProxy is a high-performance TCP/HTTP load balancer.
+
+version: '3.8'
+
+services:
+  haproxy:
+    image: haproxy:latest
+    hostname: ${hostname}
+    container_name: ${node.name}
+    privileged: true
+
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+
+    volumes:
+      # HAProxy configuration - REQUIRED
+      - haproxy-config:/usr/local/etc/haproxy
+
+    # Validate config and start
+    command: haproxy -f /usr/local/etc/haproxy/haproxy.cfg
+
+    tty: true
+    stdin_open: true
+
+    healthcheck:
+      test: ["CMD", "haproxy", "-c", "-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  haproxy-config:
+    name: ${node.name}-haproxy-config

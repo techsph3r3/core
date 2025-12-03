@@ -1,0 +1,25 @@
+# OpenPLC Runtime wrapped for CORE network emulator compatibility
+# Based on wzy318/openplc (OpenPLC v3) with networking tools added
+
+FROM wzy318/openplc:latest
+
+# Install networking tools required for CORE compatibility
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    iproute2 \
+    iputils-ping \
+    net-tools \
+    ethtool \
+    tcpdump \
+    traceroute \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# OpenPLC exposes:
+# - Port 8080: Web interface (default creds: openplc/openplc)
+# - Port 502: Modbus TCP server
+
+EXPOSE 8080 502
+
+# Start OpenPLC runtime (uses base image's start_openplc.sh entrypoint)
+# The entrypoint script starts the web server and keeps running
+CMD ["./start_openplc.sh"]

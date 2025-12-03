@@ -1,0 +1,80 @@
+# Alpine-based Lightweight Firewall for CORE
+# This image provides a minimal iptables/nftables firewall
+# with the networking tools required by CORE.
+
+FROM alpine:latest
+
+# Install networking tools required by CORE
+RUN apk add --no-cache \
+    iproute2 \
+    ethtool \
+    iputils \
+    net-tools \
+    tcpdump \
+    # Firewall tools
+    iptables \
+    ip6tables \
+    nftables \
+    # Utilities
+    bash \
+    curl \
+    vim \
+    # DHCP server (optional)
+    dnsmasq
+
+# Enable IP forwarding by default
+RUN echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf && \
+    echo "net.ipv6.conf.all.forwarding=1" >> /etc/sysctl.conf
+
+# Create iptables directory
+RUN mkdir -p /etc/iptables
+
+# Default iptables rules (permissive - customize per deployment)
+COPY <<'EOF' /etc/iptables/rules.v4
+*filter
+:INPUT ACCEPT [0:0]
+:FORWARD ACCEPT [0:0]
+:OUTPUT ACCEPT [0:0]
+
+# Allow established connections
+-A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+-A FORWARD -m state --state ESTABLISHED,RELATED -j ACCEPT
+
+# Allow loopback
+-A INPUT -i lo -j ACCEPT
+
+# Allow ICMP
+-A INPUT -p icmp -j ACCEPT
+-A FORWARD -p icmp -j ACCEPT
+
+COMMIT
+EOF
+
+# Startup script to load iptables rules
+COPY <<'EOF' /usr/local/bin/start-firewall.sh
+#!/bin/bash
+set -e
+
+# Enable IP forwarding
+sysctl -w net.ipv4.ip_forward=1
+sysctl -w net.ipv6.conf.all.forwarding=1
+
+# Load iptables rules if they exist
+if [ -f /etc/iptables/rules.v4 ]; then
+    iptables-restore < /etc/iptables/rules.v4
+    echo "Loaded iptables rules from /etc/iptables/rules.v4"
+fi
+
+if [ -f /etc/iptables/rules.v6 ]; then
+    ip6tables-restore < /etc/iptables/rules.v6
+    echo "Loaded ip6tables rules from /etc/iptables/rules.v6"
+fi
+
+# Keep container running
+exec tail -f /dev/null
+EOF
+
+RUN chmod +x /usr/local/bin/start-firewall.sh
+
+# Default command
+CMD ["/usr/local/bin/start-firewall.sh"]

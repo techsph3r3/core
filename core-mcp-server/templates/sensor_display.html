@@ -1,0 +1,1220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CORE Sensor Display - IoT Data Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            color: #00d4ff;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1000px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .right-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            align-content: start;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            color: #00d4ff;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #00ff88;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .connection-form {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .connection-form input {
+            flex: 1;
+            min-width: 120px;
+            padding: 10px 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            font-size: 0.9rem;
+        }
+
+        .connection-form input:focus {
+            outline: none;
+            border-color: #00d4ff;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #00d4ff;
+            color: #000;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: #00b8e0;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button.disconnect {
+            background: #ff4444;
+        }
+
+        button.disconnect:hover {
+            background: #ff2222;
+        }
+
+        .sensor-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .sensor-item {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .sensor-item:hover {
+            background: rgba(0, 212, 255, 0.1);
+        }
+
+        .sensor-item.selected {
+            border-color: #00d4ff;
+            background: rgba(0, 212, 255, 0.15);
+        }
+
+        .sensor-name {
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sensor-type-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(0, 212, 255, 0.2);
+            color: #00d4ff;
+        }
+
+        .sensor-topic {
+            font-size: 0.75rem;
+            color: #888;
+            font-family: monospace;
+        }
+
+        /* Sensor data grid - flexible for different sensor types */
+        .sensor-data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .value-box {
+            text-align: center;
+            padding: 12px 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+        }
+
+        .value-box .label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .value-box .value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Color coding for different sensor types */
+        .value-box.accel-x .value { color: #ff6b6b; }
+        .value-box.accel-y .value { color: #4ecdc4; }
+        .value-box.accel-z .value { color: #ffe66d; }
+        .value-box.temp .value { color: #ff9f43; }
+        .value-box.light .value { color: #feca57; }
+        .value-box.sound .value { color: #54a0ff; }
+        .value-box.compass .value { color: #5f27cd; }
+        .value-box.button .value { color: #00d4ff; }
+        .value-box.gpio .value { color: #10ac84; }
+        .value-box.touch .value { color: #ee5a24; }
+
+        /* Button state indicators */
+        .button-indicator {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #333;
+            border: 2px solid #555;
+            transition: all 0.15s;
+        }
+        .button-indicator.pressed {
+            background: #00ff88;
+            border-color: #00ff88;
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.5);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+        }
+
+        .log-container {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-entry.info { color: #00d4ff; }
+        .log-entry.data { color: #00ff88; }
+        .log-entry.error { color: #ff4444; }
+        .log-entry.control { color: #ff9f43; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-box .label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+
+        .stat-box .value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #00d4ff;
+        }
+
+        .mode-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .mode-toggle button {
+            flex: 1;
+            padding: 8px;
+            font-size: 0.85rem;
+        }
+
+        .mode-toggle button.active {
+            background: #00ff88;
+        }
+
+        .fallback-notice {
+            background: rgba(255, 200, 0, 0.1);
+            border: 1px solid rgba(255, 200, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            color: #ffc800;
+            font-size: 0.85rem;
+        }
+
+        .topic-input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            color: #fff;
+            font-family: monospace;
+            font-size: 0.85rem;
+        }
+
+        /* Control panel styles */
+        .control-panel {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+
+        .control-panel h3 {
+            font-size: 0.9rem;
+            color: #ff9f43;
+            margin-bottom: 12px;
+        }
+
+        .control-btn {
+            padding: 8px 16px;
+            margin: 4px;
+            font-size: 0.8rem;
+        }
+
+        .control-btn.active {
+            background: #00ff88;
+        }
+
+        /* LED Matrix mini display */
+        .led-matrix-mini {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 3px;
+            width: 80px;
+            margin: 10px auto;
+        }
+
+        .led-mini {
+            width: 12px;
+            height: 12px;
+            background: #333;
+            border-radius: 2px;
+        }
+
+        .led-mini.on {
+            background: #ff0000;
+            box-shadow: 0 0 6px rgba(255, 0, 0, 0.6);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>CORE Sensor Display</h1>
+            <p class="subtitle">Real-time IoT Data Monitor - Micro:bit & Generic Sensors</p>
+        </div>
+
+        <div class="main-grid">
+            <!-- Left Sidebar: Connection & Sensors -->
+            <div class="left-section">
+                <!-- Connection Panel -->
+                <div class="card">
+                    <h2>MQTT Connection</h2>
+
+                    <div class="mode-toggle">
+                        <button id="mqttModeBtn" class="active" onclick="setMode('mqtt')">MQTT WebSocket</button>
+                        <button id="pollingModeBtn" onclick="setMode('polling')">HTTP Polling</button>
+                    </div>
+
+                    <div id="mqttPanel">
+                        <div class="status-indicator">
+                            <div class="status-dot" id="mqttStatusDot"></div>
+                            <span id="mqttStatusText">Disconnected</span>
+                        </div>
+
+                        <div class="connection-form">
+                            <input type="text" id="brokerHost" placeholder="Broker Host" value="localhost">
+                            <input type="number" id="brokerPort" placeholder="WS Port" value="9001">
+                            <button id="connectBtn" onclick="toggleMqttConnection()">Connect</button>
+                        </div>
+
+                        <div class="fallback-notice" id="fallbackNotice" style="display: none;">
+                            MQTT WebSocket connection failed. Using HTTP polling as fallback.
+                        </div>
+
+                        <label style="display: block; margin-bottom: 8px; color: #888; font-size: 0.85rem;">Subscribe Topic:</label>
+                        <input type="text" class="topic-input" id="subscribeTopic" value="core/sensors/#" placeholder="core/sensors/#">
+                    </div>
+
+                    <div id="pollingPanel" style="display: none;">
+                        <div class="status-indicator">
+                            <div class="status-dot" id="pollingStatusDot"></div>
+                            <span id="pollingStatusText">Stopped</span>
+                        </div>
+                        <p style="color: #888; margin-bottom: 15px; font-size: 0.85rem;">Polling REST API for sensor data every second.</p>
+                        <button id="pollingBtn" onclick="togglePolling()">Start Polling</button>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="label">Messages</div>
+                            <div class="value" id="messageCount">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Sensors</div>
+                            <div class="value" id="sensorCount">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Rate/sec</div>
+                            <div class="value" id="messageRate">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Sensors -->
+                <div class="card">
+                    <h2>Active Sensors</h2>
+                    <div class="sensor-list" id="sensorList">
+                        <p style="color: #666; text-align: center; padding: 20px; font-size: 0.85rem;">
+                            No sensors detected yet. Connect to MQTT or start polling.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Message Log -->
+                <div class="card">
+                    <h2>Message Log</h2>
+                    <div class="log-container" id="logContainer"></div>
+                </div>
+            </div>
+
+            <!-- Right Section: Sensor Data Display -->
+            <div class="right-section">
+                <!-- Selected Sensor Header -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h2>Sensor: <span id="selectedSensorName">--</span> <span id="selectedSensorType" class="sensor-type-badge" style="display:none;"></span></h2>
+                    <p id="selectedSensorTopic" style="color: #666; font-family: monospace; font-size: 0.8rem;">--</p>
+                </div>
+
+                <!-- Accelerometer / Motion -->
+                <div class="card" id="accelCard">
+                    <h2>Accelerometer</h2>
+                    <div class="sensor-data-grid">
+                        <div class="value-box accel-x">
+                            <div class="label">X</div>
+                            <div class="value" id="accelX">--</div>
+                        </div>
+                        <div class="value-box accel-y">
+                            <div class="label">Y</div>
+                            <div class="value" id="accelY">--</div>
+                        </div>
+                        <div class="value-box accel-z">
+                            <div class="label">Z</div>
+                            <div class="value" id="accelZ">--</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="accelChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Environment Sensors -->
+                <div class="card" id="envCard">
+                    <h2>Environment</h2>
+                    <div class="sensor-data-grid">
+                        <div class="value-box temp">
+                            <div class="label">Temp</div>
+                            <div class="value" id="tempValue">--</div>
+                        </div>
+                        <div class="value-box light">
+                            <div class="label">Light</div>
+                            <div class="value" id="lightValue">--</div>
+                        </div>
+                        <div class="value-box sound">
+                            <div class="label">Sound</div>
+                            <div class="value" id="soundValue">--</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="envChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Compass / Magnetometer -->
+                <div class="card" id="compassCard">
+                    <h2>Compass / Magnetometer</h2>
+                    <div class="sensor-data-grid">
+                        <div class="value-box compass">
+                            <div class="label">Heading</div>
+                            <div class="value" id="compassHeading">--</div>
+                        </div>
+                        <div class="value-box compass">
+                            <div class="label">Mag X</div>
+                            <div class="value" id="magX">--</div>
+                        </div>
+                        <div class="value-box compass">
+                            <div class="label">Mag Y</div>
+                            <div class="value" id="magY">--</div>
+                        </div>
+                        <div class="value-box compass">
+                            <div class="label">Mag Z</div>
+                            <div class="value" id="magZ">--</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buttons & Touch -->
+                <div class="card" id="buttonsCard">
+                    <h2>Buttons & Touch</h2>
+                    <div class="sensor-data-grid" style="justify-items: center;">
+                        <div class="value-box button" style="min-width: 80px;">
+                            <div class="label">Button A</div>
+                            <div class="button-indicator" id="buttonA"></div>
+                        </div>
+                        <div class="value-box button" style="min-width: 80px;">
+                            <div class="label">Button B</div>
+                            <div class="button-indicator" id="buttonB"></div>
+                        </div>
+                        <div class="value-box touch" style="min-width: 80px;">
+                            <div class="label">Logo Touch</div>
+                            <div class="button-indicator" id="logoTouch"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- GPIO Pins -->
+                <div class="card" id="gpioCard">
+                    <h2>GPIO Analog Inputs</h2>
+                    <div class="sensor-data-grid">
+                        <div class="value-box gpio">
+                            <div class="label">P0</div>
+                            <div class="value" id="gpioP0">--</div>
+                        </div>
+                        <div class="value-box gpio">
+                            <div class="label">P1</div>
+                            <div class="value" id="gpioP1">--</div>
+                        </div>
+                        <div class="value-box gpio">
+                            <div class="label">P2</div>
+                            <div class="value" id="gpioP2">--</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="gpioChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- LED Matrix Status (read-only display) -->
+                <div class="card" id="ledCard">
+                    <h2>LED Matrix Status</h2>
+                    <div style="display: flex; justify-content: center; align-items: center; padding: 20px;">
+                        <div class="led-matrix-mini" id="ledMatrixDisplay">
+                            <!-- 5x5 LED grid -->
+                        </div>
+                    </div>
+                    <p style="color: #666; font-size: 0.8rem; text-align: center;">LED state from micro:bit (read-only)</p>
+                </div>
+
+                <!-- Control Commands (if micro:bit supports) -->
+                <div class="card" id="controlCard">
+                    <h2>Send Control Commands</h2>
+                    <div class="control-panel">
+                        <h3>Quick Controls</h3>
+                        <button class="control-btn" onclick="sendControl('led', 'fill')">LED Fill</button>
+                        <button class="control-btn" onclick="sendControl('led', 'clear')">LED Clear</button>
+                        <button class="control-btn" onclick="sendControl('sound', 'beep')">Beep</button>
+                        <button class="control-btn" onclick="sendControl('sound', 'hello')">Hello Sound</button>
+                    </div>
+                    <div class="control-panel" style="margin-top: 10px;">
+                        <h3>Custom Command</h3>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="customCommand" class="topic-input" placeholder="e.g., MELODY:POWER_UP" style="margin: 0;">
+                            <button class="control-btn" onclick="sendCustomControl()">Send</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let mqttClient = null;
+        let isConnected = false;
+        let isPolling = false;
+        let pollingInterval = null;
+        let currentMode = 'mqtt';
+        let selectedSensor = null;
+        let sensors = {};
+        let messageCount = 0;
+        let lastMessageTime = Date.now();
+        let messagesPerSecond = 0;
+        let messageRateBuffer = [];
+        let controlTopic = 'core/control';  // Default control topic
+
+        // Chart configurations
+        const maxDataPoints = 60;  // 1 second history at ~60Hz, or 60 seconds at 1Hz
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+                x: { display: false },
+                y: {
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                    ticks: { color: '#888', font: { size: 10 } }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#e0e0e0', font: { size: 10 }, boxWidth: 12 }
+                }
+            }
+        };
+
+        // Initialize charts
+        const accelChart = new Chart(document.getElementById('accelChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'X', data: [], borderColor: '#ff6b6b', backgroundColor: 'rgba(255, 107, 107, 0.1)', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Y', data: [], borderColor: '#4ecdc4', backgroundColor: 'rgba(78, 205, 196, 0.1)', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Z', data: [], borderColor: '#ffe66d', backgroundColor: 'rgba(255, 230, 109, 0.1)', tension: 0.2, pointRadius: 0, borderWidth: 1.5 }
+                ]
+            },
+            options: chartOptions
+        });
+
+        const envChart = new Chart(document.getElementById('envChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Temp', data: [], borderColor: '#ff9f43', tension: 0.2, pointRadius: 0, borderWidth: 1.5, yAxisID: 'y' },
+                    { label: 'Light', data: [], borderColor: '#feca57', tension: 0.2, pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1' },
+                    { label: 'Sound', data: [], borderColor: '#54a0ff', tension: 0.2, pointRadius: 0, borderWidth: 1.5, yAxisID: 'y1' }
+                ]
+            },
+            options: {
+                ...chartOptions,
+                scales: {
+                    ...chartOptions.scales,
+                    y: { ...chartOptions.scales.y, position: 'left', title: { display: true, text: '°C', color: '#888' } },
+                    y1: { grid: { display: false }, position: 'right', title: { display: true, text: 'Level', color: '#888' }, ticks: { color: '#888' } }
+                }
+            }
+        });
+
+        const gpioChart = new Chart(document.getElementById('gpioChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'P0', data: [], borderColor: '#10ac84', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'P1', data: [], borderColor: '#00d2d3', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'P2', data: [], borderColor: '#5f27cd', tension: 0.2, pointRadius: 0, borderWidth: 1.5 }
+                ]
+            },
+            options: { ...chartOptions, scales: { ...chartOptions.scales, y: { ...chartOptions.scales.y, min: 0, max: 1023 } } }
+        });
+
+        // Initialize LED matrix display
+        function initLedMatrix() {
+            const container = document.getElementById('ledMatrixDisplay');
+            container.innerHTML = '';
+            for (let i = 0; i < 25; i++) {
+                const led = document.createElement('div');
+                led.className = 'led-mini';
+                led.id = `led-${Math.floor(i / 5)}-${i % 5}`;
+                container.appendChild(led);
+            }
+        }
+        initLedMatrix();
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('mqttModeBtn').classList.toggle('active', mode === 'mqtt');
+            document.getElementById('pollingModeBtn').classList.toggle('active', mode === 'polling');
+            document.getElementById('mqttPanel').style.display = mode === 'mqtt' ? 'block' : 'none';
+            document.getElementById('pollingPanel').style.display = mode === 'polling' ? 'block' : 'none';
+
+            // Stop the other mode
+            if (mode === 'mqtt' && isPolling) {
+                stopPolling();
+            } else if (mode === 'polling' && isConnected) {
+                disconnectMqtt();
+            }
+        }
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${message}`;
+            container.insertBefore(entry, container.firstChild);
+
+            // Keep only last 100 entries
+            while (container.children.length > 100) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('messageCount').textContent = messageCount;
+            document.getElementById('sensorCount').textContent = Object.keys(sensors).length;
+
+            // Calculate message rate
+            const now = Date.now();
+            messageRateBuffer.push(now);
+            messageRateBuffer = messageRateBuffer.filter(t => now - t < 1000);
+            document.getElementById('messageRate').textContent = messageRateBuffer.length;
+        }
+
+        // MQTT Functions
+        function toggleMqttConnection() {
+            if (isConnected) {
+                disconnectMqtt();
+            } else {
+                connectMqtt();
+            }
+        }
+
+        function connectMqtt() {
+            const host = document.getElementById('brokerHost').value;
+            const port = document.getElementById('brokerPort').value;
+            const topic = document.getElementById('subscribeTopic').value;
+
+            const wsUrl = `ws://${host}:${port}/mqtt`;
+            log(`Connecting to ${wsUrl}...`);
+
+            try {
+                mqttClient = mqtt.connect(wsUrl, {
+                    clientId: 'sensor-display-' + Math.random().toString(36).substr(2, 9),
+                    reconnectPeriod: 5000,
+                });
+
+                mqttClient.on('connect', () => {
+                    isConnected = true;
+                    updateConnectionUI();
+                    log(`Connected to MQTT broker`);
+
+                    // Subscribe to topic
+                    mqttClient.subscribe(topic, (err) => {
+                        if (err) {
+                            log(`Subscribe error: ${err.message}`, 'error');
+                        } else {
+                            log(`Subscribed to: ${topic}`);
+                        }
+                    });
+                });
+
+                mqttClient.on('message', (topic, message) => {
+                    handleMqttMessage(topic, message.toString());
+                });
+
+                mqttClient.on('error', (err) => {
+                    log(`MQTT Error: ${err.message}`, 'error');
+                    document.getElementById('fallbackNotice').style.display = 'block';
+                });
+
+                mqttClient.on('close', () => {
+                    isConnected = false;
+                    updateConnectionUI();
+                    log('Disconnected from MQTT broker', 'error');
+                });
+
+            } catch (err) {
+                log(`Connection failed: ${err.message}`, 'error');
+                document.getElementById('fallbackNotice').style.display = 'block';
+            }
+        }
+
+        function disconnectMqtt() {
+            if (mqttClient) {
+                mqttClient.end();
+                mqttClient = null;
+            }
+            isConnected = false;
+            updateConnectionUI();
+            log('Disconnected');
+        }
+
+        function updateConnectionUI() {
+            const dot = document.getElementById('mqttStatusDot');
+            const text = document.getElementById('mqttStatusText');
+            const btn = document.getElementById('connectBtn');
+
+            dot.classList.toggle('connected', isConnected);
+            text.textContent = isConnected ? 'Connected' : 'Disconnected';
+            btn.textContent = isConnected ? 'Disconnect' : 'Connect';
+            btn.classList.toggle('disconnect', isConnected);
+        }
+
+        function handleMqttMessage(topic, payload) {
+            try {
+                const data = JSON.parse(payload);
+                const topicParts = topic.split('/');
+                const sensorId = topicParts[2] || 'unknown';
+
+                processSensorData(sensorId, data, topic);
+            } catch (err) {
+                log(`Parse error: ${err.message}`, 'error');
+            }
+        }
+
+        // HTTP Polling Functions
+        function togglePolling() {
+            if (isPolling) {
+                stopPolling();
+            } else {
+                startPolling();
+            }
+        }
+
+        function startPolling() {
+            isPolling = true;
+            updatePollingUI();
+            log('Started HTTP polling');
+
+            // Poll immediately
+            pollSensorData();
+
+            // Then poll every second
+            pollingInterval = setInterval(pollSensorData, 1000);
+        }
+
+        function stopPolling() {
+            isPolling = false;
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            updatePollingUI();
+            log('Stopped HTTP polling');
+        }
+
+        function updatePollingUI() {
+            const dot = document.getElementById('pollingStatusDot');
+            const text = document.getElementById('pollingStatusText');
+            const btn = document.getElementById('pollingBtn');
+
+            dot.classList.toggle('connected', isPolling);
+            text.textContent = isPolling ? 'Polling Active' : 'Stopped';
+            btn.textContent = isPolling ? 'Stop Polling' : 'Start Polling';
+            btn.classList.toggle('disconnect', isPolling);
+        }
+
+        async function pollSensorData() {
+            try {
+                const response = await fetch('/api/sensors');
+                const data = await response.json();
+
+                // Process each sensor
+                for (const [sensorId, sensorInfo] of Object.entries(data.sensors || {})) {
+                    // Fetch latest readings
+                    const readingsResp = await fetch(`/api/sensors/${sensorId}/readings?limit=1`);
+                    const readingsData = await readingsResp.json();
+
+                    if (readingsData.readings && readingsData.readings.length > 0) {
+                        const latest = readingsData.readings[readingsData.readings.length - 1];
+                        processSensorData(sensorId, latest, `api/sensors/${sensorId}`);
+                    }
+                }
+            } catch (err) {
+                log(`Polling error: ${err.message}`, 'error');
+            }
+        }
+
+        // Detect sensor type from data
+        function detectSensorType(data) {
+            if (data.accelerometer !== undefined || (data.x !== undefined && data.y !== undefined && data.z !== undefined)) {
+                return 'microbit';  // Full micro:bit data
+            }
+            if (data.temperature !== undefined || data.light !== undefined || data.sound !== undefined) {
+                return 'environment';
+            }
+            if (data.compass !== undefined || data.magnetometer !== undefined) {
+                return 'compass';
+            }
+            return 'generic';
+        }
+
+        // Common data processing
+        function processSensorData(sensorId, data, source) {
+            messageCount++;
+
+            const sensorType = detectSensorType(data);
+
+            // Update or create sensor entry
+            if (!sensors[sensorId]) {
+                sensors[sensorId] = {
+                    id: sensorId,
+                    type: sensorType,
+                    lastData: null,
+                    lastUpdate: null,
+                    source: source,
+                };
+                updateSensorList();
+
+                // Auto-select first sensor
+                if (!selectedSensor) {
+                    selectSensor(sensorId);
+                }
+            }
+
+            sensors[sensorId].lastData = data;
+            sensors[sensorId].lastUpdate = Date.now();
+            sensors[sensorId].source = source;
+            sensors[sensorId].type = sensorType;
+
+            // Update UI if this is the selected sensor
+            if (selectedSensor === sensorId) {
+                updateSelectedSensorDisplay(data);
+            }
+
+            updateSensorList();
+            updateStats();
+
+            // Log summary based on data type
+            let logMsg = `${sensorId}: `;
+            if (data.accelerometer) {
+                logMsg += `accel(${data.accelerometer.x},${data.accelerometer.y},${data.accelerometer.z})`;
+            } else if (data.x !== undefined) {
+                logMsg += `x=${data.x}, y=${data.y}, z=${data.z}`;
+            }
+            if (data.temperature !== undefined) logMsg += ` temp=${data.temperature}°C`;
+            if (data.light !== undefined) logMsg += ` light=${data.light}`;
+            if (data.sound !== undefined) logMsg += ` sound=${data.sound}`;
+            log(logMsg, 'data');
+        }
+
+        function updateSensorList() {
+            const container = document.getElementById('sensorList');
+            container.innerHTML = '';
+
+            for (const [sensorId, sensor] of Object.entries(sensors)) {
+                const item = document.createElement('div');
+                item.className = `sensor-item ${selectedSensor === sensorId ? 'selected' : ''}`;
+                item.onclick = () => selectSensor(sensorId);
+
+                const timeSinceUpdate = sensor.lastUpdate
+                    ? Math.floor((Date.now() - sensor.lastUpdate) / 1000) + 's ago'
+                    : 'never';
+
+                const typeLabel = sensor.type === 'microbit' ? 'micro:bit' : sensor.type;
+
+                item.innerHTML = `
+                    <div class="sensor-name">
+                        ${sensorId}
+                        <span class="sensor-type-badge">${typeLabel}</span>
+                    </div>
+                    <div class="sensor-topic">${sensor.source}</div>
+                    <div style="font-size: 0.75rem; color: #666; margin-top: 4px;">
+                        Last: ${timeSinceUpdate}
+                    </div>
+                `;
+                container.appendChild(item);
+            }
+        }
+
+        function selectSensor(sensorId) {
+            selectedSensor = sensorId;
+            const sensor = sensors[sensorId];
+
+            document.getElementById('selectedSensorName').textContent = sensorId;
+            document.getElementById('selectedSensorTopic').textContent = sensor ? sensor.source : '--';
+
+            const typeEl = document.getElementById('selectedSensorType');
+            if (sensor && sensor.type) {
+                typeEl.textContent = sensor.type === 'microbit' ? 'micro:bit' : sensor.type;
+                typeEl.style.display = 'inline';
+            } else {
+                typeEl.style.display = 'none';
+            }
+
+            updateSensorList();
+
+            // Clear all charts
+            [accelChart, envChart, gpioChart].forEach(chart => {
+                chart.data.labels = [];
+                chart.data.datasets.forEach(ds => ds.data = []);
+                chart.update();
+            });
+
+            // Display current data if available
+            if (sensor && sensor.lastData) {
+                updateSelectedSensorDisplay(sensor.lastData);
+            }
+        }
+
+        function updateSelectedSensorDisplay(data) {
+            const now = new Date().toLocaleTimeString();
+
+            // Handle micro:bit full data format
+            if (data.accelerometer) {
+                // Accelerometer
+                document.getElementById('accelX').textContent = data.accelerometer.x;
+                document.getElementById('accelY').textContent = data.accelerometer.y;
+                document.getElementById('accelZ').textContent = data.accelerometer.z;
+                updateChart(accelChart, now, [data.accelerometer.x, data.accelerometer.y, data.accelerometer.z]);
+            } else if (data.x !== undefined) {
+                // Legacy x,y,z format
+                document.getElementById('accelX').textContent = data.x;
+                document.getElementById('accelY').textContent = data.y;
+                document.getElementById('accelZ').textContent = data.z;
+                updateChart(accelChart, now, [data.x, data.y, data.z]);
+            }
+
+            // Environment sensors
+            if (data.temperature !== undefined) {
+                document.getElementById('tempValue').textContent = data.temperature + '°C';
+            }
+            if (data.light !== undefined) {
+                document.getElementById('lightValue').textContent = data.light;
+            }
+            if (data.sound !== undefined) {
+                document.getElementById('soundValue').textContent = data.sound;
+            }
+            // Update env chart
+            if (data.temperature !== undefined || data.light !== undefined || data.sound !== undefined) {
+                updateChart(envChart, now, [
+                    data.temperature || 0,
+                    data.light || 0,
+                    data.sound || 0
+                ]);
+            }
+
+            // Compass / Magnetometer
+            if (data.compass !== undefined) {
+                document.getElementById('compassHeading').textContent = data.compass + '°';
+            }
+            if (data.magnetometer) {
+                document.getElementById('magX').textContent = data.magnetometer.x;
+                document.getElementById('magY').textContent = data.magnetometer.y;
+                document.getElementById('magZ').textContent = data.magnetometer.z;
+            }
+
+            // Buttons & Touch
+            if (data.buttons) {
+                document.getElementById('buttonA').classList.toggle('pressed', data.buttons.a);
+                document.getElementById('buttonB').classList.toggle('pressed', data.buttons.b);
+            }
+            if (data.buttonA !== undefined) {
+                document.getElementById('buttonA').classList.toggle('pressed', data.buttonA);
+            }
+            if (data.buttonB !== undefined) {
+                document.getElementById('buttonB').classList.toggle('pressed', data.buttonB);
+            }
+            if (data.touch !== undefined || data.logoTouch !== undefined) {
+                document.getElementById('logoTouch').classList.toggle('pressed', data.touch || data.logoTouch);
+            }
+
+            // GPIO
+            if (data.gpio) {
+                document.getElementById('gpioP0').textContent = data.gpio.p0 !== undefined ? data.gpio.p0 : '--';
+                document.getElementById('gpioP1').textContent = data.gpio.p1 !== undefined ? data.gpio.p1 : '--';
+                document.getElementById('gpioP2').textContent = data.gpio.p2 !== undefined ? data.gpio.p2 : '--';
+                updateChart(gpioChart, now, [
+                    data.gpio.p0 || 0,
+                    data.gpio.p1 || 0,
+                    data.gpio.p2 || 0
+                ]);
+            }
+
+            // LED Matrix state (if provided)
+            if (data.leds) {
+                for (let y = 0; y < 5; y++) {
+                    for (let x = 0; x < 5; x++) {
+                        const led = document.getElementById(`led-${y}-${x}`);
+                        if (led && data.leds[y] && data.leds[y][x] !== undefined) {
+                            led.classList.toggle('on', data.leds[y][x] > 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateChart(chart, label, values) {
+            chart.data.labels.push(label);
+            values.forEach((val, i) => {
+                if (chart.data.datasets[i]) {
+                    chart.data.datasets[i].data.push(val);
+                }
+            });
+
+            // Limit data points
+            if (chart.data.labels.length > maxDataPoints) {
+                chart.data.labels.shift();
+                chart.data.datasets.forEach(ds => ds.data.shift());
+            }
+
+            chart.update();
+        }
+
+        // Send control commands
+        function sendControl(type, action) {
+            let command = '';
+            switch (type) {
+                case 'led':
+                    command = action === 'fill' ? 'LEDFILL' : 'LEDCLEAR';
+                    break;
+                case 'sound':
+                    command = action === 'beep' ? 'TONE:440,200' : 'SOUND:HELLO';
+                    break;
+            }
+            sendControlCommand(command);
+        }
+
+        function sendCustomControl() {
+            const cmd = document.getElementById('customCommand').value.trim();
+            if (cmd) {
+                sendControlCommand(cmd);
+                document.getElementById('customCommand').value = '';
+            }
+        }
+
+        function sendControlCommand(command) {
+            if (!selectedSensor) {
+                log('No sensor selected for control', 'error');
+                return;
+            }
+
+            // Try MQTT first
+            if (isConnected && mqttClient) {
+                const topic = `${controlTopic}/${selectedSensor}`;
+                mqttClient.publish(topic, JSON.stringify({ command: command }));
+                log(`Control sent via MQTT: ${command}`, 'control');
+            } else {
+                // Fall back to HTTP API
+                fetch(`/api/control/${selectedSensor}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ command: command })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    log(`Control sent via API: ${command}`, 'control');
+                })
+                .catch(err => {
+                    log(`Control failed: ${err.message}`, 'error');
+                });
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Sensor Display initialized');
+            log('Select MQTT WebSocket or HTTP Polling mode to begin');
+
+            // Check MQTT status from server
+            fetch('/api/mqtt/status')
+                .then(r => r.json())
+                .then(status => {
+                    if (status.connected) {
+                        log(`Server MQTT: Connected to ${status.config.broker_host}`);
+                    } else {
+                        log('Server MQTT: Not connected (MQTT publishing disabled)');
+                    }
+
+                    // Pre-fill broker info
+                    document.getElementById('brokerHost').value = status.config.broker_host;
+                    document.getElementById('brokerPort').value = status.config.websocket_port;
+                })
+                .catch(() => {
+                    log('Could not fetch MQTT status from server');
+                });
+        });
+    </script>
+</body>
+</html>

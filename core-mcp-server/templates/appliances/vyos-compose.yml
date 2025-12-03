@@ -1,0 +1,43 @@
+# VyOS Router/Firewall Compose Template
+# Mako variables available: {{ node }}, {{ hostname }}, {{ appliance }}
+#
+# This template is rendered by CORE before starting the container.
+# The container runs with --net=none and CORE attaches interfaces.
+
+version: '3.8'
+
+services:
+  vyos:
+    image: 2stacks/vyos:latest
+    hostname: ${hostname}
+    container_name: ${node.name}
+    privileged: true
+
+    # CORE manages networking, but we need these sysctls
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.all.disable_ipv6=0
+
+    # Volumes for configuration persistence
+    volumes:
+      # VyOS config directory - can be pre-seeded with config.boot
+      - vyos-config:/config
+      # Optional: mount custom config.boot
+      # - ./configs/${node.name}/config.boot:/config/config.boot:ro
+
+    # Keep container running (CORE will exec into it)
+    tty: true
+    stdin_open: true
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "pgrep", "vyattad"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  vyos-config:
+    name: ${node.name}-config

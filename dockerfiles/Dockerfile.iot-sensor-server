@@ -1,0 +1,598 @@
+# IoT Sensor Data Server for CORE Network Emulation
+# Lightweight Python server that:
+# - Subscribes to MQTT sensor topics
+# - Serves web interface for HMI workstations
+# - Provides REST API for sensor data
+#
+# Use Case: Deploy as a node inside CORE network
+# HMI workstations browse to this server to view sensor data
+#
+# Ports:
+#   80    - Web interface for sensor display
+
+FROM python:3.11-alpine
+
+LABEL maintainer="CORE MCP Project"
+LABEL description="IoT Sensor Data Server for CORE network - serves sensor display to HMI clients"
+LABEL version="1.0"
+
+# Install dependencies
+# CORE requires: ethtool, iproute2, net-tools, procps for network namespace management
+RUN apk add --no-cache \
+    curl \
+    ethtool \
+    iproute2 \
+    net-tools \
+    procps \
+    && pip install --no-cache-dir \
+    flask \
+    flask-cors \
+    paho-mqtt \
+    gunicorn
+
+# Create app directory
+WORKDIR /app
+
+# Create the sensor display server
+COPY --chmod=755 <<'EOF' /app/sensor_server.py
+#!/usr/bin/env python3
+"""
+IoT Sensor Data Server
+Subscribes to MQTT broker and serves sensor data via web interface
+"""
+
+from flask import Flask, render_template_string, jsonify, request
+from flask_cors import CORS
+import threading
+import json
+import time
+import os
+
+app = Flask(__name__)
+CORS(app)
+
+# Sensor data store
+sensor_data = {
+    'sensors': {},
+    'last_update': None,
+}
+
+# Sensor aging configuration (in seconds)
+SENSOR_STALE_TIMEOUT = int(os.environ.get('SENSOR_STALE_TIMEOUT', 10))   # Show as stale after 10s
+SENSOR_REMOVE_TIMEOUT = int(os.environ.get('SENSOR_REMOVE_TIMEOUT', 60)) # Remove after 60s of inactivity
+
+# MQTT Configuration - defaults match IoT Quick Deploy template (10.0.1.10)
+MQTT_BROKER = os.environ.get('MQTT_BROKER', '10.0.1.10')
+MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
+MQTT_TOPIC = os.environ.get('MQTT_TOPIC', 'core/sensors/#')
+
+# HTML Template for sensor display - Full micro:bit support with controls
+SENSOR_DISPLAY_HTML = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IoT Sensor Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 15px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .header h1 { color: #00d4ff; font-size: 1.5rem; margin-bottom: 5px; }
+        .status-bar {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+            font-size: 0.85rem;
+        }
+        .status-item { display: flex; align-items: center; gap: 6px; }
+        .status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #ff4444;
+        }
+        .status-dot.connected { background: #00ff88; }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 15px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .card.stale { opacity: 0.6; border-color: rgba(255,150,0,0.3); }
+        .card.active { border-color: rgba(0,255,136,0.3); }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .card-title { color: #00d4ff; font-size: 1rem; font-weight: 600; }
+        .badge {
+            font-size: 0.65rem;
+            padding: 2px 8px;
+            border-radius: 10px;
+            text-transform: uppercase;
+        }
+        .badge.active { background: rgba(0,255,136,0.2); color: #00ff88; }
+        .badge.stale { background: rgba(255,150,0,0.2); color: #ff9600; }
+        .badge.microbit { background: rgba(0,212,255,0.2); color: #00d4ff; }
+
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .sensor-grid.wide { grid-template-columns: repeat(4, 1fr); }
+        .value-box {
+            text-align: center;
+            background: rgba(0,0,0,0.2);
+            padding: 10px 6px;
+            border-radius: 6px;
+        }
+        .value-box .label { font-size: 0.7rem; color: #888; margin-bottom: 2px; }
+        .value-box .value { font-size: 1.2rem; font-weight: 700; font-family: monospace; }
+        .value-box.x .value { color: #ff6b6b; }
+        .value-box.y .value { color: #4ecdc4; }
+        .value-box.z .value { color: #ffe66d; }
+        .value-box.temp .value { color: #ff9f43; }
+        .value-box.light .value { color: #feca57; }
+        .value-box.sound .value { color: #54a0ff; }
+        .value-box.compass .value { color: #a55eea; }
+
+        .button-row {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+        .hw-btn {
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: #333;
+            border: 2px solid #555;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+            transition: all 0.15s;
+        }
+        .hw-btn.pressed {
+            background: #00ff88;
+            border-color: #00ff88;
+            color: #000;
+            box-shadow: 0 0 15px rgba(0,255,136,0.5);
+        }
+
+        .control-section { margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1); }
+        .control-section h3 { font-size: 0.8rem; color: #ff9f43; margin-bottom: 8px; }
+        .control-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+        .ctrl-btn {
+            padding: 6px 12px;
+            border: none;
+            border-radius: 6px;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .ctrl-btn:hover { background: rgba(0,212,255,0.3); }
+        .ctrl-btn.active { background: #00d4ff; color: #000; }
+
+        .led-matrix {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 3px;
+            width: 100px;
+            margin: 10px auto;
+        }
+        .led {
+            aspect-ratio: 1;
+            background: #333;
+            border-radius: 2px;
+            cursor: pointer;
+            transition: all 0.1s;
+        }
+        .led.on { background: #ff0000; box-shadow: 0 0 8px rgba(255,0,0,0.6); }
+        .led:hover { background: #555; }
+
+        .timestamp { font-size: 0.75rem; color: #666; margin-top: 8px; text-align: right; }
+        .no-data { text-align: center; padding: 40px; color: #666; }
+
+        .refresh-note {
+            text-align: center;
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 15px;
+        }
+    </style>
+    <script>
+        // Auto-refresh every 2 seconds
+        setTimeout(function() { location.reload(); }, 2000);
+
+        // Send control command
+        function sendControl(sensorId, command) {
+            fetch('/api/control/' + sensorId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: command })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.success) {
+                    // Visual feedback
+                    event.target.classList.add('active');
+                    setTimeout(() => event.target.classList.remove('active'), 200);
+                }
+            })
+            .catch(err => console.error('Control error:', err));
+        }
+
+        function toggleLed(sensorId, x, y) {
+            sendControl(sensorId, 'LED:' + x + ',' + y + ',1');
+        }
+    </script>
+</head>
+<body>
+    <div class="header">
+        <h1>IoT Sensor Monitor</h1>
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-dot {{ 'connected' if mqtt_connected else '' }}"></span>
+                <span>MQTT: {{ 'Connected' if mqtt_connected else 'Disconnected' }}</span>
+            </div>
+            <div class="status-item">
+                <span>Active: {{ active_count }}</span>
+            </div>
+            <div class="status-item">
+                <span>Stale: {{ stale_count }}</span>
+            </div>
+        </div>
+    </div>
+
+    {% if sensors %}
+    <div class="main-grid">
+        {% for sensor_id, data in sensors.items() %}
+        <div class="card {{ 'stale' if data.is_stale else 'active' }}">
+            <div class="card-header">
+                <span class="card-title">{{ sensor_id }}</span>
+                <div>
+                    {% if 'microbit' in sensor_id.lower() %}
+                    <span class="badge microbit">micro:bit</span>
+                    {% endif %}
+                    <span class="badge {{ 'stale' if data.is_stale else 'active' }}">
+                        {{ 'stale' if data.is_stale else 'live' }}
+                    </span>
+                </div>
+            </div>
+
+            <!-- Accelerometer -->
+            {% if data.x is defined or data.accelerometer is defined %}
+            <div class="sensor-grid">
+                <div class="value-box x">
+                    <div class="label">Accel X</div>
+                    <div class="value">{{ data.accelerometer.x if data.accelerometer else (data.x if data.x is not none else '--') }}</div>
+                </div>
+                <div class="value-box y">
+                    <div class="label">Accel Y</div>
+                    <div class="value">{{ data.accelerometer.y if data.accelerometer else (data.y if data.y is not none else '--') }}</div>
+                </div>
+                <div class="value-box z">
+                    <div class="label">Accel Z</div>
+                    <div class="value">{{ data.accelerometer.z if data.accelerometer else (data.z if data.z is not none else '--') }}</div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Environment sensors -->
+            {% if data.temperature is defined or data.light is defined or data.sound is defined %}
+            <div class="sensor-grid" style="margin-top: 8px;">
+                {% if data.temperature is defined %}
+                <div class="value-box temp">
+                    <div class="label">Temp</div>
+                    <div class="value">{{ data.temperature }}°</div>
+                </div>
+                {% endif %}
+                {% if data.light is defined %}
+                <div class="value-box light">
+                    <div class="label">Light</div>
+                    <div class="value">{{ data.light }}</div>
+                </div>
+                {% endif %}
+                {% if data.sound is defined %}
+                <div class="value-box sound">
+                    <div class="label">Sound</div>
+                    <div class="value">{{ data.sound }}</div>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Compass -->
+            {% if data.compass is defined %}
+            <div class="sensor-grid" style="margin-top: 8px;">
+                <div class="value-box compass">
+                    <div class="label">Compass</div>
+                    <div class="value">{{ data.compass }}°</div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Buttons -->
+            {% if data.buttonA is defined or data.buttonB is defined or data.buttons is defined %}
+            <div class="button-row">
+                <div class="hw-btn {{ 'pressed' if (data.buttons.a if data.buttons else data.buttonA) else '' }}">A</div>
+                <div class="hw-btn {{ 'pressed' if (data.touch if data.touch is defined else (data.logoTouch if data.logoTouch is defined else false)) else '' }}">●</div>
+                <div class="hw-btn {{ 'pressed' if (data.buttons.b if data.buttons else data.buttonB) else '' }}">B</div>
+            </div>
+            {% endif %}
+
+            <!-- GPIO -->
+            {% if data.gpio is defined %}
+            <div class="sensor-grid" style="margin-top: 8px;">
+                <div class="value-box">
+                    <div class="label">P0</div>
+                    <div class="value">{{ data.gpio.p0 if data.gpio.p0 is defined else '--' }}</div>
+                </div>
+                <div class="value-box">
+                    <div class="label">P1</div>
+                    <div class="value">{{ data.gpio.p1 if data.gpio.p1 is defined else '--' }}</div>
+                </div>
+                <div class="value-box">
+                    <div class="label">P2</div>
+                    <div class="value">{{ data.gpio.p2 if data.gpio.p2 is defined else '--' }}</div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Control buttons for micro:bit -->
+            {% if 'microbit' in sensor_id.lower() %}
+            <div class="control-section">
+                <h3>Controls</h3>
+                <div class="control-btns">
+                    <button class="ctrl-btn" onclick="sendControl('{{ sensor_id }}', 'LEDFILL')">LED Fill</button>
+                    <button class="ctrl-btn" onclick="sendControl('{{ sensor_id }}', 'LEDCLEAR')">LED Clear</button>
+                    <button class="ctrl-btn" onclick="sendControl('{{ sensor_id }}', 'TONE:440,200')">Beep</button>
+                    <button class="ctrl-btn" onclick="sendControl('{{ sensor_id }}', 'SOUND:HELLO')">Hello</button>
+                    <button class="ctrl-btn" onclick="sendControl('{{ sensor_id }}', 'MELODY:POWER_UP')">Power Up</button>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="timestamp">
+                {{ data.timestamp if data.timestamp else '' }}
+                {% if data.age is defined %}({{ data.age }}s ago){% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-data">
+        <p>No sensor data received yet...</p>
+        <p style="margin-top: 10px; font-size: 0.85rem;">
+            Waiting for micro:bit or sensor data on MQTT topic: {{ mqtt_topic }}
+        </p>
+    </div>
+    {% endif %}
+
+    <p class="refresh-note">Auto-refreshing every 2 seconds</p>
+</body>
+</html>
+'''
+
+mqtt_client = None
+mqtt_connected = False
+
+def mqtt_thread():
+    """MQTT subscriber thread"""
+    global mqtt_client, mqtt_connected
+
+    try:
+        import paho.mqtt.client as mqtt
+
+        def on_connect(client, userdata, flags, rc):
+            global mqtt_connected
+            if rc == 0:
+                mqtt_connected = True
+                print(f"Connected to MQTT broker {MQTT_BROKER}:{MQTT_PORT}")
+                client.subscribe(MQTT_TOPIC)
+            else:
+                print(f"MQTT connection failed: {rc}")
+
+        def on_disconnect(client, userdata, rc):
+            global mqtt_connected
+            mqtt_connected = False
+            print("Disconnected from MQTT broker")
+
+        def on_message(client, userdata, msg):
+            try:
+                data = json.loads(msg.payload.decode())
+                topic_parts = msg.topic.split('/')
+                sensor_id = topic_parts[2] if len(topic_parts) > 2 else 'unknown'
+
+                data['timestamp'] = time.strftime('%H:%M:%S')
+                data['last_seen'] = time.time()  # Track when sensor was last seen
+                sensor_data['sensors'][sensor_id] = data
+                sensor_data['last_update'] = time.time()
+            except Exception as e:
+                print(f"Error processing message: {e}")
+
+        mqtt_client = mqtt.Client(client_id="iot-sensor-server")
+        mqtt_client.on_connect = on_connect
+        mqtt_client.on_disconnect = on_disconnect
+        mqtt_client.on_message = on_message
+
+        # Keep trying to connect
+        while True:
+            try:
+                mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+                mqtt_client.loop_forever()
+            except Exception as e:
+                print(f"MQTT connection error: {e}, retrying in 5s...")
+                time.sleep(5)
+
+    except ImportError:
+        print("paho-mqtt not available, MQTT disabled")
+
+def cleanup_thread():
+    """Background thread to remove stale sensors"""
+    while True:
+        try:
+            now = time.time()
+            sensors_to_remove = []
+            for sensor_id, data in list(sensor_data['sensors'].items()):
+                last_seen = data.get('last_seen', 0)
+                if now - last_seen > SENSOR_REMOVE_TIMEOUT:
+                    sensors_to_remove.append(sensor_id)
+
+            for sensor_id in sensors_to_remove:
+                del sensor_data['sensors'][sensor_id]
+                print(f"Removed inactive sensor: {sensor_id}")
+
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+
+        time.sleep(5)  # Check every 5 seconds
+
+@app.route('/')
+def index():
+    now = time.time()
+    active_count = 0
+    stale_count = 0
+
+    # Calculate age and stale status for each sensor
+    display_sensors = {}
+    for sensor_id, data in sensor_data['sensors'].items():
+        sensor_copy = data.copy()
+        last_seen = data.get('last_seen', 0)
+        age = int(now - last_seen) if last_seen else 0
+        is_stale = age > SENSOR_STALE_TIMEOUT
+
+        sensor_copy['age'] = age
+        sensor_copy['is_stale'] = is_stale
+        display_sensors[sensor_id] = sensor_copy
+
+        if is_stale:
+            stale_count += 1
+        else:
+            active_count += 1
+
+    return render_template_string(
+        SENSOR_DISPLAY_HTML,
+        sensors=display_sensors,
+        mqtt_connected=mqtt_connected,
+        mqtt_broker=MQTT_BROKER,
+        mqtt_topic=MQTT_TOPIC,
+        active_count=active_count,
+        stale_count=stale_count,
+        remove_timeout=SENSOR_REMOVE_TIMEOUT,
+    )
+
+@app.route('/api/sensors')
+def api_sensors():
+    return jsonify(sensor_data)
+
+# Control commands - stored for polling by microbit page
+control_commands = {}  # sensor_id -> [list of commands]
+
+@app.route('/api/control/<sensor_id>', methods=['POST'])
+def send_control(sensor_id):
+    """Send control command to a sensor - publishes to MQTT and stores for polling"""
+    data = request.get_json() or {}
+    command = data.get('command', '')
+
+    if not command:
+        return jsonify({'success': False, 'error': 'No command provided'}), 400
+
+    # Store for polling
+    if sensor_id not in control_commands:
+        control_commands[sensor_id] = []
+    control_commands[sensor_id].append({
+        'command': command,
+        'timestamp': time.time()
+    })
+    # Keep only last 10 commands
+    control_commands[sensor_id] = control_commands[sensor_id][-10:]
+
+    # Publish to MQTT if connected
+    if mqtt_client and mqtt_connected:
+        try:
+            topic = f"core/control/{sensor_id}"
+            mqtt_client.publish(topic, json.dumps({'command': command}))
+        except Exception as e:
+            print(f"MQTT publish error: {e}")
+
+    return jsonify({
+        'success': True,
+        'sensor_id': sensor_id,
+        'command': command
+    })
+
+@app.route('/api/control/<sensor_id>/pending', methods=['GET'])
+def get_pending_controls(sensor_id):
+    """Get pending control commands for a sensor"""
+    commands = control_commands.get(sensor_id, [])
+    control_commands[sensor_id] = []  # Clear after reading
+    return jsonify({
+        'sensor_id': sensor_id,
+        'commands': commands
+    })
+
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'healthy',
+        'mqtt_connected': mqtt_connected,
+        'sensor_count': len(sensor_data['sensors']),
+    })
+
+if __name__ == '__main__':
+    # Start MQTT thread
+    mqtt_t = threading.Thread(target=mqtt_thread, daemon=True)
+    mqtt_t.start()
+
+    # Start cleanup thread
+    cleanup_t = threading.Thread(target=cleanup_thread, daemon=True)
+    cleanup_t.start()
+
+    # Run Flask
+    app.run(host='0.0.0.0', port=80, debug=False)
+EOF
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost/health || exit 1
+
+EXPOSE 80
+
+# Create entrypoint that starts server in background, then runs CMD
+# This allows CORE to override CMD with "tail -f /dev/null" while server still runs
+COPY --chmod=755 <<'ENTRYPOINT_SCRIPT' /usr/local/bin/docker-entrypoint.sh
+#!/bin/sh
+echo "Starting IoT Sensor Server..."
+cd /app && nohup python3 sensor_server.py > /var/log/sensor_server.log 2>&1 &
+echo "Server started (PID: $!)"
+exec "$@"
+ENTRYPOINT_SCRIPT
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["python3", "/app/sensor_server.py"]

@@ -1,0 +1,40 @@
+# FRRouting Compose Template
+# Mako variables: {{ node }}, {{ hostname }}, {{ appliance }}
+#
+# FRR provides dynamic routing protocols (BGP, OSPF, IS-IS, etc.)
+# Lightweight alternative to full router OS like VyOS
+
+version: '3.8'
+
+services:
+  frr:
+    image: frrouting/frr:latest
+    hostname: ${hostname}
+    container_name: ${node.name}
+    privileged: true
+
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv6.conf.all.disable_ipv6=0
+
+    volumes:
+      # FRR configuration - MUST be mounted for FRR to work
+      - frr-config:/etc/frr
+
+    # FRR needs to run its daemons
+    command: /usr/lib/frr/docker-start
+
+    tty: true
+    stdin_open: true
+
+    healthcheck:
+      test: ["CMD", "vtysh", "-c", "show version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  frr-config:
+    name: ${node.name}-frr-config

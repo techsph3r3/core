@@ -1,0 +1,78 @@
+# MQTT Broker for CORE Network Emulation
+# Eclipse Mosquitto with WebSocket support for IoT sensor data
+#
+# This container provides MQTT pub/sub messaging for:
+# - Physical sensor data bridging (micro:bit, Arduino, etc.)
+# - Inter-node communication in CORE network
+# - HMI workstation real-time data feeds
+#
+# Ports:
+#   1883  - MQTT standard port
+#   9001  - MQTT over WebSocket (for browser clients)
+
+FROM eclipse-mosquitto:2
+
+LABEL maintainer="CORE MCP Project"
+LABEL description="MQTT Broker for IoT sensor data in CORE network emulations"
+LABEL version="1.0"
+
+# Install mosquitto-clients (mosquitto_pub, mosquitto_sub) for injection support
+# The base image only has the broker, we need the clients for the injector to work
+USER root
+RUN apk add --no-cache mosquitto-clients
+USER mosquitto
+
+# Create custom configuration
+COPY --chown=mosquitto:mosquitto <<EOF /mosquitto/config/mosquitto.conf
+# Mosquitto Configuration for CORE Network
+
+# Persistence
+persistence true
+persistence_location /mosquitto/data/
+
+# Logging
+log_dest stdout
+log_type error
+log_type warning
+log_type notice
+log_type information
+
+# Standard MQTT listener
+listener 1883
+protocol mqtt
+allow_anonymous true
+
+# WebSocket listener (for browser clients)
+listener 9001
+protocol websockets
+allow_anonymous true
+
+# Connection settings
+max_connections -1
+max_keepalive 120
+EOF
+
+# Create data and log directories
+RUN mkdir -p /mosquitto/data /mosquitto/log && \
+    chown -R mosquitto:mosquitto /mosquitto
+
+# Expose ports
+EXPOSE 1883 9001
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD mosquitto_sub -t '$SYS/broker/uptime' -C 1 -W 5 || exit 1
+
+# Create entrypoint that starts mosquitto in background, then runs CMD
+# This allows CORE to override CMD with "tail -f /dev/null" while broker still runs
+COPY --chmod=755 <<'ENTRYPOINT_SCRIPT' /usr/local/bin/docker-entrypoint.sh
+#!/bin/sh
+echo "Starting MQTT Broker..."
+mosquitto -c /mosquitto/config/mosquitto.conf &
+sleep 1
+echo "MQTT Broker started"
+exec "$@"
+ENTRYPOINT_SCRIPT
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["mosquitto", "-c", "/mosquitto/config/mosquitto.conf"]

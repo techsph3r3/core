@@ -1,0 +1,163 @@
+# Engineering Workstation for CORE network emulator
+# Full desktop environment with tools for programming PLCs and browsing SCADA/HMI interfaces
+# Based on Debian to avoid snap package issues
+
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install desktop environment, browser, and engineering tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Networking tools
+    iproute2 \
+    iputils-ping \
+    net-tools \
+    ethtool \
+    tcpdump \
+    traceroute \
+    curl \
+    wget \
+    dnsutils \
+    ca-certificates \
+    netcat-openbsd \
+    nmap \
+    # X11 and desktop
+    xvfb \
+    x11vnc \
+    fluxbox \
+    xterm \
+    # Browser
+    firefox-esr \
+    # noVNC for web-based access
+    novnc \
+    websockify \
+    # Development/Engineering tools
+    python3 \
+    python3-pip \
+    python3-venv \
+    git \
+    nano \
+    vim \
+    # Process management
+    supervisor \
+    # Additional utilities
+    file \
+    less \
+    htop \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python packages for PLC programming
+RUN pip3 install --break-system-packages \
+    pymodbus \
+    opcua \
+    pycomm3 \
+    requests
+
+# Create supervisord config
+RUN mkdir -p /var/log/supervisor /root/Desktop
+
+# Supervisor configuration for desktop services
+COPY <<'SUPERVISORCONF' /etc/supervisor/conf.d/desktop.conf
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+
+[program:xvfb]
+command=/usr/bin/Xvfb :1 -screen 0 1920x1080x24
+autorestart=true
+priority=100
+
+[program:fluxbox]
+command=/usr/bin/fluxbox
+environment=DISPLAY=":1"
+autorestart=true
+priority=200
+
+[program:x11vnc]
+command=/usr/bin/x11vnc -display :1 -forever -shared -rfbport 5900 -nopw
+autorestart=true
+priority=300
+
+[program:novnc]
+command=/usr/bin/websockify --web=/usr/share/novnc/ 6080 localhost:5900
+autorestart=true
+priority=400
+SUPERVISORCONF
+
+# Create Fluxbox menu with useful applications
+COPY <<'FLUXBOXMENU' /root/.fluxbox/menu
+[begin] (Engineering Workstation)
+  [exec] (Firefox Browser) {firefox-esr --no-sandbox}
+  [exec] (Terminal) {xterm -bg black -fg green -fa 'Monospace' -fs 11}
+  [separator]
+  [submenu] (Network Tools)
+    [exec] (IP Address) {xterm -hold -e "ip addr show"}
+    [exec] (Ping Test) {xterm -e "ping -c 4 10.0.0.10"}
+    [exec] (Port Scan) {xterm -hold -e "nmap -sT 10.0.0.0/24"}
+    [exec] (Netstat) {xterm -hold -e "netstat -tuln"}
+  [end]
+  [submenu] (PLC Tools)
+    [exec] (Modbus Client) {xterm -e "python3 -c 'from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(\"10.0.0.10\"); c.connect(); print(c.read_holding_registers(0,10)); c.close()' && read"}
+  [end]
+  [separator]
+  [exec] (Restart) {/sbin/reboot}
+  [exit] (Exit)
+[end]
+FLUXBOXMENU
+
+RUN mkdir -p /root/.fluxbox
+
+# Create desktop shortcuts
+COPY <<'FIREFOX_DESKTOP' /root/Desktop/firefox.desktop
+[Desktop Entry]
+Name=Firefox Browser
+Exec=firefox-esr --no-sandbox
+Icon=firefox
+Type=Application
+Categories=Network;WebBrowser;
+FIREFOX_DESKTOP
+
+COPY <<'TERMINAL_DESKTOP' /root/Desktop/terminal.desktop
+[Desktop Entry]
+Name=Terminal
+Exec=xterm -bg black -fg green -fa 'Monospace' -fs 11
+Icon=utilities-terminal
+Type=Application
+Categories=System;TerminalEmulator;
+TERMINAL_DESKTOP
+
+# Create startup script that starts desktop in background
+COPY <<'STARTSCRIPT' /usr/local/bin/start-desktop.sh
+#!/bin/bash
+echo "Starting Engineering Workstation Desktop..."
+echo "Network Configuration:"
+ip addr show | grep -E "inet |eth"
+echo ""
+echo "Starting supervisord in background..."
+nohup /usr/bin/supervisord -c /etc/supervisor/conf.d/desktop.conf > /var/log/supervisor/supervisord.log 2>&1 &
+echo "Desktop services started (PID: $!)"
+STARTSCRIPT
+
+# Create entrypoint wrapper that starts desktop then runs CMD
+COPY <<'ENTRYPOINT_SCRIPT' /usr/local/bin/docker-entrypoint.sh
+#!/bin/bash
+# Start desktop services in background
+/usr/local/bin/start-desktop.sh
+
+# Execute the CMD passed to docker run (e.g., "tail -f /dev/null")
+exec "$@"
+ENTRYPOINT_SCRIPT
+
+RUN chmod +x /usr/local/bin/start-desktop.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && chmod +x /root/Desktop/*.desktop
+
+# Set display environment
+ENV DISPLAY=:1
+
+# Expose VNC ports
+EXPOSE 5900 6080
+
+# Use ENTRYPOINT to ensure desktop starts, then run whatever CMD is passed
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/usr/local/bin/start-desktop.sh"]

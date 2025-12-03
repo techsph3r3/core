@@ -1,0 +1,53 @@
+# OpenPLC Runtime Compose Template
+# Mako variables: {{ node }}, {{ hostname }}, {{ appliance }}
+#
+# OpenPLC is an IEC 61131-3 compliant PLC runtime.
+# Web interface on port 8080, Modbus TCP on port 502.
+#
+# FUTURE EXTENSION: This template will be enhanced to support:
+# - Automatic PLC program loading (ST/LD files)
+# - OT-sim process model integration
+# - Modbus register mapping configuration
+
+version: '3.8'
+
+services:
+  openplc:
+    image: openplc-core:latest
+    hostname: ${hostname}
+    container_name: ${node.name}
+    privileged: true
+
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+
+    environment:
+      # Default credentials (change in production!)
+      - OPENPLC_USER=openplc
+      - OPENPLC_PASSWORD=openplc
+
+    volumes:
+      # OpenPLC working directory (programs, configs)
+      - openplc-workdir:/workdir
+      # Optional: pre-load a PLC program
+      # - ./plc-programs/${node.name}/program.st:/workdir/program.st:ro
+
+    # Expose web UI and Modbus
+    # Note: CORE manages networking, these are for documentation
+    expose:
+      - "8080"
+      - "502"
+
+    tty: true
+    stdin_open: true
+
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  openplc-workdir:
+    name: ${node.name}-openplc-workdir

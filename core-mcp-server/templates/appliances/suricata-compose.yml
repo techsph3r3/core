@@ -1,0 +1,56 @@
+# Suricata IDS/IPS Compose Template
+# Mako variables: {{ node }}, {{ hostname }}, {{ appliance }}
+#
+# Suricata is a high-performance IDS/IPS engine.
+# Can run inline (IPS mode) or passive (IDS mode).
+
+version: '3.8'
+
+services:
+  suricata:
+    image: jasonish/suricata:latest
+    hostname: ${hostname}
+    container_name: ${node.name}
+    privileged: true
+
+    # Network capabilities for packet capture
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_NICE
+
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=0
+
+    volumes:
+      # Suricata logs
+      - suricata-logs:/var/log/suricata
+      # Suricata rules and data
+      - suricata-data:/var/lib/suricata
+      # Optional: custom suricata.yaml
+      # - ./configs/${node.name}/suricata.yaml:/etc/suricata/suricata.yaml:ro
+
+    # Run suricata in IDS mode on all interfaces
+    # Adjust -i parameter based on which interface to monitor
+    command: >
+      suricata
+      -c /etc/suricata/suricata.yaml
+      -i eth0
+      --set outputs.fast.enabled=yes
+      --set outputs.eve-log.enabled=yes
+
+    tty: true
+    stdin_open: true
+
+    healthcheck:
+      test: ["CMD", "suricatasc", "-c", "uptime"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  suricata-logs:
+    name: ${node.name}-suricata-logs
+  suricata-data:
+    name: ${node.name}-suricata-data

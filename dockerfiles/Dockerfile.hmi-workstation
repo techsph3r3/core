@@ -1,0 +1,144 @@
+# HMI Workstation with Browser for CORE network emulator
+# Uses Debian to avoid snap package issues with Firefox
+FROM debian:bookworm-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install X11, window manager, browsers, Wireshark, noVNC and networking tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Networking tools for CORE
+    iproute2 \
+    iputils-ping \
+    net-tools \
+    ethtool \
+    tcpdump \
+    traceroute \
+    curl \
+    wget \
+    dnsutils \
+    ca-certificates \
+    socat \
+    # X11 and display
+    xvfb \
+    x11vnc \
+    fluxbox \
+    xterm \
+    feh \
+    # Browsers - firefox-esr and chromium
+    firefox-esr \
+    chromium \
+    # Wireshark for packet capture and analysis
+    wireshark \
+    tshark \
+    # noVNC for web-based VNC access
+    novnc \
+    websockify \
+    # Process management
+    supervisor \
+    && rm -rf /var/lib/apt/lists/*
+
+# Configure Wireshark to allow non-root capture
+RUN setcap 'CAP_NET_RAW+eip CAP_NET_ADMIN+eip' /usr/bin/dumpcap || true
+
+# Create Fluxbox config directory and set simple solid color background (dark gray)
+# This prevents the fbsetbg "can't find wallpaper app" error popup
+RUN mkdir -p /root/.fluxbox && \
+    echo 'fbsetbg -solid "#2d2d2d"' > /root/.fluxbox/startup && \
+    echo 'exec fluxbox' >> /root/.fluxbox/startup && \
+    chmod +x /root/.fluxbox/startup
+
+# Create Fluxbox menu (right-click menu)
+COPY <<'FLUXBOXMENU' /root/.fluxbox/menu
+[begin] (HMI Workstation)
+  [submenu] (Applications)
+    [submenu] (Browsers)
+      [exec] (Firefox) {firefox-esr}
+      [exec] (Chromium) {chromium --no-sandbox}
+    [end]
+    [submenu] (Network Tools)
+      [exec] (Wireshark) {wireshark}
+      [exec] (Terminal) {xterm -fa 'Monospace' -fs 11}
+    [end]
+  [end]
+  [separator]
+  [exec] (Firefox) {firefox-esr}
+  [exec] (Wireshark) {wireshark}
+  [exec] (Terminal) {xterm -fa 'Monospace' -fs 11}
+  [separator]
+  [submenu] (Fluxbox)
+    [workspaces] (Workspaces)
+    [config] (Configure)
+    [reconfig] (Reconfigure)
+    [restart] (Restart)
+  [end]
+[end]
+FLUXBOXMENU
+
+# Create supervisord config
+RUN mkdir -p /var/log/supervisor
+
+# Create startup script that starts desktop in background
+COPY <<'STARTSCRIPT' /usr/local/bin/start-desktop.sh
+#!/bin/bash
+# Log network info at startup
+echo "=== Network Configuration at Startup ===" >> /var/log/desktop-startup.log
+ip addr >> /var/log/desktop-startup.log 2>&1
+ip route >> /var/log/desktop-startup.log 2>&1
+echo "========================================" >> /var/log/desktop-startup.log
+
+# Start supervisord in background
+echo "Starting HMI Workstation Desktop..."
+nohup /usr/bin/supervisord -c /etc/supervisor/conf.d/desktop.conf > /var/log/supervisor/supervisord.log 2>&1 &
+echo "Desktop services started (PID: $!)"
+STARTSCRIPT
+
+# Create entrypoint wrapper that starts desktop then runs CMD
+COPY <<'ENTRYPOINT_SCRIPT' /usr/local/bin/docker-entrypoint.sh
+#!/bin/bash
+# Start desktop services in background
+/usr/local/bin/start-desktop.sh
+
+# Execute the CMD passed to docker run (e.g., "tail -f /dev/null")
+exec "$@"
+ENTRYPOINT_SCRIPT
+
+RUN chmod +x /usr/local/bin/start-desktop.sh \
+    && chmod +x /usr/local/bin/docker-entrypoint.sh
+
+COPY <<'SUPERVISORCONF' /etc/supervisor/conf.d/desktop.conf
+[supervisord]
+nodaemon=true
+logfile=/var/log/supervisor/supervisord.log
+
+[program:xvfb]
+command=/usr/bin/Xvfb :1 -screen 0 1280x720x24
+autorestart=true
+priority=100
+
+[program:fluxbox]
+command=/usr/bin/fluxbox
+environment=DISPLAY=":1"
+autorestart=true
+priority=200
+
+[program:x11vnc]
+command=/usr/bin/x11vnc -display :1 -forever -shared -rfbport 5900 -nopw
+autorestart=true
+priority=300
+
+[program:novnc]
+command=/usr/bin/websockify --web=/usr/share/novnc/ 6080 localhost:5900
+autorestart=true
+priority=400
+SUPERVISORCONF
+
+# Set display environment
+ENV DISPLAY=:1
+
+# Expose VNC ports
+EXPOSE 5900 6080
+
+# Use ENTRYPOINT to ensure desktop starts, then run whatever CMD is passed
+# This allows CORE to override CMD while still auto-starting desktop
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["/usr/local/bin/start-desktop.sh"]
