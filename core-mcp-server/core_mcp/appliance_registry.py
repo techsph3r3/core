@@ -27,6 +27,7 @@ from typing import Dict, List, Optional, Any
 from pathlib import Path
 import subprocess
 import os
+import ipaddress
 
 
 # =============================================================================
@@ -757,7 +758,13 @@ def generate_firewall_config(
     enable_nat: bool = True,
     enable_dhcp: bool = False,
     dhcp_range: Optional[str] = None,
-    custom_rules: Optional[List[str]] = None
+    custom_rules: Optional[List[str]] = None,
+    # Advanced VyOS options
+    ospf_config: Optional[Dict[str, Any]] = None,
+    bgp_config: Optional[Dict[str, Any]] = None,
+    vlans: Optional[List[Dict[str, Any]]] = None,
+    static_routes: Optional[List[Dict[str, str]]] = None,
+    hostname: str = "vyos-firewall",
 ) -> Dict[str, str]:
     """
     Generate firewall configuration files.
@@ -770,6 +777,24 @@ def generate_firewall_config(
         dhcp_range: DHCP range (e.g., "10.0.1.100-10.0.1.200")
         custom_rules: Additional firewall rules
 
+        # VyOS-specific advanced options:
+        ospf_config: OSPF configuration {
+            "router_id": "1.1.1.1",
+            "areas": [{"id": "0", "networks": ["10.0.0.0/8"], "type": "normal|stub|nssa"}],
+            "redistribute": ["connected", "static", "bgp"],
+            "passive_interfaces": ["eth0"]
+        }
+        bgp_config: BGP configuration {
+            "asn": 65001,
+            "router_id": "1.1.1.1",
+            "neighbors": [{"ip": "10.0.1.2", "remote_as": 65002, "description": "Peer1", "password": "secret"}],
+            "networks": ["10.0.0.0/8"],
+            "redistribute": ["connected", "static", "ospf"]
+        }
+        vlans: VLAN configuration [{"parent": "eth1", "id": 100, "ip": "10.100.0.1", "mask": 24, "description": "VLAN100"}, ...]
+        static_routes: Static routes [{"destination": "0.0.0.0/0", "next_hop": "10.0.1.254", "distance": 1}, ...]
+        hostname: Router hostname
+
     Returns:
         Dict mapping config file names to content
     """
@@ -777,7 +802,16 @@ def generate_firewall_config(
 
     if spec.name == "vyos":
         configs["config.boot"] = _generate_vyos_config(
-            interfaces, enable_nat, enable_dhcp, dhcp_range, custom_rules
+            interfaces=interfaces,
+            enable_nat=enable_nat,
+            enable_dhcp=enable_dhcp,
+            dhcp_range=dhcp_range,
+            custom_rules=custom_rules,
+            ospf_config=ospf_config,
+            bgp_config=bgp_config,
+            vlans=vlans,
+            static_routes=static_routes,
+            hostname=hostname,
         )
     elif spec.name == "frr":
         configs["frr.conf"] = _generate_frr_config(interfaces)
@@ -795,79 +829,398 @@ def _generate_vyos_config(
     enable_nat: bool,
     enable_dhcp: bool,
     dhcp_range: Optional[str],
-    custom_rules: Optional[List[str]]
+    custom_rules: Optional[List[str]],
+    # New parameters for advanced features
+    ospf_config: Optional[Dict[str, Any]] = None,
+    bgp_config: Optional[Dict[str, Any]] = None,
+    vlans: Optional[List[Dict[str, Any]]] = None,
+    static_routes: Optional[List[Dict[str, str]]] = None,
+    hostname: str = "vyos-firewall",
 ) -> str:
-    """Generate VyOS config.boot content."""
-    lines = [
-        "interfaces {",
-    ]
+    """
+    Generate VyOS config.boot content with full routing protocol support.
+
+    Args:
+        interfaces: List of interface configs [{"name": "eth0", "ip": "10.0.1.1", "mask": 24, "zone": "wan"}, ...]
+        enable_nat: Enable NAT/masquerading on WAN interface
+        enable_dhcp: Enable DHCP server on LAN interface
+        dhcp_range: DHCP range (e.g., "10.0.1.100-10.0.1.200")
+        custom_rules: Additional firewall rules (VyOS syntax)
+        ospf_config: OSPF configuration {
+            "router_id": "1.1.1.1",
+            "areas": [{"id": "0", "networks": ["10.0.0.0/8"]}],
+            "redistribute": ["connected", "static"],
+            "passive_interfaces": ["eth0"]
+        }
+        bgp_config: BGP configuration {
+            "asn": 65001,
+            "router_id": "1.1.1.1",
+            "neighbors": [{"ip": "10.0.1.2", "remote_as": 65002, "description": "Peer1"}],
+            "networks": ["10.0.0.0/8"],
+            "redistribute": ["connected", "ospf"]
+        }
+        vlans: VLAN configuration [{"parent": "eth1", "id": 100, "ip": "10.100.0.1", "mask": 24, "description": "VLAN100"}, ...]
+        static_routes: Static routes [{"destination": "0.0.0.0/0", "next_hop": "10.0.1.254"}, ...]
+        hostname: Router hostname
+
+    Returns:
+        VyOS config.boot content
+    """
+    lines = []
+
+    # ====================
+    # INTERFACES
+    # ====================
+    lines.append("interfaces {")
 
     wan_iface = None
     lan_iface = None
+    lan_network = None
+    interface_networks = []  # Track networks for OSPF
 
     for iface in interfaces:
         name = iface.get("name", "eth0")
         ip = iface.get("ip", "")
         mask = iface.get("mask", 24)
         zone = iface.get("zone", "").lower()
+        mtu = iface.get("mtu")
 
         lines.append(f"    ethernet {name} {{")
         if ip:
             lines.append(f"        address {ip}/{mask}")
-        lines.append(f"        description \"{zone.upper()} interface\"")
+            # Calculate network for OSPF
+            try:
+                network = ipaddress.ip_network(f"{ip}/{mask}", strict=False)
+                interface_networks.append(str(network))
+            except:
+                pass
+        lines.append(f'        description "{zone.upper()} interface"')
+        if mtu:
+            lines.append(f"        mtu {mtu}")
+
+        # VLANs on this interface
+        if vlans:
+            iface_vlans = [v for v in vlans if v.get("parent") == name]
+            for vlan in iface_vlans:
+                vlan_id = vlan.get("id")
+                vlan_ip = vlan.get("ip", "")
+                vlan_mask = vlan.get("mask", 24)
+                vlan_desc = vlan.get("description", f"VLAN {vlan_id}")
+
+                lines.append(f"        vif {vlan_id} {{")
+                if vlan_ip:
+                    lines.append(f"            address {vlan_ip}/{vlan_mask}")
+                    # Track VLAN network for OSPF
+                    try:
+                        vlan_network = ipaddress.ip_network(f"{vlan_ip}/{vlan_mask}", strict=False)
+                        interface_networks.append(str(vlan_network))
+                    except:
+                        pass
+                lines.append(f'            description "{vlan_desc}"')
+                lines.append("        }")
+
         lines.append("    }")
 
         if zone in ["wan", "external", "untrusted"]:
             wan_iface = name
         elif zone in ["lan", "internal", "trusted"]:
             lan_iface = name
+            if ip:
+                try:
+                    lan_network = str(ipaddress.ip_network(f"{ip}/{mask}", strict=False))
+                except:
+                    pass
+
+    # Loopback interface (useful for router-id)
+    lines.append("    loopback lo {")
+    lines.append("    }")
 
     lines.append("}")
+    lines.append("")
 
-    # NAT configuration
+    # ====================
+    # STATIC ROUTES
+    # ====================
+    if static_routes:
+        lines.append("protocols {")
+        lines.append("    static {")
+        for idx, route in enumerate(static_routes):
+            dest = route.get("destination", "0.0.0.0/0")
+            next_hop = route.get("next_hop")
+            distance = route.get("distance", 1)
+
+            if next_hop:
+                lines.append(f"        route {dest} {{")
+                lines.append(f"            next-hop {next_hop} {{")
+                if distance != 1:
+                    lines.append(f"                distance {distance}")
+                lines.append("            }")
+                lines.append("        }")
+        lines.append("    }")
+        lines.append("}")
+        lines.append("")
+
+    # ====================
+    # OSPF CONFIGURATION
+    # ====================
+    if ospf_config:
+        router_id = ospf_config.get("router_id", "1.1.1.1")
+        areas = ospf_config.get("areas", [{"id": "0", "networks": interface_networks}])
+        redistribute = ospf_config.get("redistribute", [])
+        passive_interfaces = ospf_config.get("passive_interfaces", [])
+
+        lines.append("protocols {")
+        lines.append("    ospf {")
+        lines.append(f"        parameters {{")
+        lines.append(f"            router-id {router_id}")
+        lines.append("        }")
+
+        # Areas and networks
+        for area in areas:
+            area_id = area.get("id", "0")
+            networks = area.get("networks", interface_networks)
+            area_type = area.get("type")  # stub, nssa, etc.
+
+            lines.append(f"        area {area_id} {{")
+            for network in networks:
+                lines.append(f"            network {network}")
+            if area_type == "stub":
+                lines.append("            area-type stub")
+            elif area_type == "nssa":
+                lines.append("            area-type nssa")
+            lines.append("        }")
+
+        # Passive interfaces (don't send OSPF hellos)
+        for passive_iface in passive_interfaces:
+            lines.append(f"        passive-interface {passive_iface}")
+
+        # Redistribution
+        if "connected" in redistribute:
+            lines.append("        redistribute connected")
+        if "static" in redistribute:
+            lines.append("        redistribute static")
+        if "bgp" in redistribute:
+            lines.append("        redistribute bgp")
+
+        lines.append("    }")
+        lines.append("}")
+        lines.append("")
+
+    # ====================
+    # BGP CONFIGURATION
+    # ====================
+    if bgp_config:
+        asn = bgp_config.get("asn", 65001)
+        router_id = bgp_config.get("router_id", "1.1.1.1")
+        neighbors = bgp_config.get("neighbors", [])
+        networks = bgp_config.get("networks", [])
+        redistribute = bgp_config.get("redistribute", [])
+
+        lines.append("protocols {")
+        lines.append("    bgp {")
+        lines.append(f"        local-as {asn}")
+        lines.append(f"        parameters {{")
+        lines.append(f"            router-id {router_id}")
+        lines.append("        }")
+
+        # Neighbors
+        for neighbor in neighbors:
+            neighbor_ip = neighbor.get("ip")
+            remote_as = neighbor.get("remote_as")
+            description = neighbor.get("description", "")
+            password = neighbor.get("password")
+            update_source = neighbor.get("update_source")
+
+            if neighbor_ip and remote_as:
+                lines.append(f"        neighbor {neighbor_ip} {{")
+                lines.append(f"            remote-as {remote_as}")
+                if description:
+                    lines.append(f'            description "{description}"')
+                if password:
+                    lines.append(f"            password {password}")
+                if update_source:
+                    lines.append(f"            update-source {update_source}")
+                lines.append("            address-family {")
+                lines.append("                ipv4-unicast {")
+                lines.append("                }")
+                lines.append("            }")
+                lines.append("        }")
+
+        # Networks to advertise
+        lines.append("        address-family {")
+        lines.append("            ipv4-unicast {")
+        for network in networks:
+            lines.append(f"                network {network}")
+
+        # Redistribution
+        if "connected" in redistribute:
+            lines.append("                redistribute connected")
+        if "static" in redistribute:
+            lines.append("                redistribute static")
+        if "ospf" in redistribute:
+            lines.append("                redistribute ospf")
+
+        lines.append("            }")
+        lines.append("        }")
+        lines.append("    }")
+        lines.append("}")
+        lines.append("")
+
+    # ====================
+    # NAT CONFIGURATION
+    # ====================
     if enable_nat and wan_iface:
-        lines.extend([
-            "nat {",
-            "    source {",
-            "        rule 100 {",
-            f"            outbound-interface {wan_iface}",
-            "            source {",
-            "                address 0.0.0.0/0",
-            "            }",
-            "            translation {",
-            "                address masquerade",
-            "            }",
-            "        }",
-            "    }",
-            "}",
-        ])
+        lines.append("nat {")
+        lines.append("    source {")
+        lines.append("        rule 100 {")
+        lines.append(f"            outbound-interface {wan_iface}")
+        lines.append("            source {")
+        lines.append("                address 0.0.0.0/0")
+        lines.append("            }")
+        lines.append("            translation {")
+        lines.append("                address masquerade")
+        lines.append("            }")
+        lines.append("        }")
+        lines.append("    }")
+        lines.append("}")
+        lines.append("")
 
-    # Firewall zones
-    lines.extend([
-        "firewall {",
-        "    all-ping enable",
-        "    broadcast-ping disable",
-        "    state-policy {",
-        "        established action accept",
-        "        related action accept",
-        "        invalid action drop",
-        "    }",
-        "}",
-    ])
+    # ====================
+    # DHCP SERVER
+    # ====================
+    if enable_dhcp and lan_iface and dhcp_range:
+        # Parse DHCP range (format: "10.0.1.100-10.0.1.200")
+        try:
+            range_parts = dhcp_range.split("-")
+            start_ip = range_parts[0].strip()
+            stop_ip = range_parts[1].strip() if len(range_parts) > 1 else start_ip
 
-    # System configuration
-    lines.extend([
-        "system {",
-        "    host-name vyos-firewall",
-        "    login {",
-        "        user vyos {",
-        "            authentication {",
-        "                plaintext-password vyos",
-        "            }",
-        "        }",
-        "    }",
-        "}",
-    ])
+            # Get gateway from LAN interface
+            lan_gateway = None
+            for iface in interfaces:
+                if iface.get("name") == lan_iface:
+                    lan_gateway = iface.get("ip")
+                    break
+
+            lines.append("service {")
+            lines.append("    dhcp-server {")
+            lines.append("        shared-network-name LAN {")
+            lines.append(f"            subnet {lan_network} {{")
+            lines.append(f"                range 0 {{")
+            lines.append(f"                    start {start_ip}")
+            lines.append(f"                    stop {stop_ip}")
+            lines.append("                }")
+            if lan_gateway:
+                lines.append(f"                default-router {lan_gateway}")
+            lines.append("                lease 86400")
+            lines.append("            }")
+            lines.append("        }")
+            lines.append("    }")
+            lines.append("}")
+            lines.append("")
+        except Exception:
+            pass  # Skip DHCP if range parsing fails
+
+    # ====================
+    # FIREWALL CONFIGURATION
+    # ====================
+    lines.append("firewall {")
+    lines.append("    all-ping enable")
+    lines.append("    broadcast-ping disable")
+    lines.append("    state-policy {")
+    lines.append("        established action accept")
+    lines.append("        related action accept")
+    lines.append("        invalid action drop")
+    lines.append("    }")
+
+    # Zone-based firewall rules
+    if wan_iface and lan_iface:
+        # WAN-to-LAN ruleset (restrictive)
+        lines.append("    name WAN-TO-LAN {")
+        lines.append("        default-action drop")
+        lines.append('        description "Traffic from WAN to LAN"')
+        lines.append("        rule 10 {")
+        lines.append("            action accept")
+        lines.append('            description "Allow established/related"')
+        lines.append("            state {")
+        lines.append("                established enable")
+        lines.append("                related enable")
+        lines.append("            }")
+        lines.append("        }")
+        lines.append("    }")
+
+        # LAN-to-WAN ruleset (permissive)
+        lines.append("    name LAN-TO-WAN {")
+        lines.append("        default-action accept")
+        lines.append('        description "Traffic from LAN to WAN"')
+        lines.append("    }")
+
+    # Custom firewall rules
+    if custom_rules:
+        rule_num = 100
+        lines.append("    name CUSTOM {")
+        lines.append("        default-action drop")
+        lines.append('        description "Custom firewall rules"')
+        for rule in custom_rules:
+            # Parse rule format: "action:accept|drop|reject src:IP dst:IP dport:PORT proto:tcp|udp"
+            if isinstance(rule, dict):
+                action = rule.get("action", "accept")
+                src = rule.get("source")
+                dst = rule.get("destination")
+                dport = rule.get("dport")
+                proto = rule.get("protocol", "tcp")
+                desc = rule.get("description", "")
+
+                lines.append(f"        rule {rule_num} {{")
+                lines.append(f"            action {action}")
+                if desc:
+                    lines.append(f'            description "{desc}"')
+                if proto:
+                    lines.append(f"            protocol {proto}")
+                if src:
+                    lines.append("            source {")
+                    lines.append(f"                address {src}")
+                    lines.append("            }")
+                if dst:
+                    lines.append("            destination {")
+                    lines.append(f"                address {dst}")
+                    if dport:
+                        lines.append(f"                port {dport}")
+                    lines.append("            }")
+                lines.append("        }")
+                rule_num += 10
+            elif isinstance(rule, str):
+                # Raw VyOS firewall command - add as comment
+                lines.append(f"        /* {rule} */")
+        lines.append("    }")
+
+    lines.append("}")
+    lines.append("")
+
+    # ====================
+    # SYSTEM CONFIGURATION
+    # ====================
+    lines.append("system {")
+    lines.append(f"    host-name {hostname}")
+    lines.append("    login {")
+    lines.append("        user vyos {")
+    lines.append("            authentication {")
+    lines.append("                plaintext-password vyos")
+    lines.append("            }")
+    lines.append("        }")
+    lines.append("    }")
+    lines.append("    syslog {")
+    lines.append("        global {")
+    lines.append("            facility all {")
+    lines.append("                level info")
+    lines.append("            }")
+    lines.append("        }")
+    lines.append("    }")
+    lines.append("    ntp {")
+    lines.append("        server time1.vyos.net {")
+    lines.append("        }")
+    lines.append("    }")
+    lines.append("}")
 
     return "\n".join(lines)
 
