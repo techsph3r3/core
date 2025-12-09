@@ -1,0 +1,42 @@
+root:$1$$1ZudtN1wlcCPXkNu2w6vT/:0:0:root:/:/etc/nologin.sh
+daccli:$1$$oCLuEVgI1iAqOA8pwkzAg1:0:0:root:/:/usr/sbin/daccli
+bin:x:1:1:bin:/bin:/etc/nologin.sh
+daemon:x:2:2:daemon:/sbin:/etc/nologin.sh
+adm:x:3:4:adm:/var/adm:/etc/nologin.sh
+lp:x:4:7:lp:/var/spool/lpd:/etc/nologin.sh
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+mail:x:8:12:mail:/var/spool/mail:/etc/nologin.sh
+news:x:9:13:news:/etc/news:
+uucp:x:10:14:uucp:/var/spool/uucp:/etc/nologin.sh
+operator:x:11:0:operator:/root:/etc/nologin.sh
+games:x:12:100:games:/usr/games:/etc/nologin.sh
+gopher:x:13:30:gopher:/var/gopher:/etc/nologin.sh
+ftp:x:14:50:FTP User:/var/ftp:/etc/nologin.sh
+nobody:x:99:99:Nobody:/:/etc/nologin.sh
+rpm:x:37:37::/var/lib/rpm:/etc/nologin.sh
+dbus:x:81:81:System message bus:/:/etc/nologin.sh
+avahi:x:70:70:Avahi daemon:/:/etc/nologin.sh
+rpc:x:32:32:Portmapper RPC user:/:/etc/nologin.sh
+mailnull:x:47:47::/var/spool/mqueue:/etc/nologin.sh
+smmsp:x:51:51::/var/spool/mqueue:/etc/nologin.sh
+nscd:x:28:28:NSCD Daemon:/:/etc/nologin.sh
+vcsa:x:69:69:virtual console memory owner:/dev:/etc/nologin.sh
+haldaemon:x:68:68:HAL daemon:/:/etc/nologin.sh
+rpcuser:x:29:29:RPC Service User:/var/lib/nfs:/etc/nologin.sh
+nfsnobody:x:65534:65534:Anonymous NFS User:/var/lib/nfs:/etc/nologin.sh
+sshd:x:74:74:Privilege-separated SSH:/var/empty/sshd:/etc/nologin.sh
+netdump:x:34:34:Network Crash Dump user:/var/crash:/bin/bash
+pcap:x:77:77::/var/arpwatch:/etc/nologin.sh
+xfs:x:43:43:X Font Server:/etc/X11/fs:/etc/nologin.sh
+distcache:x:94:94:Distcache:/:/etc/nologin.sh
+ntp:x:38:38::/etc/ntp:/etc/nologin.sh
+apache:x:48:48:Apache:/var/www:/etc/nologin.sh
+mysql:x:27:27:MySQL Server:/var/lib/mysql:/bin/bash
+webalizer:x:67:67:Webalizer:/var/www/usage:/etc/nologin.sh
+squid:x:23:23::/var/spool/squid:/etc/nologin.sh
+hsqldb:x:96:96::/var/lib/hsqldb:/etc/nologin.sh
+gdm:x:42:42::/var/gdm:/etc/nologin.sh
+admin:$1$$oCLuEVgI1iAqOA8pwkzAg1:0:0:root:/:/usr/sbin/iw_console
+art::0:0:art calibration:/:/etc/art_shell.sh

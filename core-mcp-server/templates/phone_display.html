@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phone Sensor Display - CORE IoT Monitor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2rem;
+            color: #ff6b6b;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            color: #888;
+            font-size: 0.9rem;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        .main-grid {
+            display: grid;
+            grid-template-columns: 350px 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 1000px) {
+            .main-grid { grid-template-columns: 1fr; }
+        }
+
+        .right-section {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            align-content: start;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .card h2 {
+            font-size: 1.1rem;
+            color: #ff6b6b;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff4444;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.connected {
+            background: #00ff88;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: #ff6b6b;
+            color: #fff;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background: #ee5a5a;
+            transform: translateY(-2px);
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        button.disconnect {
+            background: #ff4444;
+        }
+
+        .sensor-list {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .sensor-item {
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .sensor-item:hover {
+            background: rgba(255, 107, 107, 0.1);
+        }
+
+        .sensor-item.selected {
+            border-color: #ff6b6b;
+            background: rgba(255, 107, 107, 0.15);
+        }
+
+        .sensor-name {
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 3px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .sensor-type-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: rgba(255, 107, 107, 0.2);
+            color: #ff6b6b;
+        }
+
+        .sensor-topic {
+            font-size: 0.75rem;
+            color: #888;
+            font-family: monospace;
+        }
+
+        /* Sensor data grid */
+        .sensor-data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .value-box {
+            text-align: center;
+            padding: 12px 8px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 6px;
+        }
+
+        .value-box .label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 4px;
+        }
+
+        .value-box .value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            font-family: 'Courier New', monospace;
+        }
+
+        /* Color coding for phone sensors */
+        .value-box.accel-x .value { color: #ff6b6b; }
+        .value-box.accel-y .value { color: #2ed573; }
+        .value-box.accel-z .value { color: #70a1ff; }
+        .value-box.alpha .value { color: #ffa502; }
+        .value-box.beta .value { color: #ff6b81; }
+        .value-box.gamma .value { color: #a29bfe; }
+
+        .chart-container {
+            position: relative;
+            height: 200px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+        }
+
+        .log-container {
+            background: rgba(0, 0, 0, 0.4);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.75rem;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .log-entry.info { color: #ff6b6b; }
+        .log-entry.data { color: #00ff88; }
+        .log-entry.error { color: #ff4444; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .stat-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-box .label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
+            margin-bottom: 3px;
+        }
+
+        .stat-box .value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            color: #ff6b6b;
+        }
+
+        .mode-toggle {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .mode-toggle button {
+            flex: 1;
+            padding: 8px;
+            font-size: 0.85rem;
+        }
+
+        .mode-toggle button.active {
+            background: #00ff88;
+            color: #000;
+        }
+
+        /* Navigation */
+        .nav-links {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .nav-links a {
+            color: #aaa;
+            text-decoration: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+
+        .nav-links a:hover, .nav-links a.active {
+            color: #fff;
+            background: rgba(255, 107, 107, 0.2);
+        }
+
+        /* Phone icon */
+        .phone-icon {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #ff6b6b, #ee5a5a);
+            border-radius: 4px;
+            text-align: center;
+            line-height: 24px;
+            font-size: 14px;
+            margin-right: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span class="phone-icon">P</span> Phone Sensor Display</h1>
+            <p class="subtitle">Real-time Phone Sensor Data Monitor - CORE Digital Twin</p>
+        </div>
+
+        <nav class="nav-links">
+            <a href="/phone">Phone Sensor</a>
+            <a href="/phone-display" class="active">Phone Display</a>
+            <a href="/">Dashboard</a>
+        </nav>
+
+        <div class="main-grid">
+            <!-- Left Sidebar: Connection & Sensors -->
+            <div class="left-section">
+                <!-- Connection Panel -->
+                <div class="card">
+                    <h2>Data Source</h2>
+
+                    <div class="mode-toggle">
+                        <button id="pollingModeBtn" class="active" onclick="setMode('polling')">HTTP Polling</button>
+                        <button id="mqttModeBtn" onclick="setMode('mqtt')">MQTT</button>
+                    </div>
+
+                    <div id="pollingPanel">
+                        <div class="status-indicator">
+                            <div class="status-dot" id="pollingStatusDot"></div>
+                            <span id="pollingStatusText">Stopped</span>
+                        </div>
+                        <p style="color: #888; margin-bottom: 15px; font-size: 0.85rem;">
+                            Polling for phone sensor data from the server.
+                        </p>
+                        <button id="pollingBtn" onclick="togglePolling()">Start Polling</button>
+                    </div>
+
+                    <div id="mqttPanel" style="display: none;">
+                        <div class="status-indicator">
+                            <div class="status-dot" id="mqttStatusDot"></div>
+                            <span id="mqttStatusText">Disconnected</span>
+                        </div>
+                        <div style="margin-bottom: 10px;">
+                            <input type="text" id="brokerHost" placeholder="Broker Host" value="localhost"
+                                   style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; margin-bottom: 8px;">
+                            <input type="number" id="brokerPort" placeholder="WS Port" value="9001"
+                                   style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff;">
+                        </div>
+                        <button id="mqttBtn" onclick="toggleMqtt()">Connect</button>
+                    </div>
+
+                    <div class="stats-grid">
+                        <div class="stat-box">
+                            <div class="label">Messages</div>
+                            <div class="value" id="messageCount">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Phones</div>
+                            <div class="value" id="sensorCount">0</div>
+                        </div>
+                        <div class="stat-box">
+                            <div class="label">Rate/sec</div>
+                            <div class="value" id="messageRate">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active Phone Sensors -->
+                <div class="card">
+                    <h2>Connected Phones</h2>
+                    <div class="sensor-list" id="sensorList">
+                        <p style="color: #666; text-align: center; padding: 20px; font-size: 0.85rem;">
+                            No phones connected. Open /phone on your mobile device.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Message Log -->
+                <div class="card">
+                    <h2>Message Log</h2>
+                    <div class="log-container" id="logContainer"></div>
+                </div>
+            </div>
+
+            <!-- Right Section: Sensor Data Display -->
+            <div class="right-section">
+                <!-- Selected Sensor Header -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h2>Phone: <span id="selectedSensorName">--</span> <span id="selectedSensorType" class="sensor-type-badge" style="display:none;"></span></h2>
+                    <p id="selectedSensorTopic" style="color: #666; font-family: monospace; font-size: 0.8rem;">--</p>
+                </div>
+
+                <!-- Accelerometer -->
+                <div class="card" id="accelCard">
+                    <h2>Accelerometer</h2>
+                    <div class="sensor-data-grid">
+                        <div class="value-box accel-x">
+                            <div class="label">X</div>
+                            <div class="value" id="accelX">--</div>
+                        </div>
+                        <div class="value-box accel-y">
+                            <div class="label">Y</div>
+                            <div class="value" id="accelY">--</div>
+                        </div>
+                        <div class="value-box accel-z">
+                            <div class="label">Z</div>
+                            <div class="value" id="accelZ">--</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="accelChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Orientation -->
+                <div class="card" id="orientCard">
+                    <h2>Orientation (Gyroscope)</h2>
+                    <div class="sensor-data-grid">
+                        <div class="value-box alpha">
+                            <div class="label">Alpha</div>
+                            <div class="value" id="alpha">--</div>
+                        </div>
+                        <div class="value-box beta">
+                            <div class="label">Beta</div>
+                            <div class="value" id="beta">--</div>
+                        </div>
+                        <div class="value-box gamma">
+                            <div class="label">Gamma</div>
+                            <div class="value" id="gamma">--</div>
+                        </div>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="orientChart"></canvas>
+                    </div>
+                </div>
+
+                <!-- Raw Data -->
+                <div class="card" style="grid-column: 1 / -1;">
+                    <h2>Raw Sensor Data</h2>
+                    <pre id="rawData" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-size: 0.8rem; overflow-x: auto; color: #00ff88;">
+Waiting for data...
+                    </pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let mqttClient = null;
+        let isConnected = false;
+        let isPolling = false;
+        let pollingInterval = null;
+        let currentMode = 'polling';
+        let selectedSensor = null;
+        let sensors = {};
+        let messageCount = 0;
+        let messageRateBuffer = [];
+
+        // Chart configurations
+        const maxDataPoints = 60;
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+                x: { display: false },
+                y: {
+                    grid: { color: 'rgba(255, 255, 255, 0.1)' },
+                    ticks: { color: '#888', font: { size: 10 } }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    labels: { color: '#e0e0e0', font: { size: 10 }, boxWidth: 12 }
+                }
+            }
+        };
+
+        // Initialize charts
+        const accelChart = new Chart(document.getElementById('accelChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'X', data: [], borderColor: '#ff6b6b', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Y', data: [], borderColor: '#2ed573', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Z', data: [], borderColor: '#70a1ff', tension: 0.2, pointRadius: 0, borderWidth: 1.5 }
+                ]
+            },
+            options: chartOptions
+        });
+
+        const orientChart = new Chart(document.getElementById('orientChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Alpha', data: [], borderColor: '#ffa502', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Beta', data: [], borderColor: '#ff6b81', tension: 0.2, pointRadius: 0, borderWidth: 1.5 },
+                    { label: 'Gamma', data: [], borderColor: '#a29bfe', tension: 0.2, pointRadius: 0, borderWidth: 1.5 }
+                ]
+            },
+            options: chartOptions
+        });
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('pollingModeBtn').classList.toggle('active', mode === 'polling');
+            document.getElementById('mqttModeBtn').classList.toggle('active', mode === 'mqtt');
+            document.getElementById('pollingPanel').style.display = mode === 'polling' ? 'block' : 'none';
+            document.getElementById('mqttPanel').style.display = mode === 'mqtt' ? 'block' : 'none';
+
+            if (mode === 'polling' && isConnected) {
+                disconnectMqtt();
+            } else if (mode === 'mqtt' && isPolling) {
+                stopPolling();
+            }
+        }
+
+        function log(message, type = 'info') {
+            const container = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            const time = new Date().toLocaleTimeString();
+            entry.textContent = `[${time}] ${message}`;
+            container.insertBefore(entry, container.firstChild);
+            while (container.children.length > 100) {
+                container.removeChild(container.lastChild);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('messageCount').textContent = messageCount;
+            // Count only phone sensors
+            const phoneCount = Object.values(sensors).filter(s => s.id.startsWith('phone-')).length;
+            document.getElementById('sensorCount').textContent = phoneCount;
+
+            const now = Date.now();
+            messageRateBuffer.push(now);
+            messageRateBuffer = messageRateBuffer.filter(t => now - t < 1000);
+            document.getElementById('messageRate').textContent = messageRateBuffer.length;
+        }
+
+        // HTTP Polling
+        function togglePolling() {
+            if (isPolling) {
+                stopPolling();
+            } else {
+                startPolling();
+            }
+        }
+
+        function startPolling() {
+            isPolling = true;
+            updatePollingUI();
+            log('Started HTTP polling');
+            pollSensorData();
+            pollingInterval = setInterval(pollSensorData, 500); // Poll every 500ms for responsiveness
+        }
+
+        function stopPolling() {
+            isPolling = false;
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+            updatePollingUI();
+            log('Stopped HTTP polling');
+        }
+
+        function updatePollingUI() {
+            const dot = document.getElementById('pollingStatusDot');
+            const text = document.getElementById('pollingStatusText');
+            const btn = document.getElementById('pollingBtn');
+
+            dot.classList.toggle('connected', isPolling);
+            text.textContent = isPolling ? 'Polling Active' : 'Stopped';
+            btn.textContent = isPolling ? 'Stop Polling' : 'Start Polling';
+            btn.classList.toggle('disconnect', isPolling);
+        }
+
+        async function pollSensorData() {
+            try {
+                const response = await fetch('/api/sensors');
+                const data = await response.json();
+
+                for (const [sensorId, sensorInfo] of Object.entries(data.sensors || {})) {
+                    // Only process phone sensors
+                    if (!sensorId.startsWith('phone-')) continue;
+
+                    const readingsResp = await fetch(`/api/sensors/${sensorId}/readings?limit=1`);
+                    const readingsData = await readingsResp.json();
+
+                    if (readingsData.readings && readingsData.readings.length > 0) {
+                        const latest = readingsData.readings[readingsData.readings.length - 1];
+                        processSensorData(sensorId, latest, `api/sensors/${sensorId}`);
+                    }
+                }
+            } catch (err) {
+                // Silent error to avoid flooding logs
+            }
+        }
+
+        // MQTT
+        function toggleMqtt() {
+            if (isConnected) {
+                disconnectMqtt();
+            } else {
+                connectMqtt();
+            }
+        }
+
+        function connectMqtt() {
+            const host = document.getElementById('brokerHost').value;
+            const port = document.getElementById('brokerPort').value;
+            const wsUrl = `ws://${host}:${port}/mqtt`;
+
+            log(`Connecting to ${wsUrl}...`);
+
+            try {
+                mqttClient = mqtt.connect(wsUrl, {
+                    clientId: 'phone-display-' + Math.random().toString(36).substr(2, 9),
+                    reconnectPeriod: 5000,
+                });
+
+                mqttClient.on('connect', () => {
+                    isConnected = true;
+                    updateMqttUI();
+                    log('Connected to MQTT broker');
+                    mqttClient.subscribe('core/sensors/phone-#', (err) => {
+                        if (!err) log('Subscribed to phone sensor topics');
+                    });
+                });
+
+                mqttClient.on('message', (topic, message) => {
+                    handleMqttMessage(topic, message.toString());
+                });
+
+                mqttClient.on('error', (err) => {
+                    log(`MQTT Error: ${err.message}`, 'error');
+                });
+
+                mqttClient.on('close', () => {
+                    isConnected = false;
+                    updateMqttUI();
+                    log('Disconnected from MQTT');
+                });
+            } catch (err) {
+                log(`Connection failed: ${err.message}`, 'error');
+            }
+        }
+
+        function disconnectMqtt() {
+            if (mqttClient) {
+                mqttClient.end();
+                mqttClient = null;
+            }
+            isConnected = false;
+            updateMqttUI();
+            log('Disconnected');
+        }
+
+        function updateMqttUI() {
+            const dot = document.getElementById('mqttStatusDot');
+            const text = document.getElementById('mqttStatusText');
+            const btn = document.getElementById('mqttBtn');
+
+            dot.classList.toggle('connected', isConnected);
+            text.textContent = isConnected ? 'Connected' : 'Disconnected';
+            btn.textContent = isConnected ? 'Disconnect' : 'Connect';
+            btn.classList.toggle('disconnect', isConnected);
+        }
+
+        function handleMqttMessage(topic, payload) {
+            try {
+                const data = JSON.parse(payload);
+                const topicParts = topic.split('/');
+                const sensorId = topicParts[2] || 'unknown';
+                processSensorData(sensorId, data, topic);
+            } catch (err) {
+                log(`Parse error: ${err.message}`, 'error');
+            }
+        }
+
+        // Data processing
+        function processSensorData(sensorId, data, source) {
+            // Only process phone sensors
+            if (!sensorId.startsWith('phone-')) return;
+
+            messageCount++;
+
+            if (!sensors[sensorId]) {
+                sensors[sensorId] = {
+                    id: sensorId,
+                    type: 'phone',
+                    lastData: null,
+                    lastUpdate: null,
+                    source: source,
+                };
+                updateSensorList();
+
+                if (!selectedSensor) {
+                    selectSensor(sensorId);
+                }
+            }
+
+            sensors[sensorId].lastData = data;
+            sensors[sensorId].lastUpdate = Date.now();
+            sensors[sensorId].source = source;
+
+            if (selectedSensor === sensorId) {
+                updateSelectedSensorDisplay(data);
+            }
+
+            updateSensorList();
+            updateStats();
+
+            // Log summary
+            let logMsg = `${sensorId}: `;
+            if (data.ax !== undefined) logMsg += `accel(${data.ax.toFixed(0)},${data.ay.toFixed(0)},${data.az.toFixed(0)})`;
+            if (data.alpha !== undefined) logMsg += ` orient(${data.alpha.toFixed(0)}°)`;
+            log(logMsg, 'data');
+        }
+
+        function updateSensorList() {
+            const container = document.getElementById('sensorList');
+            const phoneSensors = Object.entries(sensors).filter(([id]) => id.startsWith('phone-'));
+
+            if (phoneSensors.length === 0) {
+                container.innerHTML = '<p style="color: #666; text-align: center; padding: 20px; font-size: 0.85rem;">No phones connected. Open /phone on your mobile device.</p>';
+                return;
+            }
+
+            container.innerHTML = '';
+
+            for (const [sensorId, sensor] of phoneSensors) {
+                const item = document.createElement('div');
+                item.className = `sensor-item ${selectedSensor === sensorId ? 'selected' : ''}`;
+                item.onclick = () => selectSensor(sensorId);
+
+                const timeSinceUpdate = sensor.lastUpdate
+                    ? Math.floor((Date.now() - sensor.lastUpdate) / 1000) + 's ago'
+                    : 'never';
+
+                item.innerHTML = `
+                    <div class="sensor-name">
+                        ${sensorId}
+                        <span class="sensor-type-badge">phone</span>
+                    </div>
+                    <div class="sensor-topic">${sensor.source}</div>
+                    <div style="font-size: 0.75rem; color: #666; margin-top: 4px;">
+                        Last: ${timeSinceUpdate}
+                    </div>
+                `;
+                container.appendChild(item);
+            }
+        }
+
+        function selectSensor(sensorId) {
+            selectedSensor = sensorId;
+            const sensor = sensors[sensorId];
+
+            document.getElementById('selectedSensorName').textContent = sensorId;
+            document.getElementById('selectedSensorTopic').textContent = sensor ? sensor.source : '--';
+
+            const typeEl = document.getElementById('selectedSensorType');
+            typeEl.textContent = 'phone';
+            typeEl.style.display = 'inline';
+
+            updateSensorList();
+
+            // Clear charts
+            [accelChart, orientChart].forEach(chart => {
+                chart.data.labels = [];
+                chart.data.datasets.forEach(ds => ds.data = []);
+                chart.update();
+            });
+
+            if (sensor && sensor.lastData) {
+                updateSelectedSensorDisplay(sensor.lastData);
+            }
+        }
+
+        function updateSelectedSensorDisplay(data) {
+            const now = new Date().toLocaleTimeString();
+
+            // Accelerometer (ax, ay, az in phone data)
+            if (data.ax !== undefined) {
+                document.getElementById('accelX').textContent = data.ax.toFixed(1);
+                document.getElementById('accelY').textContent = data.ay.toFixed(1);
+                document.getElementById('accelZ').textContent = data.az.toFixed(1);
+                updateChart(accelChart, now, [data.ax, data.ay, data.az]);
+            }
+
+            // Orientation
+            if (data.alpha !== undefined) {
+                document.getElementById('alpha').textContent = data.alpha.toFixed(1) + '°';
+                document.getElementById('beta').textContent = data.beta.toFixed(1) + '°';
+                document.getElementById('gamma').textContent = data.gamma.toFixed(1) + '°';
+                updateChart(orientChart, now, [data.alpha, data.beta, data.gamma]);
+            }
+
+            // Raw data
+            document.getElementById('rawData').textContent = JSON.stringify(data, null, 2);
+        }
+
+        function updateChart(chart, label, values) {
+            chart.data.labels.push(label);
+            values.forEach((val, i) => {
+                if (chart.data.datasets[i]) {
+                    chart.data.datasets[i].data.push(val);
+                }
+            });
+
+            if (chart.data.labels.length > maxDataPoints) {
+                chart.data.labels.shift();
+                chart.data.datasets.forEach(ds => ds.data.shift());
+            }
+
+            chart.update();
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            log('Phone Sensor Display initialized');
+            log('Start polling or connect to MQTT to see phone data');
+
+            // Auto-start polling
+            startPolling();
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+﻿<AppProperties>
+  <CoreProperties.UILanguage value="en-US" />
+  <ToolsStrip.Position value="Top" />
+  <FxEdit.Graph.Antialias value="True" />
+  <FxEdit.Graph.ShowRaster value="True" />
+  <FxEdit.Graph.AxesXAuto value="True" />
+  <FxEdit.Graph.AxesYAuto value="True" />
+  <FxEdit.Graph.ShowInterpolation value="True" />
+  <FxEdit.Graph.Interpolation value="CubicSpline" />
+  <FxEdit.Graph.Interpolation.CubicSpline.Dx1 value="0" />
+  <FxEdit.Graph.Interpolation.CubicSpline.Dxn value="0" />
+  <FxEdit.Graph.OnlineInterpolation value="True" />
+  <FxEdit.PointsPad.DecimalPlace value="4" />
+</AppProperties>

@@ -1,0 +1,56 @@
+#!/bin/sh
+
+#
+# set watchdog
+#
+watchdog -T 20 -t 10 /dev/watchdog
+
+mkdir -p /var/lib_system/usr
+cp -r /lib_orig /var/lib_system/lib
+cp -r /usr/lib_orig /var/lib_system/usr/lib
+cp -r /usr/webs /var
+#
+# Init 
+#
+mkdir -p /var/run
+mkdir -p /var/log
+mkdir -p /var/lock
+mkdir -p /var/dropbear
+mkdir -p /var/run/wpa_supplicant
+
+cp /etc/passwdDefault /var/passwd
+
+#
+# ART mode
+## Check if wlan device is uncalibrated, if so, call art and wait for calibration
+
+## for AR7240
+#/etc/rc.d/art_bootup.sh
+## for AR9344
+hwid=`/usr/sbin/iw_testBoard -i`
+artval="`fw_printenv | grep "flag_art=" |awk -F= '{print $2}'`"
+if [[ -z "$artval" ]]
+then
+    artval=0
+fi
+
+if [ $artval -ne 1 -o $hwid -eq 8 ]
+then
+    /bin/touch /var/art_calibration
+	/etc/rc.d/run_art.sh
+	exit 0;
+fi
+
+/usr/sbin/iw_resetd -d
+/usr/sbin/iw_init
+/usr/sbin/iw_waitSetup
+#####
+#
+#  when there is issue in init function
+#   disable iw_waitSetup
+#
+
+/etc/rc.d/klish-init
+
+###/usr/sbin/burnin &
+/etc/rc.local

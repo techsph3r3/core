@@ -1,0 +1,102 @@
+Modbus {
+  Name                    ""
+  BaudRate                19200
+  Parity                  0
+  SpaceTime               2
+  Timeout                 1000
+  Flags                   12
+  Gap                     15000
+  #GUID                   c7a5218c-a11e-4ebb-ac31-c25e1c19df14
+  Item {
+    Name                    side_road
+    SlaveAdr                -1
+    RegisterAdr             0
+    Type                    0x00000304
+    Count                   1
+  }
+  Item {
+    Name                    main_road
+    SlaveAdr                -1
+    RegisterAdr             1
+    Type                    0x00000304
+    Count                   1
+  }
+  Item {
+    Name                    auto_mode
+    SlaveAdr                -1
+    RegisterAdr             2
+    Type                    0x00000304
+    Count                   1
+  }
+  Item {
+    Name                    disable
+    SlaveAdr                -1
+    RegisterAdr             3
+    Type                    0x00000304
+    Count                   1
+  }
+  Item {
+    Name                    auto_state
+    SlaveAdr                -1
+    RegisterAdr             4
+    Type                    0x00000304
+    Count                   1
+  }
+  Item {
+    Name                    main_red
+    SlaveAdr                -1
+    RegisterAdr             2048
+    Type                    0x00000104
+    Count                   1
+  }
+  Item {
+    Name                    main_yellow
+    SlaveAdr                -1
+    RegisterAdr             2049
+    Type                    0x00000104
+    Count                   1
+  }
+  Item {
+    Name                    main_green
+    SlaveAdr                -1
+    RegisterAdr             2050
+    Type                    0x00000104
+    Count                   1
+  }
+  Item {
+    Name                    side_red
+    SlaveAdr                -1
+    RegisterAdr             2051
+    Type                    0x00000104
+    Count                   1
+  }
+  Item {
+    Name                    side_yellow
+    SlaveAdr                -1
+    RegisterAdr             2052
+    Type                    0x00000104
+    Count                   1
+  }
+  Item {
+    Name                    side_green
+    SlaveAdr                -1
+    RegisterAdr             2053
+    Type                    0x00000104
+    Count                   1
+  }
+  Item {
+    Name                    auto_mode_fb
+    SlaveAdr                -1
+    RegisterAdr             2054
+    Type                    0x00000504
+    Count                   1
+    Value                   [ 1 ]
+  }
+  Item {
+    Name                    blink_mode_fb
+    SlaveAdr                -1
+    RegisterAdr             2055
+    Type                    0x00000104
+    Count                   1
+  }
+}

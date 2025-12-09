@@ -1,0 +1,224 @@
+body {
+	font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+
+ul{
+	list-style-type: none;
+	display: block;
+	margin: 0;
+	padding: 0;
+}
+
+.AEROMAG_CHAN_REFRESH {
+	width: 986px;
+}
+
+.AEROMAG_CHAN_REFRESH h2{
+	float: left;
+}
+
+.AEROMAG_CHAN_REFRESH input{
+	float: right;	
+	cursor: help;
+	margin: 0;
+}
+
+.AEROMAG_STAGE{	
+	clear: both;
+	width: 1100px;
+}
+
+.AEROMAG_STAGE li {
+	float: left;
+}
+
+.AEROMAG_STAGE_TITLE
+{
+	width: 623px;
+
+    font-weight: bold;
+    color: #009966;	
+	border: 1px solid #FFF;
+}
+
+.AEROMAG_STAGE_VALUE
+{
+	width: 363px;
+	border: 1px solid #FFF;
+}
+
+.AEROMAG_SETTING
+{
+	clear: both;
+	width: 1100px;
+}
+
+.AEROMAG_SETTING li
+{
+	float: left;
+	line-height: 25px;
+}	
+
+.AEROMAG_SETTING_TITLE
+{
+	width: 128px;
+	background-color: #ccf4de;
+	font-weight: bold;
+	border: 1px solid #FFF;	
+}
+	
+.AEROMAG_SETTING_VALUE
+{
+	width: 363px;
+	background-color: beige;
+	border: 1px solid #FFF;
+}
+
+.AEROMAG_STAGE{	
+	clear: both;
+	width: 1100px;
+}
+.AEROMAG_CONN_DEV {
+	clear: both;
+	width: 1100px;
+	margin: 0;
+	padding: 0;
+}
+
+.AEROMAG_CONN_DEV ul {
+	clear: both;
+}
+
+.AEROMAG_CONN_DEV li {
+	float: left;
+	border: 1px solid #FFF;
+	list-style-type: none;
+}
+
+.CONN_DEV_NO{
+	width: 35px;
+	font-weight: bold;
+	color: #000000;
+	line-height: 42px;
+}
+
+.CONN_DEV_MAC{
+	width: 260px;
+	height: 37px;
+	padding-top:5px;
+}
+
+.CONN_DEV_MAC_NULL{
+	width: 260px;
+	line-height: 42px;
+}
+
+.CONN_DEV_TIME{
+	width: 170px;
+	line-height: 42px;
+}
+
+.CONN_DEV_OP{
+	width: 50px;
+	line-height: 42px;
+}
+
+.CONN_DEV_STATUS{
+	width: 203px;
+	line-height: 42px;
+}
+
+.TABLE_TITLE{
+	background-color: #ccf4de;
+	color: #000000;
+	font-weight: bold;
+	line-height: 25px;
+	height: 25px;
+	padding-top:0px;
+}
+.TABLE_ROW1 {
+	background-color: beige;
+}
+
+.TABLE_ROW2 {
+	background-color: azure;
+}
+
+.CHAN_ARRANGE{
+	clear: both;
+	width: 1100px;
+}
+
+.CHAN_ARRANGE li
+{
+	float: left;
+	line-height: 25px;
+}	
+
+.CHAN_ARRAGNE_TITLE
+{
+	width: 328px;
+	border: 1px solid #FFF;
+}
+
+.CHAN_ARRANGE_VALUE
+{
+	width: 328px;
+	border: 1px solid #FFF;
+}
+
+.HELPER_IMG{
+	margin: auto 0 auto 0px;
+	position: relative;
+}
+
+.HELPER_IMG .TOOLTIP_TEXT  {
+	visibility: hidden;
+	width: 300px;
+	font-family: Ubuntu, sans-serif;
+	text-shadow: 0 1px rgba( 69, 69, 69, .5 );
+	line-height: 1.5;
+	color: #000;
+	background: #ccf4de;
+	background: -webkit-gradient( linear, left top, left bottom, from( #FFFFFF ), to( #ccf4de ) );
+	background: -webkit-linear-gradient( top, #FFFFFF, #ccf4de);
+	background: -moz-linear-gradient( top, #FFFFFF, #ccf4de);
+	background: -ms-radial-gradient( top, #FFFFFF, #ccf4de);
+	background: -o-linear-gradient( top, #FFFFFF, #ccf4de);
+	background: linear-gradient( top, #FFFFFF, #ccf4de);
+
+	-webkit-border-radius: 5px;
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+	border: 2px solid #009966;
+	-webkit-box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+	-moz-box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+	box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+	position: absolute;
+	z-index: 1000;
+	padding: 15px;
+	top: -20px;
+	left: 30px;
+}
+
+.HELPER_IMG .TOOLTIP_TEXT:before {
+	width: 0;
+	height: 0;
+	/* #009966 */
+	/* rgba(00, 99, 66, .8) */
+	border: 12px solid #009966;
+	border-color: transparent #009966 transparent transparent; 
+	content: ''; 
+	position: absolute;
+	left: -24px;
+	top: 12px;
+	/* margin-left: -10px;*/
+}
+
+.HELPER_IMG:hover .TOOLTIP_TEXT {
+	visibility: visible;
+}
+
+

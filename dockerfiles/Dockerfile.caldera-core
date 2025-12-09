@@ -61,6 +61,24 @@ source /opt/caldera/venv/bin/activate\n\
 exec python3 server.py --insecure "$@"\n\
 ' > /start-caldera.sh && chmod +x /start-caldera.sh
 
+# Create autostart entrypoint that starts Caldera and keeps container alive
+RUN echo '#!/bin/bash\n\
+# Autostart entrypoint for CORE compatibility\n\
+# Starts Caldera server in background then keeps container alive\n\
+\n\
+cd /opt/caldera\n\
+source /opt/caldera/venv/bin/activate\n\
+\n\
+# Start Caldera in background\n\
+nohup python3 server.py --insecure > /tmp/caldera.log 2>&1 &\n\
+CALDERA_PID=$!\n\
+echo "Caldera started with PID: $CALDERA_PID"\n\
+echo "Log file: /tmp/caldera.log"\n\
+\n\
+# Keep container running (CORE requirement)\n\
+exec tail -f /dev/null\n\
+' > /autostart.sh && chmod +x /autostart.sh
+
 # Create Sandcat agent deployment script (to be run on target hosts)
 # Usage: /deploy-sandcat.sh <caldera-server-ip>
 RUN echo '#!/bin/bash\n\
@@ -95,7 +113,14 @@ fi\n\
 # Expose ports
 EXPOSE 8888 7010 7011/udp 7012 8022 5000
 
-# NO ENTRYPOINT - let CORE control the container
-# CORE runs: docker run ... <image> tail -f /dev/null
-# To start Caldera inside CORE, run: /start-caldera.sh
+# Use autostart script as default command
+# This starts Caldera automatically and keeps container alive for CORE
+#
+# Alternative usage modes:
+#   - Default (autostart): docker run caldera-mcp-core
+#   - Manual start: docker run caldera-mcp-core tail -f /dev/null
+#                   then docker exec <container> /start-caldera.sh
+#   - Foreground: docker run caldera-mcp-core /start-caldera.sh
+#
 # To deploy Sandcat on targets, run: /deploy-sandcat.sh <caldera-ip>
+CMD ["/autostart.sh"]

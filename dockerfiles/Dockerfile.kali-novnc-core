@@ -7,8 +7,42 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # Install Kali tools and desktop environment
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Kali metapackages (select tools, not full to keep size manageable)
+    # Kali metapackages - comprehensive pentest tools
     kali-tools-top10 \
+    kali-tools-exploitation \
+    kali-tools-web \
+    kali-tools-passwords \
+    kali-tools-information-gathering \
+    # Essential pentest tools explicitly listed
+    nmap \
+    nikto \
+    dirb \
+    gobuster \
+    sqlmap \
+    hydra \
+    john \
+    hashcat \
+    metasploit-framework \
+    burpsuite \
+    wireshark \
+    aircrack-ng \
+    wfuzz \
+    ffuf \
+    nuclei \
+    whatweb \
+    enum4linux \
+    smbclient \
+    netcat-traditional \
+    socat \
+    proxychains4 \
+    chisel \
+    responder \
+    crackmapexec \
+    impacket-scripts \
+    bloodhound \
+    evil-winrm \
+    feroxbuster \
+    seclists \
     # Desktop environment
     xfce4 \
     xfce4-terminal \

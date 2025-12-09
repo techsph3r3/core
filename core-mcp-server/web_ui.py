@@ -4,7 +4,16 @@ CORE MCP Topology Generator - Web UI
 Provides a browser-based interface for generating network topologies using natural language
 """
 
-from flask import Flask, render_template, request, jsonify, send_file
+# Gevent monkey-patching MUST be at the very top before any other imports
+# This enables cooperative scheduling for proper WebSocket support
+try:
+    from gevent import monkey
+    monkey.patch_all()
+    GEVENT_AVAILABLE = True
+except ImportError:
+    GEVENT_AVAILABLE = False
+
+from flask import Flask, render_template, request, jsonify, send_file, Response
 from flask_cors import CORS
 import os
 import sys
@@ -16,6 +25,17 @@ import threading
 import time
 from pathlib import Path
 import openai
+
+# WebSocket support for VNC proxy
+# We use a custom middleware with gevent-websocket for compatibility with Werkzeug 3.x
+try:
+    import websocket as ws_client  # websocket-client library for backend VNC connections
+    WEBSOCKET_AVAILABLE = True
+except ImportError as e:
+    WEBSOCKET_AVAILABLE = False
+    ws_client = None
+    print(f"Warning: websocket-client not available ({e}) - VNC proxy disabled")
+    print("Install with: pip install websocket-client")
 
 # Optional MQTT support
 try:
@@ -53,6 +73,9 @@ openai.api_key = OPENAI_API_KEY
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# VNC WebSocket proxy middleware will be set up in main block
+# We use a custom middleware approach for Werkzeug 3.x compatibility
 
 # Store the current generator instance and interpretation state
 current_generator = TopologyGenerator()
@@ -461,6 +484,18 @@ def microbit():
 def sensor_display():
     """MQTT Sensor Display - shows real-time sensor data via MQTT subscription"""
     return render_template('sensor_display.html')
+
+
+@app.route('/phone')
+def phone_sensor_page():
+    """Phone sensor streaming page - access from mobile device to stream accelerometer/gyroscope data"""
+    return render_template('phone_sensor.html')
+
+
+@app.route('/phone-display')
+def phone_display_page():
+    """Phone sensor data display page - monitor connected phone sensors"""
+    return render_template('phone_display.html')
 
 @app.route('/api/mqtt/status', methods=['GET'])
 def mqtt_status():
@@ -1074,6 +1109,55 @@ QUICK_START_TEMPLATES = {
             {'from': 'iot-switch', 'to': 'hmi3', 'ip2': '10.0.1.52'},
         ],
     },
+    'phone-sensor-network': {
+        'id': 'phone-sensor-network',
+        'name': 'Phone Sensor Network',
+        'category': 'IoT',
+        'icon': 'phone',
+        'description': 'Stream phone accelerometer/gyroscope data via MQTT bridge into CORE',
+        'complexity': 2,
+        'auto_ip': False,
+        'networks': {
+            'phone-switch': {'subnet': '10.0.1.0/24', 'gateway': '10.0.1.1', 'name': 'Phone-Sensor-Network'}
+        },
+        'nodes': [
+            {'name': 'phone-switch', 'type': 'switch', 'x': 300, 'y': 200},
+            {'name': 'mqtt-broker', 'type': 'docker', 'x': 300, 'y': 80, 'image': 'mqtt-broker-core', 'ip': '10.0.1.10'},
+            {'name': 'phone-display-server', 'type': 'docker', 'x': 480, 'y': 150, 'image': 'iot-sensor-server', 'ip': '10.0.1.20'},
+            {'name': 'phone-hmi1', 'type': 'docker', 'x': 200, 'y': 350, 'image': 'hmi-workstation:latest', 'ip': '10.0.1.50'},
+        ],
+        'links': [
+            {'from': 'phone-switch', 'to': 'mqtt-broker', 'ip2': '10.0.1.10'},
+            {'from': 'phone-switch', 'to': 'phone-display-server', 'ip2': '10.0.1.20'},
+            {'from': 'phone-switch', 'to': 'phone-hmi1', 'ip2': '10.0.1.50'},
+        ],
+        'setup_instructions': '''
+=== PHONE SENSOR NETWORK SETUP ===
+
+1. START THE PHONE WEB UI (on host, outside CORE):
+   cd /workspaces/core/core-mcp-server
+   ./start_phone_system.sh
+
+2. CONFIGURE THE MQTT BRIDGE:
+   curl -X POST http://localhost:8081/api/inject/configure \\
+     -H "Content-Type: application/json" \\
+     -d '{"session_id": 1, "broker_node": "mqtt-broker", "broker_ip": "10.0.1.10", "source_node": "mqtt-broker"}'
+
+3. CONNECT YOUR PHONE:
+   - Open the Phone Sensor page (port 8081) on desktop
+   - Scan the QR code with your phone
+   - Grant sensor permissions and tap "Start Streaming"
+
+4. VIEW DATA IN CORE:
+   - Open phone-hmi1 via VNC
+   - Browse to http://10.0.1.20/ to see live phone data
+
+5. VERIFY WITH WIRESHARK:
+   - In CORE GUI, right-click mqtt-broker -> Wireshark
+   - Filter: mqtt
+   - See PUBLISH packets with phone sensor data
+''',
+    },
 }
 
 
@@ -1213,10 +1297,10 @@ def deploy_template(template_id):
             if cleanup_info['removed']:
                 print(f"Pre-deploy cleanup: removed {len(cleanup_info['removed'])} existing containers: {cleanup_info['removed']}")
 
-        # Load in CORE
+        # Load in CORE with auto-start
         load_cmd = f"""docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py {container_path}
+            ./venv/bin/python3 /tmp/load_topology.py --start {container_path}
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
@@ -1553,10 +1637,10 @@ def add_host_to_topology():
             shell=True, capture_output=True
         )
 
-        # Load in CORE
+        # Load in CORE with auto-start
         load_cmd = f"""docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py {container_path}
+            ./venv/bin/python3 /tmp/load_topology.py --start {container_path}
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
@@ -1850,7 +1934,7 @@ def ai_add_to_topology():
         )
         load_cmd = f"""docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py {container_path}
+            ./venv/bin/python3 /tmp/load_topology.py --start {container_path}
         '"""
         subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
@@ -1957,9 +2041,10 @@ def copy_to_core():
             )
 
             # Load topology using CORE Python API
+            # Always use --start to auto-start the session (no need to press play button)
             load_cmd = f"""docker exec core-novnc bash -c '
                 cd /opt/core &&
-                ./venv/bin/python3 /tmp/load_topology.py {container_path} > /tmp/load_topology.log 2>&1
+                ./venv/bin/python3 /tmp/load_topology.py --start {container_path} > /tmp/load_topology.log 2>&1
             '"""
             result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True)
 
@@ -2609,9 +2694,20 @@ except:
 def start_host_vnc():
     """
     Start VNC services on a CORE container node and set up proxy access.
-    This starts supervisord inside the container and creates a websockify proxy.
+
+    This uses a two-layer proxy chain that works reliably:
+      websockify:608X -> socat:1608X -> nsenter -> container:6080
+
+    The websockify layer is required because:
+    1. It properly handles WebSocket protocol for noVNC
+    2. It serves the noVNC web files
+    3. Raw socat doesn't work through Codespaces port forwarding
+
+    Works with any VNC-capable container: HMI, Kali, Engineering workstations, etc.
     """
     import subprocess
+    import time
+    import os
 
     try:
         data = request.get_json()
@@ -2628,7 +2724,7 @@ def start_host_vnc():
         result = subprocess.run(find_container, shell=True, capture_output=True, text=True, timeout=10)
 
         if result.returncode != 0 or not result.stdout.strip():
-            # Try alternative - look for container with node name
+            # Try alternative - look for container with node name anywhere
             find_alt = f'''docker exec core-novnc bash -c "docker ps --format '{{{{.Names}}}}' | grep '{node_name}' | head -1"'''
             result = subprocess.run(find_alt, shell=True, capture_output=True, text=True, timeout=10)
 
@@ -2640,92 +2736,50 @@ def start_host_vnc():
                 'error': f'Container for node {node_name} not found. Is the topology running?'
             }), 404
 
-        # Start supervisord in the container to enable VNC
-        start_cmd = f'''docker exec core-novnc bash -c "
-            docker exec {container_name} bash -c '
-                # Check if supervisord is already running
-                if pgrep -x supervisord > /dev/null; then
-                    echo VNC already running
+        # Start supervisord in the container to enable VNC services
+        # Use pgrep -f to match python scripts like supervisord
+        start_cmd = f'''docker exec core-novnc docker exec {container_name} bash -c '
+            if pgrep -f supervisord > /dev/null 2>&1; then
+                # Check if websockify is also running (full stack healthy)
+                if pgrep -f websockify > /dev/null 2>&1; then
+                    echo VNC_ALREADY_RUNNING
                 else
-                    # Start supervisord which starts Xvfb, fluxbox, x11vnc, and websockify
+                    # supervisord running but services died, restart
+                    pkill -f supervisord 2>/dev/null || true
+                    sleep 1
                     supervisord -c /etc/supervisor/conf.d/desktop.conf &
-                    sleep 3
-                    echo VNC started
+                    sleep 4
+                    echo VNC_RESTARTED
                 fi
-            '
-        "'''
+            else
+                supervisord -c /etc/supervisor/conf.d/desktop.conf &
+                sleep 4
+                echo VNC_STARTED
+            fi
+        ' '''
 
         result = subprocess.run(start_cmd, shell=True, capture_output=True, text=True, timeout=30)
-        vnc_started = 'VNC' in result.stdout
+        vnc_status = result.stdout.strip()
 
-        if not vnc_started and result.returncode != 0:
+        # Verify VNC services are actually running
+        verify_cmd = f'''docker exec core-novnc docker exec {container_name} bash -c '
+            pgrep -f websockify > /dev/null && pgrep -f x11vnc > /dev/null && echo OK || echo FAILED
+        ' '''
+        verify_result = subprocess.run(verify_cmd, shell=True, capture_output=True, text=True, timeout=10)
+
+        if 'OK' not in verify_result.stdout:
             return jsonify({
                 'success': False,
-                'error': f'Failed to start VNC: {result.stderr}'
+                'error': f'VNC services failed to start in {container_name}. Check supervisord config.'
             }), 500
 
         # Get the node's IP if not provided
         if not node_ip:
-            get_ip_cmd = f'''docker exec core-novnc bash -c "
-                docker exec {container_name} ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet\\s)\\d+(\\.\\d+){{3}}' | head -1
-            "'''
+            get_ip_cmd = f'''docker exec core-novnc docker exec {container_name} ip -4 addr show eth0 2>/dev/null | grep -oP '(?<=inet )\\d+(\\.\\d+){{3}}' | head -1'''
             ip_result = subprocess.run(get_ip_cmd, shell=True, capture_output=True, text=True, timeout=10)
             node_ip = ip_result.stdout.strip()
 
-        if not node_ip:
-            return jsonify({
-                'success': False,
-                'error': 'Could not determine node IP address'
-            }), 500
-
-        # Auto-assign proxy port if not provided
-        # IMPORTANT: Only use ports 6081-6083 as these are the ports exposed from core-novnc container
-        # Ports beyond 6083 are not accessible from outside the container
-
-        # First, clean up any stale proxies that may be pointing to old/dead containers
-        # This prevents "no available ports" errors when reloading topologies
-        cleanup_stale = f'''docker exec core-novnc bash -c "
-            for port in 6081 6082 6083; do
-                script_file=/tmp/ns_forward_\\$port.sh
-                if [ -f \\$script_file ]; then
-                    # Extract PID from wrapper script
-                    old_pid=\\$(grep -oP '(?<=nsenter -t )\\d+' \\$script_file 2>/dev/null || echo '')
-                    if [ -n \\\"\\$old_pid\\\" ]; then
-                        # Check if the process still exists
-                        if ! kill -0 \\$old_pid 2>/dev/null; then
-                            # Process is dead, kill the stale proxy
-                            pkill -f \\\"socat.*\\$port.*ns_forward\\\" 2>/dev/null || true
-                            rm -f \\$script_file
-                        fi
-                    fi
-                fi
-            done
-        "'''
-        subprocess.run(cleanup_stale, shell=True, capture_output=True, timeout=10)
-
-        if not proxy_port:
-            # Find an available port from the exposed range (6081-6083)
-            for port in range(6081, 6084):  # Only 6081, 6082, 6083 are exposed
-                check_port = f"docker exec core-novnc bash -c 'ss -tln | grep :{port}'"
-                port_check = subprocess.run(check_port, shell=True, capture_output=True, text=True, timeout=5)
-                if port_check.returncode != 0:  # Port not in use
-                    proxy_port = port
-                    break
-
-        if not proxy_port:
-            return jsonify({'success': False, 'error': 'No available proxy ports (only 6081-6083 are exposed from container)'}), 500
-
-        # Kill any existing proxy on this specific port (in case it's a re-request for same node)
-        kill_existing = f'''docker exec core-novnc bash -c "
-            pkill -f 'socat.*{proxy_port}.*ns_forward' 2>/dev/null || true
-            rm -f /tmp/ns_forward_{proxy_port}.sh 2>/dev/null || true
-            sleep 0.5
-        "'''
-        subprocess.run(kill_existing, shell=True, capture_output=True, timeout=5)
-
-        # Get the container's PID to use nsenter for network namespace access
-        # This is needed because CORE Docker nodes use a separate network namespace
-        # that isn't directly routable from the core-novnc container
+        # Get the container's PID for nsenter
         get_pid_cmd = f'''docker exec core-novnc docker inspect {container_name} --format '{{{{.State.Pid}}}}' '''
         pid_result = subprocess.run(get_pid_cmd, shell=True, capture_output=True, text=True, timeout=10)
         container_pid = pid_result.stdout.strip()
@@ -2736,41 +2790,298 @@ def start_host_vnc():
                 'error': f'Could not get PID for container {container_name}'
             }), 500
 
-        # Create a wrapper script for the socat+nsenter bridge
-        # The HMI container already has websockify on port 6080, we just need to bridge to it
+        # Clean up stale proxies pointing to dead PIDs
+        cleanup_stale_cmd = '''docker exec core-novnc bash -c '
+            for port in 6081 6082 6083; do
+                script_file=/tmp/ns_forward_$port.sh
+                if [ -f $script_file ]; then
+                    old_pid=$(grep -oP "(?<=nsenter -n -t )\\d+" $script_file 2>/dev/null || echo "")
+                    if [ -n "$old_pid" ]; then
+                        if ! kill -0 $old_pid 2>/dev/null; then
+                            # PID is dead, clean up this port
+                            pkill -f "websockify.*$port" 2>/dev/null || true
+                            pkill -f "socat.*1$port" 2>/dev/null || true
+                            rm -f $script_file
+                        fi
+                    fi
+                fi
+            done
+        ' '''
+        subprocess.run(cleanup_stale_cmd, shell=True, capture_output=True, timeout=10)
+
+        # Auto-assign proxy port if not provided (6081-6083 are exposed)
+        if not proxy_port:
+            for port in range(6081, 6084):
+                check_port = f"docker exec core-novnc bash -c 'ss -tln | grep -q :{port}'"
+                port_check = subprocess.run(check_port, shell=True, capture_output=True, timeout=5)
+                if port_check.returncode != 0:  # Port not in use
+                    proxy_port = port
+                    break
+
+        if not proxy_port:
+            return jsonify({
+                'success': False,
+                'error': 'No available proxy ports (6081-6083 all in use). Call /api/vnc/cleanup first.'
+            }), 500
+
+        # Internal port for socat (e.g., 6081 -> 16081)
+        internal_port = 10000 + proxy_port
+
+        # Kill any existing proxies on these ports
+        kill_existing = f'''docker exec core-novnc bash -c '
+            pkill -f "websockify.*{proxy_port}" 2>/dev/null || true
+            pkill -f "socat.*{internal_port}" 2>/dev/null || true
+            rm -f /tmp/ns_forward_{proxy_port}.sh 2>/dev/null || true
+            sleep 0.5
+        ' '''
+        subprocess.run(kill_existing, shell=True, capture_output=True, timeout=5)
+
+        # Create the nsenter wrapper script
+        # This bridges into the container's network namespace to reach x11vnc on port 5900
+        # CRITICAL: Connect to x11vnc (port 5900), NOT websockify (port 6080)
+        # Websockify expects WebSocket protocol, not raw TCP - using it causes handshake failures
         wrapper_script = f'/tmp/ns_forward_{proxy_port}.sh'
-        create_wrapper = f'''docker exec core-novnc bash -c 'echo "#!/bin/bash
-exec nsenter -t {container_pid} -n socat STDIO TCP:localhost:6080" > {wrapper_script} && chmod +x {wrapper_script}' '''
+        create_wrapper = f'''docker exec core-novnc bash -c 'cat > {wrapper_script} << "WRAPPEREOF"
+#!/bin/sh
+exec nsenter -n -t {container_pid} socat STDIO TCP:localhost:5900
+WRAPPEREOF
+chmod +x {wrapper_script}' '''
         subprocess.run(create_wrapper, shell=True, capture_output=True, timeout=5)
 
-        # Start socat proxy that bridges to the HMI's internal websockify via nsenter
-        # This listens on the proxy_port in core-novnc's main namespace and forwards
-        # each connection through nsenter to the HMI container's port 6080 (websockify)
-        # Using EXEC: as per VNC_WORKSTATION_ARCHITECTURE.md documentation
-        proxy_cmd = f'''docker exec core-novnc bash -c "nohup socat TCP-LISTEN:{proxy_port},fork,reuseaddr EXEC:{wrapper_script} > /tmp/socat_{proxy_port}.log 2>&1 &"'''
+        # Start socat on the internal port - this does the actual namespace bridging
+        socat_cmd = f'''docker exec core-novnc bash -c 'nohup socat TCP-LISTEN:{internal_port},fork,reuseaddr EXEC:{wrapper_script} > /tmp/socat_{proxy_port}.log 2>&1 &' '''
+        subprocess.run(socat_cmd, shell=True, capture_output=True, timeout=5)
+        time.sleep(0.5)
 
-        proxy_result = subprocess.run(proxy_cmd, shell=True, capture_output=True, text=True, timeout=10)
-
-        # Give socat a moment to start
-        import time
+        # Start websockify on the external port - this handles WebSocket protocol and serves noVNC files
+        websockify_cmd = f'''docker exec core-novnc bash -c 'nohup python3 -m websockify --web /opt/noVNC {proxy_port} localhost:{internal_port} > /tmp/websockify_{proxy_port}.log 2>&1 &' '''
+        subprocess.run(websockify_cmd, shell=True, capture_output=True, timeout=5)
         time.sleep(1)
 
-        # Build the access URL
-        # IMPORTANT: path= must be empty because websockify serves WebSocket at root, not /websockify
-        import os
+        # Verify the proxy chain is running
+        verify_proxy = f'''docker exec core-novnc bash -c '
+            pgrep -f "websockify.*{proxy_port}" > /dev/null && pgrep -f "socat.*{internal_port}" > /dev/null && echo OK || echo FAILED
+        ' '''
+        verify_result = subprocess.run(verify_proxy, shell=True, capture_output=True, text=True, timeout=5)
+
+        if 'OK' not in verify_result.stdout:
+            # Check logs for errors
+            log_cmd = f'''docker exec core-novnc bash -c 'cat /tmp/websockify_{proxy_port}.log /tmp/socat_{proxy_port}.log 2>/dev/null | tail -10' '''
+            log_result = subprocess.run(log_cmd, shell=True, capture_output=True, text=True, timeout=5)
+            return jsonify({
+                'success': False,
+                'error': f'Proxy chain failed to start. Logs: {log_result.stdout}'
+            }), 500
+
+        # Build the access URL - use the port 8080 reverse proxy
+        # This proxies VNC through /hmi-vnc/<port>/ to avoid needing direct port access
         codespace_name = os.environ.get('CODESPACE_NAME', '')
+        ws_path = f"hmi-vnc/{proxy_port}/websockify"
         if codespace_name:
-            vnc_url = f"https://{codespace_name}-{proxy_port}.app.github.dev/vnc_lite.html?scale=true&path="
+            vnc_url = f"https://{codespace_name}-8080.app.github.dev/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
         else:
-            vnc_url = f"http://localhost:{proxy_port}/vnc_lite.html?scale=true&path="
+            vnc_url = f"http://localhost:8080/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
 
         return jsonify({
             'success': True,
-            'message': f'VNC services started on {node_name}',
+            'message': f'VNC proxy chain started for {node_name}',
             'container': container_name,
             'node_ip': node_ip,
             'proxy_port': proxy_port,
-            'vnc_url': vnc_url
+            'internal_port': internal_port,
+            'container_pid': container_pid,
+            'vnc_url': vnc_url,
+            'vnc_status': vnc_status
+        })
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Operation timed out'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vnc/cleanup', methods=['POST'])
+def cleanup_vnc_proxies_api():
+    """
+    Clean up all VNC proxy chains inside core-novnc container.
+
+    This cleans up both layers of the proxy chain:
+    - websockify processes on external ports (608X)
+    - socat processes on internal ports (1608X)
+    - wrapper scripts for nsenter
+
+    Call this before starting a new topology or when VNC connections fail.
+    """
+    import subprocess
+
+    try:
+        # Clean up the two-layer proxy chain:
+        # Layer 1: websockify on external ports (6081-6083)
+        # Layer 2: socat on internal ports (16081-16083)
+        cleanup_cmd = '''docker exec core-novnc bash -c '
+            # Count existing websockify proxies (HMI proxies on 608X ports)
+            ws_count=$(pgrep -c -f "websockify.*608[1-9]" 2>/dev/null || echo 0)
+
+            # Count existing socat proxies (internal ports 160XX)
+            socat_count=$(pgrep -c -f "socat.*TCP-LISTEN:160" 2>/dev/null || echo 0)
+
+            # Kill websockify HMI proxies (ports 6081-6089, but NOT 6080 which is main VNC)
+            pkill -f "websockify.*608[1-9]" 2>/dev/null || true
+
+            # Kill socat internal proxies (ports 160XX)
+            pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
+
+            # Also kill any old-style socat proxies on 608X directly
+            pkill -f "socat.*TCP-LISTEN:608" 2>/dev/null || true
+
+            # Count wrapper scripts
+            scripts=$(ls /tmp/ns_forward_*.sh 2>/dev/null | wc -l || echo 0)
+
+            # Remove ALL wrapper scripts
+            rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
+
+            # Clean up log files
+            rm -f /tmp/socat_*.log 2>/dev/null || true
+            rm -f /tmp/websockify_*.log 2>/dev/null || true
+
+            echo "websockify:$ws_count socat:$socat_count scripts:$scripts"
+        ' '''
+
+        result = subprocess.run(cleanup_cmd, shell=True, capture_output=True, text=True, timeout=10)
+        output = result.stdout.strip()
+
+        # Parse output (format: "websockify:N socat:N scripts:N")
+        ws_killed = 0
+        socat_killed = 0
+        scripts = 0
+        try:
+            parts = output.split()
+            for part in parts:
+                if part.startswith('websockify:'):
+                    ws_killed = int(part.split(':')[1])
+                elif part.startswith('socat:'):
+                    socat_killed = int(part.split(':')[1])
+                elif part.startswith('scripts:'):
+                    scripts = int(part.split(':')[1])
+        except:
+            pass
+
+        return jsonify({
+            'success': True,
+            'message': 'VNC proxy chains cleaned up',
+            'websockify_killed': ws_killed,
+            'socat_killed': socat_killed,
+            'scripts_removed': scripts,
+            'total_proxies': ws_killed + socat_killed
+        })
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/vnc/setup-all', methods=['POST'])
+def setup_all_vnc_proxies():
+    """
+    Automatically set up VNC proxies for all HMI/workstation nodes in running topology.
+
+    This finds all VNC-capable containers and sets up the two-layer proxy chain for each:
+    websockify:608X -> socat:1608X -> nsenter -> container:6080
+
+    Call this after starting a CORE topology with HMI nodes.
+    """
+    import subprocess
+    import time
+
+    try:
+        # First, clean up any stale proxies (both layers)
+        cleanup_cmd = '''docker exec core-novnc bash -c '
+            # Kill websockify HMI proxies (ports 6081-6089, NOT 6080)
+            pkill -f "websockify.*608[1-9]" 2>/dev/null || true
+            # Kill socat internal proxies (ports 160XX)
+            pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
+            # Kill old-style socat proxies
+            pkill -f "socat.*TCP-LISTEN:608" 2>/dev/null || true
+            # Remove wrapper scripts
+            rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
+        ' '''
+        subprocess.run(cleanup_cmd, shell=True, capture_output=True, timeout=10)
+        time.sleep(1)
+
+        # Get list of running containers inside core-novnc
+        list_cmd = '''docker exec core-novnc docker ps --format '{{.Names}}\t{{.Image}}' '''
+        result = subprocess.run(list_cmd, shell=True, capture_output=True, text=True, timeout=10)
+
+        if result.returncode != 0:
+            return jsonify({'success': False, 'error': 'Could not list containers'}), 500
+
+        # Find VNC-capable containers
+        vnc_patterns = ['hmi', 'workstation', 'desktop', 'kali', 'engineering']
+        vnc_images = ['hmi-workstation', 'kali-novnc-core', 'engineering-workstation']
+        hmi_containers = []
+
+        for line in result.stdout.strip().split('\n'):
+            if not line or '\t' not in line:
+                continue
+            parts = line.split('\t')
+            container_name = parts[0]
+            image_name = parts[1] if len(parts) > 1 else ''
+
+            if container_name in ['core-novnc', 'core-daemon']:
+                continue
+
+            name_match = any(p in container_name.lower() for p in vnc_patterns)
+            image_match = any(img in image_name.lower() for img in vnc_images)
+
+            if name_match or image_match:
+                hmi_containers.append(container_name)
+
+        if not hmi_containers:
+            return jsonify({
+                'success': True,
+                'message': 'No VNC-capable nodes found in topology',
+                'nodes': [],
+                'setup_results': []
+            })
+
+        # Set up VNC for each container
+        setup_results = []
+        for container in hmi_containers:
+            try:
+                # Call our own start-host-vnc endpoint
+                import urllib.request
+                import json as json_lib
+
+                data = json_lib.dumps({"node_name": container}).encode('utf-8')
+                req = urllib.request.Request(
+                    'http://localhost:8080/api/start-host-vnc',
+                    data=data,
+                    headers={'Content-Type': 'application/json'},
+                    method='POST'
+                )
+
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    vnc_result = json_lib.loads(response.read().decode())
+                    setup_results.append({
+                        'container': container,
+                        'success': vnc_result.get('success', False),
+                        'port': vnc_result.get('proxy_port'),
+                        'url': vnc_result.get('vnc_url'),
+                        'error': vnc_result.get('error')
+                    })
+            except Exception as e:
+                setup_results.append({
+                    'container': container,
+                    'success': False,
+                    'error': str(e)
+                })
+
+        successful = sum(1 for r in setup_results if r.get('success'))
+
+        return jsonify({
+            'success': True,
+            'message': f'VNC setup complete: {successful}/{len(hmi_containers)} nodes',
+            'nodes': hmi_containers,
+            'setup_results': setup_results
         })
 
     except Exception as e:
@@ -2881,11 +3192,290 @@ except Exception as e:
 # VNC DESKTOP WRAPPER & AI HELP
 # =============================================================================
 
+# =============================================================================
+# HMI VNC REVERSE PROXY
+# Proxies VNC requests through port 8080 to the backend VNC servers
+# This allows HMI VNC to work without requiring separate port forwarding
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# CORE Desktop VNC Proxy - Main CORE GUI VNC through port 8080
+# -----------------------------------------------------------------------------
+
+@app.route('/core-vnc/<path:path>')
+@app.route('/core-vnc/', defaults={'path': ''})
+@app.route('/core-vnc', defaults={'path': ''})
+def core_vnc_proxy(path):
+    """
+    Reverse proxy for main CORE desktop VNC connections.
+
+    Proxies HTTP requests from /core-vnc/<path> to the websockify server
+    running inside core-novnc container (originally on port 6080).
+
+    This allows the CORE GUI VNC to work through port 8080 only.
+
+    NOTE: WebSocket requests to /websockify are handled by the VNCWebSocketMiddleware.
+    """
+    import requests as http_requests
+
+    # Check if this is a WebSocket upgrade request for the websockify endpoint
+    if path == 'websockify' and request.headers.get('Upgrade', '').lower() == 'websocket':
+        return jsonify({'error': 'WebSocket upgrade required. Use WebSocket connection.'}), 426
+
+    # Default to vnc.html if no path specified
+    if not path or path == '':
+        path = 'vnc.html'
+
+    # Proxy to the websockify server inside core-novnc (port 6080)
+    target_url = f'http://localhost:6080/{path}'
+
+    try:
+        # Forward the request
+        resp = http_requests.get(
+            target_url,
+            params=request.args,
+            timeout=10
+        )
+
+        # Build response with CORS headers
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers = [(name, value) for name, value in resp.raw.headers.items()
+                   if name.lower() not in excluded_headers]
+        headers.append(('Access-Control-Allow-Origin', '*'))
+
+        return Response(resp.content, resp.status_code, headers)
+
+    except http_requests.exceptions.ConnectionError:
+        return jsonify({
+            'error': 'Cannot connect to CORE VNC server. Make sure core-novnc container is running.'
+        }), 502
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# -----------------------------------------------------------------------------
+# HMI VNC Proxy - Workstation VNC through port 8080
+# -----------------------------------------------------------------------------
+
+@app.route('/hmi-vnc/<int:port>/<path:path>')
+@app.route('/hmi-vnc/<int:port>/', defaults={'path': ''})
+@app.route('/hmi-vnc/<int:port>', defaults={'path': ''})
+def hmi_vnc_proxy(port, path):
+    """
+    Reverse proxy for HMI VNC connections.
+
+    Proxies HTTP requests from /hmi-vnc/<port>/<path> to localhost:<port>/<path>
+    This allows VNC to work through port 8080 without requiring separate port exposure.
+
+    The two-layer proxy chain (websockify:608X -> socat:1608X -> HMI) must already be running.
+
+    NOTE: WebSocket requests to /websockify are handled by the flask-sock WebSocket route.
+    """
+    import requests as http_requests
+
+    # Only allow proxying to valid VNC ports (6081-6083)
+    if port < 6081 or port > 6083:
+        return jsonify({'error': f'Invalid VNC port {port}. Must be 6081-6083'}), 400
+
+    # Check if this is a WebSocket upgrade request for the websockify endpoint
+    # If so, return an error - this should be handled by the WebSocket route
+    if path == 'websockify' and request.headers.get('Upgrade', '').lower() == 'websocket':
+        # This shouldn't happen if flask-sock is properly configured,
+        # but just in case, return an appropriate error
+        return jsonify({'error': 'WebSocket upgrade required. Use WebSocket connection.'}), 426
+
+    # Build target URL
+    target_url = f'http://localhost:{port}/{path}'
+    if request.query_string:
+        target_url += f'?{request.query_string.decode()}'
+
+    try:
+        # Forward the request
+        resp = http_requests.request(
+            method=request.method,
+            url=target_url,
+            headers={k: v for k, v in request.headers if k.lower() not in ['host', 'connection']},
+            data=request.get_data(),
+            allow_redirects=False,
+            timeout=10
+        )
+
+        # Build response
+        excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
+        headers = [(k, v) for k, v in resp.raw.headers.items() if k.lower() not in excluded_headers]
+
+        return (resp.content, resp.status_code, headers)
+
+    except http_requests.exceptions.ConnectionError:
+        return jsonify({
+            'error': f'VNC proxy on port {port} not running. Start it via /api/start-host-vnc first.'
+        }), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# WebSocket proxy for VNC - handles the actual VNC data stream
+# Uses flask-sockets for proper WebSocket routing
+
+# HTTP fallback route for non-WebSocket requests to the websockify path
+@app.route('/hmi-vnc/<int:port>/websockify')
+def hmi_vnc_websocket_info(port):
+    """Return info for HTTP requests to WebSocket endpoint."""
+    if port < 6081 or port > 6089:
+        return jsonify({'error': f'Invalid VNC port {port}. Must be 6081-6089'}), 400
+    return jsonify({
+        'info': 'WebSocket endpoint for VNC proxy',
+        'port': port,
+        'usage': f'Connect via WebSocket to ws://host:8080/hmi-vnc/{port}/websockify'
+    }), 200
+
+
+def vnc_websocket_proxy_handler(ws, port, is_core_vnc=False):
+    """
+    WebSocket proxy for VNC connections.
+
+    Proxies WebSocket traffic from /hmi-vnc/<port>/websockify to localhost:<port>/websockify
+    This is required for noVNC to work through the port 8080 reverse proxy.
+
+    This function is called from the VNCWebSocketMiddleware when a WebSocket
+    connection is made to /hmi-vnc/<port>/websockify or /core-vnc/websockify.
+
+    Args:
+        ws: The client WebSocket connection
+        port: The backend port to connect to
+        is_core_vnc: If True, this is the main CORE desktop VNC (port 5901)
+    """
+    import gevent
+
+    # For CORE VNC, we connect directly to port 5901 (the VNC server)
+    # For HMI VNC, we connect to ports 6081-6089 (websockify instances)
+    if is_core_vnc:
+        if port != 5901:
+            print(f"VNC proxy: Invalid CORE VNC port {port}", flush=True)
+            ws.close()
+            return
+    else:
+        # Only allow proxying to valid HMI VNC ports (6081-6089)
+        if port < 6081 or port > 6089:
+            print(f"VNC proxy: Invalid port {port}", flush=True)
+            ws.close()
+            return
+
+    print(f"VNC WebSocket proxy: client connected for port {port} (is_core_vnc={is_core_vnc})", flush=True)
+    backend_ws = None
+
+    try:
+        # Connect to the backend websockify server
+        # For CORE VNC: connect to websockify on port 6080 (which forwards to VNC on 5901)
+        # For HMI VNC: connect to websockify on the specified port (6081-6089)
+        if is_core_vnc:
+            target_url = 'ws://localhost:6080/websockify'
+        else:
+            target_url = f'ws://localhost:{port}/websockify'
+
+        print(f"VNC proxy: connecting to backend {target_url}", flush=True)
+        backend_ws = ws_client.create_connection(target_url, timeout=10)
+        backend_ws.settimeout(0.1)  # Short timeout for non-blocking recv
+
+        print(f"VNC proxy: connected to backend", flush=True)
+
+        running = [True]  # Shared flag to stop both greenlets
+
+        def forward_client_to_backend():
+            """Forward data from client WebSocket to backend WebSocket."""
+            try:
+                while running[0]:
+                    try:
+                        # gevent WebSocket's receive() blocks until data is available
+                        # It returns None only when the connection is closed
+                        msg = ws.receive()
+                        if msg is None:
+                            print(f"VNC proxy [{port}]: client closed connection", flush=True)
+                            running[0] = False
+                            break
+                        # Forward to backend
+                        print(f"VNC proxy [{port}]: client->backend: {len(msg) if msg else 0} bytes: {msg[:30] if msg else None}", flush=True)
+                        if backend_ws:
+                            if isinstance(msg, bytes):
+                                backend_ws.send_binary(msg)
+                            else:
+                                # Convert text to bytes and send as binary
+                                backend_ws.send_binary(msg.encode('latin-1') if isinstance(msg, str) else msg)
+                    except Exception as e:
+                        print(f"VNC proxy [{port}]: client->backend error: {e}", flush=True)
+                        running[0] = False
+                        break
+            except Exception as e:
+                print(f"VNC proxy [{port}]: client greenlet error: {e}", flush=True)
+                running[0] = False
+
+        def forward_backend_to_client():
+            """Forward data from backend WebSocket to client WebSocket."""
+            try:
+                while running[0]:
+                    try:
+                        if not backend_ws:
+                            break
+                        # Use non-blocking recv with timeout
+                        data = backend_ws.recv()
+                        if data:
+                            # VNC protocol uses binary data - always send as binary
+                            # gevent-websocket's send() has binary=None by default
+                            # which auto-detects, but explicitly set binary=True for bytes
+                            print(f"VNC proxy [{port}]: backend->client: {len(data) if data else 0} bytes", flush=True)
+                            if isinstance(data, bytes):
+                                ws.send(data, binary=True)
+                            else:
+                                ws.send(data)
+                        elif data == '':
+                            # Empty string means connection closed
+                            print(f"VNC proxy [{port}]: backend closed connection", flush=True)
+                            running[0] = False
+                            break
+                        # If data is None, it might be a timeout, continue
+                    except ws_client.WebSocketTimeoutException:
+                        # Timeout is normal, yield to other greenlets
+                        gevent.sleep(0.01)
+                        continue
+                    except ws_client.WebSocketConnectionClosedException:
+                        print(f"VNC proxy [{port}]: backend connection closed", flush=True)
+                        running[0] = False
+                        break
+                    except Exception as e:
+                        print(f"VNC proxy [{port}]: backend->client error: {e}", flush=True)
+                        running[0] = False
+                        break
+            except Exception as e:
+                print(f"VNC proxy [{port}]: backend greenlet error: {e}", flush=True)
+                running[0] = False
+
+        # Run both directions concurrently using gevent
+        g1 = gevent.spawn(forward_client_to_backend)
+        g2 = gevent.spawn(forward_backend_to_client)
+
+        # Wait for either greenlet to finish (connection closed)
+        gevent.joinall([g1, g2], raise_error=False)
+
+        print(f"VNC proxy: disconnected from port {port}", flush=True)
+
+    except Exception as e:
+        print(f"VNC proxy error: {e}", flush=True)
+    finally:
+        try:
+            if backend_ws:
+                backend_ws.close()
+        except:
+            pass
+
+
 @app.route('/vnc/<node_name>')
 def vnc_desktop(node_name):
     """
     Render the VNC desktop wrapper page with sidebar for a specific node.
     This provides Lab Guide, AI Help, and Node Info panels alongside the VNC viewer.
+
+    VNC is now accessed through the /hmi-vnc/<port>/ proxy route, which proxies
+    requests through port 8080 instead of requiring direct access to ports 6081-6083.
     """
     import os
 
@@ -2893,12 +3483,17 @@ def vnc_desktop(node_name):
     node_ip = request.args.get('ip', '')
     proxy_port = request.args.get('port', '6081')
 
-    # Build VNC URL
+    # Build VNC URL - now use the reverse proxy through port 8080
+    # The path= parameter tells noVNC where to connect for WebSocket
+    # This proxies through /hmi-vnc/<port>/ which forwards to localhost:<port>
     codespace_name = os.environ.get('CODESPACE_NAME', '')
+    ws_path = f"hmi-vnc/{proxy_port}/websockify"
     if codespace_name:
-        vnc_url = f"https://{codespace_name}-{proxy_port}.app.github.dev/vnc_lite.html?scale=true"
+        # In Codespaces, use the 8080 port with proxy path
+        vnc_url = f"https://{codespace_name}-8080.app.github.dev/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
     else:
-        vnc_url = f"http://localhost:{proxy_port}/vnc_lite.html?scale=true"
+        # Local dev can use direct port or proxy
+        vnc_url = f"http://localhost:8080/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
 
     return render_template('vnc_desktop.html',
                           node_name=node_name,
@@ -4014,10 +4609,10 @@ def load_builder_in_core():
             capture_output=True
         )
 
-        # Load the topology
+        # Load the topology with auto-start
         load_cmd = """docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py /root/topologies/builder_topology.xml
+            ./venv/bin/python3 /tmp/load_topology.py --start /root/topologies/builder_topology.xml
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=60)
 
@@ -4347,6 +4942,26 @@ def get_sensor_readings(sensor_id):
     })
 
 
+@app.route('/api/sensors/<sensor_id>', methods=['DELETE'])
+def delete_sensor(sensor_id):
+    """Delete a sensor and all its data"""
+    if sensor_id not in sensor_data_store['sensors']:
+        return jsonify({'error': f'Sensor {sensor_id} not found'}), 404
+
+    # Remove from all stores
+    del sensor_data_store['sensors'][sensor_id]
+    if sensor_id in sensor_data_store['readings']:
+        del sensor_data_store['readings'][sensor_id]
+    if sensor_id in sensor_data_store['bindings']:
+        del sensor_data_store['bindings'][sensor_id]
+
+    return jsonify({
+        'success': True,
+        'sensor_id': sensor_id,
+        'message': f'Sensor {sensor_id} deleted'
+    })
+
+
 # ============================================================================
 # CORE Network Injector Proxy
 # Proxies requests from browser to the MQTT injector running on localhost:8089
@@ -4563,6 +5178,86 @@ def get_all_pending_controls():
     })
 
 
+class VNCWebSocketMiddleware:
+    """
+    WSGI middleware that intercepts VNC WebSocket requests before Flask handles them.
+
+    This middleware checks if the request is a WebSocket upgrade to /hmi-vnc/<port>/websockify
+    and handles it directly using gevent-websocket, bypassing Flask's routing.
+    All other requests are passed through to the Flask application.
+    """
+
+    def __init__(self, wsgi_app, flask_app):
+        self.wsgi_app = wsgi_app
+        self.flask_app = flask_app
+
+    def __call__(self, environ, start_response):
+        import re
+
+        path = environ.get('PATH_INFO', '')
+        ws = environ.get('wsgi.websocket')
+
+        # Check if this is a WebSocket request to our VNC proxy endpoints
+        hmi_match = re.match(r'^/hmi-vnc/(\d+)/websockify$', path)
+        core_match = (path == '/core-vnc/websockify')
+
+        if hmi_match and ws:
+            # Extract port and handle WebSocket proxy for HMI VNC
+            port = int(hmi_match.group(1))
+            print(f"VNC middleware: handling HMI WebSocket for port {port}", flush=True)
+
+            # Call the VNC proxy handler with the websocket and port
+            try:
+                vnc_websocket_proxy_handler(ws, port, is_core_vnc=False)
+            except Exception as e:
+                print(f"VNC middleware error: {e}", flush=True)
+
+            # Return empty response (WebSocket handled)
+            return []
+
+        if core_match and ws:
+            # Handle main CORE desktop VNC (connects to port 5901)
+            print(f"VNC middleware: handling CORE desktop WebSocket", flush=True)
+
+            try:
+                vnc_websocket_proxy_handler(ws, 5901, is_core_vnc=True)
+            except Exception as e:
+                print(f"VNC middleware error (CORE): {e}", flush=True)
+
+            return []
+
+        # Not a VNC WebSocket, pass to Flask
+        return self.wsgi_app(environ, start_response)
+
+
 if __name__ == '__main__':
-    # Run on all interfaces so it's accessible from outside
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    import argparse
+
+    parser = argparse.ArgumentParser(description='CORE MCP Web UI')
+    parser.add_argument('--host', default='0.0.0.0', help='Host to bind to')
+    parser.add_argument('--port', type=int, default=8080, help='Port to bind to')
+    args = parser.parse_args()
+
+    # Use gevent with WebSocket support if available for proper VNC proxy
+    if GEVENT_AVAILABLE and WEBSOCKET_AVAILABLE:
+        try:
+            from gevent.pywsgi import WSGIServer
+            from geventwebsocket.handler import WebSocketHandler
+
+            print(f"Starting with gevent WebSocket server on {args.host}:{args.port}", flush=True)
+
+            # Wrap Flask app with VNC WebSocket middleware
+            vnc_middleware = VNCWebSocketMiddleware(app.wsgi_app, app)
+            app.wsgi_app = vnc_middleware
+
+            http_server = WSGIServer((args.host, args.port), app, handler_class=WebSocketHandler)
+            http_server.serve_forever()
+        except ImportError as e:
+            print(f"Warning: gevent-websocket not available ({e}), falling back to Flask dev server")
+            print("Install with: pip install gevent-websocket")
+            app.run(host=args.host, port=args.port, debug=False)
+    else:
+        # Fall back to standard Flask development server
+        if not GEVENT_AVAILABLE:
+            print("Note: gevent not available, WebSocket proxy may not work correctly")
+        app.run(host=args.host, port=args.port, debug=False)

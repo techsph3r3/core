@@ -1,0 +1,18 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<HTML>
+<HEAD>
+	<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+	<link href="nport2g.css" rel=stylesheet type=text/css>
+	<% iw_webJSList_get(); %>
+    <script type="text/javascript">
+    	var applicationServerValue = "<% write(op_application); %>";
+		var opModeServerValue = "<% write(op_mode); %>";
+		var opModeId = "opMode_id";
+		var applicationId = "op_application_id";
+		
+		$(function(){
+			if (typeof top.toplogo != "undefined") {
+				top.toplogo.location.reload();
+			}
+		});
+    </script>

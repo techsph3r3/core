@@ -468,6 +468,12 @@ class TopologyGenerator:
            any(net in description_lower for net in ["gateway", "remote", "connect"]):
             return self._generate_vpn_network(description)
 
+        # Phone Sensor Network (phone accelerometer/gyroscope data via MQTT bridge)
+        # Check this BEFORE IoT to catch "phone sensor" specifically
+        if any(phone in description_lower for phone in ["phone", "mobile", "smartphone", "accelerometer", "gyroscope"]) and \
+           any(net in description_lower for net in ["network", "deploy", "sensor", "stream"]):
+            return self._generate_phone_sensor_network(description)
+
         # IoT Sensor Network (quick deploy for micro:bit/sensor integration)
         if any(iot in description_lower for iot in ["iot", "sensor", "mqtt", "micro:bit", "microbit"]) and \
            any(net in description_lower for net in ["network", "deploy", "quick", "template"]):
@@ -1448,6 +1454,191 @@ If MQTT is not available, sensor-server supports HTTP polling:
 
         return result
 
+    def _generate_phone_sensor_network(self, description: str) -> str:
+        """
+        Generate a Phone Sensor Network for streaming phone accelerometer/gyroscope data.
+
+        This creates a topology specifically designed to bridge phone sensor data
+        (from the browser Device Motion API) into the CORE network via MQTT.
+
+        Architecture:
+        - MQTT Broker (Mosquitto) - central message hub inside CORE
+        - Sensor Display Server - web dashboard to view phone data
+        - HMI Workstation(s) - VNC-accessible browsers to view displays
+        - All on same subnet for simple connectivity
+
+        Data Flow (with bridge):
+        Phone Browser (DeviceMotion API)
+            -> Phone Web UI (port 8081)
+            -> MQTT Injector (docker exec into CORE)
+            -> MQTT Broker inside CORE network
+            -> Sensor Display Server (subscribes to MQTT)
+            -> HMI Workstation (browser viewing display)
+
+        The key difference from micro:bit network is:
+        - Phone streams accelerometer/gyroscope via REST API
+        - phone_web_ui.py has embedded MQTT injector that bridges to CORE
+        - Data flows: Phone -> REST -> Injector -> docker exec -> CORE MQTT broker
+        """
+        self.clear()
+        import math
+
+        desc_lower = description.lower()
+
+        # Count HMI workstations
+        hmi_count = 1
+        match = re.search(r'(\d+)\s*(?:hmi|workstation|operator|display)', desc_lower)
+        if match:
+            hmi_count = int(match.group(1))
+
+        center_x, center_y = 500, 350
+        node_id = 1
+
+        # Central Switch
+        phone_switch = NodeConfig(
+            node_id=node_id,
+            name="phone-switch",
+            node_type="switch",
+            x=center_x,
+            y=center_y,
+        )
+        self.add_node(phone_switch)
+        switch_id = node_id
+        node_id += 1
+
+        # MQTT Broker (Mosquitto) - top center
+        # This is where phone data gets injected via docker exec
+        mqtt_broker = NodeConfig(
+            node_id=node_id,
+            name="mqtt-broker",
+            node_type="docker",
+            image="mqtt-broker-core",
+            x=center_x,
+            y=center_y - 180,
+        )
+        self.add_node(mqtt_broker)
+        mqtt_broker_ip = "10.0.1.10"
+        self.add_link(LinkConfig(
+            node1_id=switch_id,
+            node2_id=node_id,
+            ip4_2=mqtt_broker_ip,
+        ))
+        node_id += 1
+
+        # Phone Sensor Display Server - subscribes to MQTT, shows phone data
+        sensor_server = NodeConfig(
+            node_id=node_id,
+            name="phone-display-server",
+            node_type="docker",
+            image="iot-sensor-server",
+            x=center_x + 200,
+            y=center_y - 100,
+        )
+        self.add_node(sensor_server)
+        sensor_server_ip = "10.0.1.20"
+        self.add_link(LinkConfig(
+            node1_id=switch_id,
+            node2_id=node_id,
+            ip4_2=sensor_server_ip,
+        ))
+        # Startup script to configure MQTT subscription for phone topics
+        phone_sensor_startup = f'''#!/bin/bash
+# Configure Phone Sensor Display Server to connect to MQTT broker
+export MQTT_BROKER="{mqtt_broker_ip}"
+export MQTT_PORT="1883"
+export MQTT_TOPIC="core/sensors/phone-#"
+
+echo "[Phone Display] Starting with MQTT broker at $MQTT_BROKER:$MQTT_PORT"
+echo "[Phone Display] Subscribing to topic: $MQTT_TOPIC"
+# The container entrypoint will use these environment variables
+'''
+        self.add_startup_script(node_id, phone_sensor_startup, delay_seconds=5)
+        node_id += 1
+
+        # HMI Workstations - for viewing the phone sensor display
+        for i in range(hmi_count):
+            angle = math.pi/4 + (math.pi/2 * i) / max(hmi_count, 1)
+            x = center_x + 180 * math.cos(angle)
+            y = center_y + 180 * math.sin(angle)
+
+            hmi = NodeConfig(
+                node_id=node_id,
+                name=f"phone-hmi{i+1}",
+                node_type="docker",
+                image="hmi-workstation:latest",
+                x=x,
+                y=y,
+            )
+            self.add_node(hmi)
+            hmi_ip = f"10.0.1.{50 + i}"
+            self.add_link(LinkConfig(
+                node1_id=switch_id,
+                node2_id=node_id,
+                ip4_2=hmi_ip,
+            ))
+            node_id += 1
+
+        # Build result message with usage instructions
+        result = f"""Created Phone Sensor Network with MQTT broker, display server, and {hmi_count} HMI workstation(s)
+
+=== NETWORK LAYOUT (inside CORE) ===
+- mqtt-broker          @ {mqtt_broker_ip}:1883 (MQTT), :9001 (WebSocket)
+- phone-display-server @ {sensor_server_ip}:80 (Web Display)
+- phone-hmi1-{hmi_count}         @ 10.0.1.50-{50+hmi_count-1} (VNC on :6080)
+
+=== DATA FLOW ===
+Phone (DeviceMotion API) -> Phone Web UI (8081) -> MQTT Injector -> CORE MQTT Broker -> Display Server
+
+=== SETUP STEPS ===
+
+1. START THE CORE SESSION
+   - Deploy this topology and start the session
+   - Wait for all containers to initialize (~30 seconds)
+
+2. START THE PHONE WEB UI (outside CORE, on host)
+   cd /workspaces/core/core-mcp-server
+   ./start_phone_system.sh
+
+3. CONFIGURE THE MQTT BRIDGE
+   The phone_web_ui.py has an embedded MQTT injector.
+   Configure it to point to this CORE topology:
+
+   curl -X POST http://localhost:8081/api/inject/configure \\
+     -H "Content-Type: application/json" \\
+     -d '{{"session_id": 1, "broker_node": "mqtt-broker", "broker_ip": "{mqtt_broker_ip}", "source_node": "mqtt-broker"}}'
+
+4. CONNECT YOUR PHONE
+   - Open the Phone Sensor page in your browser (port 8081)
+   - Scan the QR code with your phone
+   - Grant sensor permissions and tap "Start Streaming"
+
+5. VIEW DATA IN CORE NETWORK
+   - Open HMI workstation via noVNC (port 6080)
+   - In Firefox, browse to: http://{sensor_server_ip}/
+   - You should see live phone accelerometer/gyroscope data!
+
+=== WIRESHARK VERIFICATION ===
+The MQTT packets are REAL network traffic inside CORE.
+To verify:
+1. In CORE GUI, right-click mqtt-broker -> Wireshark
+2. Filter: mqtt
+3. You should see PUBLISH packets with phone sensor data
+
+=== TOPICS ===
+Phone data is published to: core/sensors/phone-<id>/data
+Example payload: {{"ax": 100, "ay": 200, "az": 980, "alpha": 45.2, "beta": 12.1, "gamma": -5.3, "device": "phone"}}
+
+=== API ENDPOINTS (Phone Web UI on port 8081) ===
+- GET  /phone           - Phone sensor page (open on mobile)
+- GET  /phone-display   - Display page (open on desktop)
+- GET  /api/sensors     - List connected phones
+- POST /api/inject/<id> - Inject sensor data to CORE
+- GET  /api/inject/status - Check injector status
+- POST /api/inject/configure - Configure MQTT bridge
+"""
+
+        return result
+
     def _generate_docker_app_topology(self, node_count: int, description: str, app_name: str) -> str:
         """
         Generate a topology with Docker application nodes (nginx, etc.) connected via switch.
@@ -1926,6 +2117,97 @@ session = core.create_session()
                     delay=str(link.delay),
                     loss=str(link.loss)
                 )
+
+        # Add session hooks for VNC proxy setup and cleanup
+        session_hooks = ET.SubElement(root, "session_hooks")
+
+        # RUNTIME_STATE hook (state=4) - runs when session starts
+        # Sets up VNC proxies for all HMI nodes
+        runtime_hook = ET.SubElement(session_hooks, "hook",
+            name="setup_vnc_proxies.sh",
+            state="4"  # EventTypes.RUNTIME_STATE = 4
+        )
+        runtime_hook.text = '''#!/bin/bash
+# VNC Proxy Setup Hook - Auto-generated by topology generator
+# Runs when CORE session reaches RUNTIME_STATE
+# Sets up websockify/socat proxy chain for HMI containers
+
+log() {
+    echo "[VNC-HOOK] $1" | tee -a /tmp/vnc_hook.log
+}
+
+log "Session started - setting up VNC proxies..."
+
+# Find HMI containers with x11vnc
+PORT=6081
+for container in $(docker ps --format '{{.Names}}' 2>/dev/null); do
+    # Skip system containers
+    [ "$container" = "core-novnc" ] && continue
+    [ "$container" = "core-daemon" ] && continue
+
+    # Check if container has x11vnc running
+    if docker exec "$container" pgrep -f "x11vnc" >/dev/null 2>&1; then
+        log "Found VNC container: $container"
+
+        # Get container PID
+        PID=$(docker inspect "$container" --format '{{.State.Pid}}' 2>/dev/null)
+        if [ -z "$PID" ]; then
+            log "  Could not get PID for $container, skipping"
+            continue
+        fi
+
+        # Kill existing proxy for this port
+        pkill -f "websockify.*$PORT" 2>/dev/null || true
+        pkill -f "socat.*1$PORT" 2>/dev/null || true
+        sleep 0.5
+
+        # Create nsenter script that connects to x11vnc on port 5900
+        cat > /tmp/ns_forward_$PORT.sh << EOFSCRIPT
+#!/bin/sh
+exec nsenter -n -t $PID socat STDIO TCP:localhost:5900
+EOFSCRIPT
+        chmod +x /tmp/ns_forward_$PORT.sh
+
+        # Start socat and websockify
+        socat TCP-LISTEN:1$PORT,fork,reuseaddr EXEC:/tmp/ns_forward_$PORT.sh &
+        sleep 0.5
+        python3 -m websockify --web /opt/noVNC $PORT localhost:1$PORT &
+
+        log "  VNC proxy ready on port $PORT for $container"
+        PORT=$((PORT + 1))
+    fi
+done
+
+log "VNC proxy setup complete"
+'''
+
+        # SHUTDOWN_STATE hook (state=6) - runs when session stops
+        # Cleans up VNC proxies
+        shutdown_hook = ET.SubElement(session_hooks, "hook",
+            name="cleanup_vnc_proxies.sh",
+            state="6"  # EventTypes.SHUTDOWN_STATE = 6
+        )
+        shutdown_hook.text = '''#!/bin/bash
+# VNC Proxy Cleanup Hook - Auto-generated by topology generator
+# Runs when CORE session reaches SHUTDOWN_STATE
+
+log() {
+    echo "[VNC-HOOK] $1" | tee -a /tmp/vnc_hook.log
+}
+
+log "Session stopping - cleaning up VNC proxies..."
+
+# Kill websockify HMI proxies (ports 6081-6089, NOT 6080 which is main VNC)
+pkill -f "websockify.*608[1-9]" 2>/dev/null || true
+
+# Kill socat internal proxies
+pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
+
+# Remove wrapper scripts
+rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
+
+log "VNC proxy cleanup complete"
+'''
 
         # Pretty print XML
         xml_str = ET.tostring(root, encoding='unicode')

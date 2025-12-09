@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Start conf server
+/bin/konfd >/dev/null 2>/dev/null &
+
+# Initialize system with startup-config
+#/bin/clish -x /etc/clish-enable -w configure-view /etc/startup-config
+#/bin/clish -x /etc/clish-enable -w configure-view
+###/bin/clish -x /etc/clish-enable /etc/startup-config
+

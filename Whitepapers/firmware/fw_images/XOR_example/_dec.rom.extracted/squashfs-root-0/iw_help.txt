@@ -1,0 +1,816 @@
+NO SUPPORT
+Main Menu
+Overview
+System Information
+Device Information
+Board Flag Info
+802.11 Information
+General Setup
+Model name
+Serial number
+Firmware version
+BIOS version
+Current BSSID
+Signal strength
+Signal strength (dBm)
+Noise floor
+SNR Alarm threshold
+Device IP address
+Device MAC address
+System Information
+Device name
+Device location
+Device description
+Device contact information
+System uptime
+Language
+Operation mode
+Full 11a channel support
+System Time
+Time zone
+Local time (24-hour)
+Time server
+Time sync interval
+Daylight saving time
+Enable
+Starts at
+Stops at
+Daylight saving start time : hour
+Daylight saving start time : minute
+Daylight saving stop time : hour
+Daylight saving stop time : minute
+Time offset
+Cellular Information
+Cellular RSSI
+Cellular WAN IP address
+Cellular mode
+Cellular CREG
+Cellular PSINFO
+SIM PIN
+SIM FLAG
+Ethernet WAN MAC address
+Ethernet WAN speed
+IMEI
+IMSI
+Cellular band
+Cellular channel
+Cellular data bearer
+Cellular Country Code
+Cellular module version
+Network Settings
+IP address assignment
+IP address
+Subnet mask
+Gateway
+Primary DNS server
+Secondary DNS server
+Cellular Settings
+Auto IP Report Settings
+Send Auto IP report to host
+Send Auto IP report to UDP port
+Reporting interval
+GuaranLink Settings
+GuaranLink
+GuaranLink
+Register to network timeout
+DATA retry count
+PPP retry count
+DNS/Ping remote host 1
+DNS/Ping remote host 2
+ISP initial connection check
+Cellular connection alive check
+Cellular connection alive check interval
+Cellular connection alive check retry count
+Packet-level connection check
+Packet-level connection check action
+Packet-level connection check interval
+Packet-level connection check retry count
+Transmission connection check
+Transmission connection check interval
+Cellular WAN Settings
+Used SIM
+WAN preference
+SIM 1 PIN
+SIM 1 Band
+SIM 1 PPP Config
+SIM 1 ATD
+SIM 1 PPP Authentication
+SIM 1 Username
+SIM 1 Password
+SIM 1 APN
+SIM 1 TCP/IP compression
+SIM 1 Connection control
+SIM 1 Ping remote host
+SIM 2 PIN
+SIM 2 Band
+SIM 2 PPP Config
+SIM 2 ATD
+SIM 2 PPP Authentication
+SIM 2 Username
+SIM 2 Password
+SIM 2 APN
+SIM 2 TCP/IP compression
+SIM 2 Connection control
+SIM 2 Ping remote host
+SIM 1 Band Class 0, A-System
+SIM 1 Band Class 0, B-System
+SIM 1 Band Class 1
+SIM 1 Band GSM_DCS_1800
+SIM 1 Band GSM Extended GSM (E-GSM) 900
+SIM 1 Band GSM Primary GSM (P-GSM) 900
+SIM 1 Band GSM 850
+SIM 1 Band GSM PCS 1900
+SIM 1 WCDMA Europe, Japan, and China IMT 2100 band
+SIM 1 WCDMA U.S. PCS 1900 band
+SIM 1 WCDMA U.S. 850 band
+SIM 1 WCDMA Japan 800 band
+SIM 1 WCDMA Europe and Japan 900 band
+SIM 1 E-UTRA Operating Band 1
+SIM 1 E-UTRA Operating Band 2
+SIM 1 E-UTRA Operating Band 3
+SIM 1 E-UTRA Operating Band 4
+SIM 1 E-UTRA Operating Band 5
+SIM 1 E-UTRA Operating Band 7
+SIM 1 E-UTRA Operating Band 8
+SIM 1 E-UTRA Operating Band 13
+SIM 1 E-UTRA Operating Band 17
+SIM 1 E-UTRA Operating Band 20
+SIM 2 Band Class 0, A-System
+SIM 2 Band Class 0, B-System
+SIM 2 Band Class 1
+SIM 2 Band GSM_DCS_1800
+SIM 2 Band GSM Extended GSM (E-GSM) 900
+SIM 2 Band GSM Primary GSM (P-GSM) 900
+SIM 2 Band GSM 850
+SIM 2 Band GSM PCS 1900
+SIM 2 WCDMA Europe, Japan, and China IMT 2100 band
+SIM 2 WCDMA U.S. PCS 1900 band
+SIM 2 WCDMA U.S. 850 band
+SIM 2 WCDMA Japan 800 band
+SIM 2 WCDMA Europe and Japan 900 band
+SIM 2 E-UTRA Operating Band 1
+SIM 2 E-UTRA Operating Band 2
+SIM 2 E-UTRA Operating Band 3
+SIM 2 E-UTRA Operating Band 4
+SIM 2 E-UTRA Operating Band 5
+SIM 2 E-UTRA Operating Band 7
+SIM 2 E-UTRA Operating Band 8
+SIM 2 E-UTRA Operating Band 13
+SIM 2 E-UTRA Operating Band 17
+SIM 2 E-UTRA Operating Band 20
+Scheduling Setting
+Type
+hour
+minute
+Mon
+Tue
+Wed
+Thu
+Fri
+Sat
+Sun
+GPS Settings
+GPS
+Option A-GPS
+Enable
+Enable
+Report Protocol
+Report to host
+Report to port
+Report period
+Report Format
+Report ID
+GPS Status
+GPS Monitor
+GPS Serial Modes
+Server port
+OnCell Central Manager Settings
+OnCell Central Manager
+Manager IP
+Auto reconnect period
+Management information port
+Management configuration port
+Telnet port
+Operation mode data port
+Operation mode cmd port
+Service Forwarding Settings
+Service Forwarding
+Service forwarding function
+Service forwarding port
+Act.
+Protocol
+Eth. Device Name
+Eth. Device IP
+Port
+Description
+RSTP Settings
+RSTP Status
+RSTP status
+Hello time
+Max. age
+Forwarding delay
+Bridge priority
+Enable
+Port Priority
+Port Cost
+Edge Por
+DHCP Server
+Static DHCP Mapping
+DHCP server
+Default gateway
+Subnet mask
+Primary DNS server
+Secondary DNS server
+Starting IP address
+Maximum number of users
+Client lease time
+Static DHCP Mapping
+Enable
+MAC address
+IP address
+Storm Protection
+Storm protection
+Multicast & flooding
+Loop detection
+Link Fault Pass-Through
+Link Fault Pass-Through
+AeroLink AP
+Enable
+Reset
+Wireless LAN Setup
+AP Selection
+Basic WLAN Setup
+operation mode
+Channel
+bssid
+SSID
+SSID broadcast
+Client isolation
+Gateway
+Netmask
+Subnet type
+Active
+IP
+Netmask
+Protocol
+Port
+RF type
+Country code
+WDS
+WMM
+Signal
+Channel width
+Channel bonding
+WLAN Security Settings
+Security Settings
+Security mode
+Authentication type
+Key type
+Key length
+Key index
+WEP key 1
+WEP key 2
+WEP key 3
+WEP key 4
+WPA type
+EAPOL version
+Encryption method
+Passphrase
+Primary RADIUS server IP
+Primary RADIUS server port
+Primary RADIUS shared key
+Secondary RADIUS server IP
+Secondary RADIUS server port
+Secondary RADIUS shared key
+EAP protocol
+Certificate information
+TTLS inner authentication
+Inner EAP protocol
+Anonymous name
+User name
+Password
+Key renewal
+WDS Settings
+ENABLE
+Device Peer Mac
+Advanced WLAN Settings
+Transmission rate
+Minimum transmission rate
+Maximum transmission power
+Beacon interval
+DTIM interval
+Fragmentation threshold
+RTS threshold
+Transmission distance
+Transmission enhancement
+Noise protection
+Wireless transmission power
+Wireless rate control
+Antenna
+Guard interval
+Inactive timeout
+Proxy arp
+Management frame encryption
+Management frame encryption password
+Auto channel
+Selection interval
+Monitoring interval
+Monitoring times
+Channel 2
+Channel 3
+ACC connection threshold
+ACC disconnection threshold
+ACC connection time
+ACC disconnection time
+ACC RSSI threshold
+ACD RSSI threshold
+ACC link timeout
+Turbo Roaming
+Enable
+Scan channels
+Rate threshold
+Roaming threshold unit
+Roaming threshold
+AP alive check
+Roaming difference
+AP candidate threshold
+Turbo Roaming hurry
+AP functionality
+Turbo mode
+WLAN Certificate Settings
+Certificate file
+Certificate issued to
+Certificate issued by
+Certificate expiration date
+Certificate private password
+User identity
+Advanced Setup
+VLAN Settings
+Management VLAN ID
+PVID
+VLAN Tagged
+Packet Filters
+MAC Filters
+Ethernet Type Filters
+IP Protocol Filters
+TCP/UDP Port Filters
+Enable
+MAC filters function
+IP protocol filters function
+TCP/UDP port filters function
+Policy
+RULE
+ETHER TYPE
+MAC
+Protocol
+Source IP
+Source Netmask
+Destination IP
+Destination Netmask
+Source Port
+Destination Port
+NAME
+SNMP Agent
+SNMP agent
+SNMP agent version
+Read community
+Write commnuity
+1st trap server IP/name
+1st trap version
+1st trap community
+2nd trap server IP/name
+2nd trap version
+2nd trap community
+Admin authentication type
+Admin encryption method
+User  auth type
+User  privacy key enable
+Private key
+Private MIB information
+Device object ID
+Remote management
+Authentication username
+UPnP
+Enable
+Static Route
+Active
+Interface
+Destination
+Netmask
+Gateway
+Metric
+NAT
+NAT
+NAT/Port Forwarding
+Port Forwarding function
+Port Forwarding Enable
+Protocol
+WAN Port
+LAN IP
+LAN Port
+Logs and Notifications
+System Logs
+System Log Event Types
+Syslog
+Syslog Event Types
+Syslog Server Settings
+Syslog server
+Syslog port
+System restart
+E-mail Notifications
+Notification Event Types
+E-mail Server Settings
+SMTP
+To e-mail address 1
+To e-mail address 2
+To e-mail address 3
+To e-mail address 4
+To e-mail address 5
+User name
+Password
+From e-mail address
+Relay
+Relay Event Types
+Trap
+Trap Event Types
+SNMP Trap Receiver Settings
+SMS
+SMS Event Types
+SMS Phone Settings
+Enable
+PORT1
+PORT2
+Cold start
+Warm start
+Power 1 transition (On-->Off)
+Power 1 transition (Off-->On)
+Power 2 transition (On-->Off)
+Power 2 transition (Off-->On)
+PoE transition (On-->Off)
+PoE transition (Off-->On)
+DI 1 transition (On-->Off)
+DI 1 transition (Off-->On)
+DI 2 transition (On-->Off)
+DI 2 transition (Off-->On)
+Configuration changed
+Console authentication failure
+LAN link on
+LAN link off
+LAN 1 link On
+LAN 1 link Off
+LAN 2 link On
+LAN 2 link Off
+LAN 3 link On
+LAN 3 link Off
+LAN 4 link On
+LAN 4 link Off
+Port Connect
+Port DisConnect
+Sta Leave
+System-related events
+Network-related events
+Configuration-related events
+Power events
+DI events
+RSSI report events
+VPN events
+PORT ENABLE
+THRESHOLD
+DURATION
+IP changed
+Password changed
+Cellular module fail
+Cellular close temperature range
+Cellular over temperature range
+Status
+Associated Client List
+DHCP Client List
+System Log
+Relay Status
+DI and Power Status
+Power Status
+Wireless LAN Status
+AeroLink Protection Status
+IPSec Logs
+Network Statistics
+DNS Status
+Maintenance
+Ping Command
+Sniffer
+Console Settings
+Telnet console
+HTTP console
+SSH console
+HTTPS console
+SNMP console
+Moxa service
+Auto logout period
+Accessible Net List
+Policy
+Active
+Source IP
+Source Netmask
+UPNP
+Change Password
+Password strength check
+Minimum password length
+Password validity
+Password retry count
+Lockout time
+Account name
+Password
+Active
+User level
+Access via wireless
+HTTP/HTTPS
+Telnet/SSH/Console
+Diagnostic
+Moxa Service
+Account Settings
+Accessible Access Portal
+Application
+Mode
+TCP alive check time
+Inactivity time
+Max. No. of connections
+Ignore jammed IP
+Allow driver control
+Port buffering (256K)
+Serial data logging (256K)
+Secure
+CR/LF mapping
+DTR off drop
+RTS off drop
+Delimiter enable
+Packing length
+Delimiter process
+Delimiter 1
+Delimiter 2
+Force transmit
+Enable
+Destination address
+TCP port
+Cmd port
+Designated local TCP port
+Designated local cmd port
+TCP port
+Cmd port
+TCP port
+Destination address
+Port
+Designated local port
+Connection control
+Destination IP address
+End
+Port
+Local listen port
+OpMode Eanble
+When the connection goes down
+Data Packing
+Serial Operation Mode
+always low
+always high
+Serial Port Settings
+Port
+Operation Modes
+Port alias
+Interface
+Baud rate
+Manual baud rate
+Data bits
+Stop bits
+Parity
+Flow control
+FIFO
+Communication Parameters
+Data Buffering/Log
+Serial Parameters
+Serial Data Logs
+Serial
+Serial to Network Connections
+Serial Port Status
+Serial Port Error Count
+Serial Port Settings
+Cipher Usage Status
+Modbus listen port
+Serial response time-out
+Interface On/Off
+LAN
+Cellular WAN
+Wireless
+Firmware Upgrade
+Configuration Import & Export
+Configuration Import
+Configuration Export
+Media Backup
+Log Export
+Load Factory Default
+Restart
+Save and Restart
+Save Configuration
+Logout
+Miscellaneous Settings
+Disable will make the reset button become invalid 60 seconds after boot up finishes
+Booting beeper
+Skip client isolation
+Multicast rate
+MAC clone
+MAC clone interface
+MAC clone method
+Static MAC clone address
+Radio Resource Measurement
+Dual link option
+50ms roaming
+Turbo roaming type
+Primary WAC IP address
+Backup WAC IP address
+Port
+Roaming Priority
+RF bandwidth
+Fast EAPOL
+WAC Settings
+<50ms turbo roaming
+Roaming domain
+Crypto enable
+Secondary SSID enable
+Third SSID enable
+Network Info
+LAN MAC address
+LAN IP address
+LAN subnet mask
+WLAN MAC address
+WLAN IP address
+WLAN subnet mask
+AeroLink Protection
+AP alive check
+LAN Interface
+WLAN Interface
+Virtual LAN IP
+Virtual WLAN IP
+Manual SMS Settings
+Manual SMS
+SMS Alert Settings
+To phone number 1
+To phone number 2
+To phone number 3
+To phone number 4
+Encode format
+Remote SMS Control Settings
+Remote SMS Control
+Remote SMS control
+Password
+Auth type
+Caller ID 1
+Caller ID 2
+Caller ID 3
+Caller ID 4
+Active
+Acknowledge
+Customize SMS Settings
+Customize SMS
+Customize SMS Message
+DDNS
+DDNS function
+Service provider
+Username
+Password
+Host name
+Debug Log
+SIM Status
+VPN
+IPSec
+IPSec Settings
+IPSec enable
+Tunnel Settings
+Connection name
+Connection type
+Startup mode
+Local network
+Local netmask
+Local ID
+Remote VPN gateway
+Remote network
+Remote netmask
+Local 1:N NAT
+NAT type
+NAT to local network
+GRE enable
+GRE remote ip
+GRE local ip
+Remote ID
+Key Exchange (Phase1)
+Operation mode
+Authentication mode
+Pre-shared Key Value
+Encryption algorithm
+Hash algorithm
+DH group
+Data Exchange (Phase2)
+Perfect forward secrecy
+IPSec
+NAT traversal
+Rekey expire time
+Rekey fuzz percentage
+Negotiation times
+IKE life time
+SA life time
+Dead Peer Detection
+DPD action
+DPD delay
+DPD timeout
+rightrsasigkey
+Local certificate
+Remote certificate
+X.509 Certificate
+Certificate Generation
+Certificate Upload
+Local Certificate Upload
+Remote Certificate Upload
+Remote certificate
+Root Certificate Generation
+Certificate validity
+Certificate password
+Country name (2 letter code)
+State or province name (full name)
+Locality (E.g., City)
+Organization (E.g., Company)
+Organizational unit (E.g., Section)
+Name (E.g., server FQDN or your name)
+Email address
+Local Certificate Setting
+Certificate name
+PKCS#12 upload
+PKCS#12 Name
+Password
+Remote Certificate Name
+User Active
+User name
+Password
+Network IP
+Netmask
+Remote Network
+Remote Netmask
+OpenVPN
+Interface type
+Push network IP
+Push netmask
+Protocol
+Port number
+Encryption algorithm
+Hash algorithm
+LZO compression
+User authentication
+Keepalive
+Redirect to default gateway
+Client-to-client communication
+Allow duplicate user name
+DHCP Proxy
+External Gateway IP
+External Gateway Netmask
+IP Pool Start
+IP Pool End
+OpenVPN
+Server Settings
+Server Setting
+Server Certificate
+Server Certificate Upload
+Server Certificate(PKCS12)
+Root CA Certificate
+Server User Management
+User Management Settings
+Server to User Config
+User Configuration File Export
+Server Status
+Server Logs
+Client Settings
+Client Setting
+Client enable
+Remote server IP
+Client Certificate
+Client Certificate Upload
+Client Status
+Client Logs
+Client Certificate Upload
+Enable
+Password
+Configuration File Encryption Setting (Excluding ABC-01)
+Configuration File Encryption Setting
+Encryption of import/export configuration
+Transmission Information
+Receipt Information
+Troubleshooting
+Export current device information
+Bridge Status
+System Status
+ARP Table
+Routing Table
+LLDP Status
+NAT Status
+Memory Info
+CPU Info
+Network Status
+Advanced Diagnostic Method
+One Key Info
+Login Message
+Login authentication failure message
+END

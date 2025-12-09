@@ -1327,10 +1327,38 @@
             list.innerHTML = projects.map(p => `
                 <div class="project-item ${currentProject?.project_id === p.project_id ? 'active' : ''}"
                      onclick="loadProject('${p.project_id}')">
-                    <div class="name">${p.name}</div>
-                    <div class="meta">${p.current_stage} | ${new Date(p.updated_at).toLocaleDateString()}</div>
+                    <div style="display: flex; justify-content: space-between; align-items: start;">
+                        <div>
+                            <div class="name">${p.name}</div>
+                            <div class="meta">${p.current_stage} | ${new Date(p.updated_at).toLocaleDateString()}</div>
+                        </div>
+                        <button onclick="event.stopPropagation(); deleteProject('${p.project_id}', '${p.name}')"
+                                style="background: none; border: none; cursor: pointer; padding: 4px; opacity: 0.5;"
+                                onmouseover="this.style.opacity='1'; this.style.color='#e94560'"
+                                onmouseout="this.style.opacity='0.5'; this.style.color='inherit'"
+                                title="Delete project">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             `).join('');
+        }
+
+        async function deleteProject(projectId, projectName) {
+            if (!confirm(`Delete project "${projectName}"? This cannot be undone.`)) return;
+            const result = await api(`/projects/${projectId}`, 'DELETE');
+            if (result.success) {
+                showToast('Project deleted');
+                if (currentProject?.project_id === projectId) {
+                    currentProject = null;
+                }
+                loadProjects();
+                updateUI();
+            } else {
+                showToast('Failed to delete project', true);
+            }
         }
 
         async function createProject() {

@@ -1,0 +1,193 @@
+body         { background-color: #FFFFFF; font-family: Verdana; font-size: 9pt; margin-top: 15px; margin-left:15px; }
+font         { font-family: Verdana }
+table        { font-family: Verdana; font-size: 9pt; border:0px; width: 100%;}
+h2           { font-family: Verdana; font-size: 10pt; color: #009966; }
+h3           { font-family: Verdana; font-size: 9pt; color: #009966;}
+
+textarea     {
+    font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+
+input        {
+    font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+
+select       {
+    font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+
+ul {
+	margin: 0 0 0 20px;
+	padding: 0;
+}
+
+*.BLUE		{ COLOR:#0000FF}
+*.HEADER	{ font-family: Verdana; font-size: 9pt; font-weight: bold}
+*.HEADER_BLUE	{ font-family: Verdana; font-size: 9pt; color: #0000FF; font-weight: bold}
+*.HEADER_RED	{ font-family: Verdana; font-size: 9pt; color: #FF0000; font-weight: bold}
+*.TITLE		{ font-family: Verdana; font-size: 9pt; color: #0000FF; font-weight: bold; text-align: center }
+A:link 
+{
+	COLOR:#0000FF; TEXT-DECORATION: none
+}
+a:visited    
+{ 
+	color:#0000FF; text-decoration: none 
+}
+A:hover 
+{
+	COLOR:#FF0000; TEXT-DECORATION: none 
+}
+
+.block_title
+{
+    background-color: #ccf4de;
+    font-family: Verdana;
+    font-size: 9pt;
+    font-weight: bold;
+    color: #000000;
+    padding:5px;
+    padding-left:0px;
+}
+.block_seperator
+{
+    height:10px;
+}
+
+.column_title_bg
+{
+    background-color: #ccf4de;
+    font-family: Verdana; 
+    font-size: 9pt;
+    font-weight: bold;
+    color: #009966;
+}
+
+.column_title
+{
+    background-color: #ffffff;
+    font-family: Verdana; 
+    font-size: 9pt;
+    font-weight: bold;
+    color: #009966;
+}
+
+.column_title_no_bg
+{
+    font-family: Verdana; 
+    font-size: 9pt;
+    font-weight: bold;
+    color: #009966;
+}
+
+.column_text
+{
+    background-color: #EFEFEF;
+    font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+
+.column_text_no_bg
+{
+    font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+
+.free_text
+{
+    background-color: #FFFFFF;
+    font-family: Verdana;
+    font-size: 9pt;
+    color: #000000;
+}
+.column_title_network_choosebg
+{
+    background-color: #ccf4de;
+    font-family: Verdana; 
+    font-size: 12pt;
+    font-weight: bold;
+    color: #009966;
+}
+.column_title_networkbg
+{
+    background-color: #f5f5dc;
+    font-family: Verdana; 
+    font-size: 12pt;
+    font-weight: bold;
+    color: #009966;
+}
+
+/* HELPER */
+.HELP_UL
+{
+    list-style: none;
+}
+    
+.HELP_UL li
+{
+    float: left;
+    position: relative;
+}
+    
+.HELP_UL .HELP_IMG
+{
+    margin: auto 0 auto 0px;
+    position: relative;
+}
+    
+.HELP_UL .HELP_IMG .TOOLTIP_TEXT
+{
+    visibility: hidden;
+    width: 300px;
+    font-family: Ubuntu, sans-serif;
+    text-shadow: 0 1px rgba( 69, 69, 69, .5 );
+    line-height: 1.5;
+    color: #000;
+    background: #ccf4de;
+    background: -webkit-gradient( linear, left top, left bottom, from( #FFFFFF ), to( #ccf4de ) );
+    background: -webkit-linear-gradient( top, #FFFFFF, #ccf4de);
+    background: -moz-linear-gradient( top, #FFFFFF, #ccf4de);
+    background: -ms-radial-gradient( top, #FFFFFF, #ccf4de);
+    background: -o-linear-gradient( top, #FFFFFF, #ccf4de);
+    background: linear-gradient( top, #FFFFFF, #ccf4de);
+    
+    -webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
+    border: 2px solid #009966;
+    -webkit-box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+    -moz-box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+    box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+    position: absolute;
+    z-index: 1000;
+    padding: 15px;
+    top: -20px;
+    left: 30px;
+}
+    
+.HELP_UL .HELP_IMG .TOOLTIP_TEXT:before 
+{
+    width: 0;
+    height: 0;
+    /* #009966 */
+     /* rgba(00, 99, 66, .8) */
+    border: 12px solid #009966;
+    border-color: transparent #009966 transparent transparent; 
+    content: '';
+    position: absolute;
+    left: -24px;
+    top: 12px;
+    /* margin-left: -10px;*/
+}
+
+.HELP_UL .HELP_IMG:hover .TOOLTIP_TEXT {
+    visibility: visible;
+}

@@ -1,0 +1,7 @@
+# Aliases extracted from modules themselves.
+alias pci:v0000168Cd0000002Bsv*sd*bc*sc*i* ath9k
+alias pci:v0000168Cd0000002Asv*sd*bc*sc*i* ath9k
+alias pci:v0000168Cd00000029sv*sd*bc*sc*i* ath9k
+alias pci:v0000168Cd00000027sv*sd*bc*sc*i* ath9k
+alias pci:v0000168Cd00000024sv*sd*bc*sc*i* ath9k
+alias pci:v0000168Cd00000023sv*sd*bc*sc*i* ath9k

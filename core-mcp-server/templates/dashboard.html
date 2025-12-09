@@ -8,24 +8,58 @@
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <!-- noVNC -->
     <script src="https://cdn.jsdelivr.net/npm/@nickvergessen/novnc@1.3.0/lib/rfb.js"></script>
+    <!-- QR Code Generator -->
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <style>
         [v-cloak] { display: none; }
 
-        /* Tab styling */
+        /* Tab styling - Modern design */
         .tab-button {
-            @apply px-4 py-2 text-sm font-medium rounded-t-lg transition-colors;
+            @apply px-4 py-2.5 text-sm font-medium rounded-t-lg transition-all duration-200;
+            @apply border border-transparent border-b-0;
+            @apply shadow-sm;
+            position: relative;
         }
         .tab-button.active {
-            @apply bg-gray-800 text-white border-b-2 border-blue-500;
+            @apply bg-gray-900 text-white;
+            @apply border-gray-600 border-b-0;
+            box-shadow: 0 -2px 10px rgba(59, 130, 246, 0.3);
+            z-index: 10;
+        }
+        .tab-button.active::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #3b82f6, #8b5cf6);
         }
         .tab-button:not(.active) {
-            @apply bg-gray-700 text-gray-300 hover:bg-gray-600;
+            @apply bg-gray-800/60 text-gray-400 hover:bg-gray-700 hover:text-gray-200;
         }
         .tab-button.vnc-tab {
-            @apply bg-green-800 text-white;
+            @apply bg-emerald-900/60 text-emerald-300;
+        }
+        .tab-button.vnc-tab:hover:not(.active) {
+            @apply bg-emerald-800/70 text-emerald-200;
         }
         .tab-button.vnc-tab.active {
-            @apply bg-green-700 border-b-2 border-green-400;
+            @apply bg-emerald-900 text-emerald-100;
+            box-shadow: 0 -2px 10px rgba(16, 185, 129, 0.3);
+        }
+        .tab-button.vnc-tab.active::after {
+            background: linear-gradient(90deg, #10b981, #34d399);
+        }
+        .tab-button .tab-icon {
+            @apply w-4 h-4 mr-2 opacity-80;
+        }
+        .tab-button.active .tab-icon {
+            @apply opacity-100;
+        }
+        /* Tab bar separator */
+        .tab-bar-divider {
+            @apply w-px h-6 bg-gray-600/50 mx-2 self-center;
         }
 
         /* VNC container */
@@ -62,6 +96,24 @@
             width: 100%;
             height: calc(100vh - 120px);
             border: none;
+        }
+
+        /* Sensor panel slide transition */
+        .slide-enter-active,
+        .slide-leave-active {
+            transition: all 0.2s ease-out;
+            max-height: 200px;
+            overflow: hidden;
+        }
+        .slide-enter-from,
+        .slide-leave-to {
+            max-height: 0;
+            opacity: 0;
+        }
+
+        /* Custom gray-850 background */
+        .bg-gray-850 {
+            background-color: rgb(30, 32, 40);
         }
     </style>
 </head>
@@ -101,161 +153,330 @@
                             {{ coreStatusText }}
                         </span>
                     </div>
-                    <!-- Micro:bit Status -->
-                    <div class="text-sm flex items-center gap-2 border-l border-gray-600 pl-4 ml-2 relative">
-                        <span class="status-dot" :class="microbitConnected ? 'connected' : ''"></span>
-                        <span class="text-gray-400">Micro:bit: </span>
-                        <span :class="microbitConnected ? 'text-green-400' : 'text-gray-500'">
-                            {{ microbitConnected ? 'Connected' : 'Disconnected' }}
-                        </span>
-                        <button v-if="!microbitConnected"
-                                @click="connectMicrobit"
-                                class="px-2 py-0.5 bg-teal-600 hover:bg-teal-500 rounded text-xs font-medium">
-                            Connect
-                        </button>
-                        <button v-else
-                                @click="disconnectMicrobit"
-                                class="px-2 py-0.5 bg-red-600 hover:bg-red-500 rounded text-xs font-medium">
-                            Disconnect
-                        </button>
-                        <!-- Sample count with hover preview -->
-                        <div v-if="microbitConnected && microbitSampleCount > 0"
-                             class="relative group cursor-pointer"
-                             @mouseenter="showMicrobitPreview = true"
-                             @mouseleave="showMicrobitPreview = false">
-                            <span class="text-xs text-gray-400 hover:text-teal-400 transition-colors">
-                                ({{ microbitSampleCount }} samples)
-                            </span>
-                            <!-- Hover Preview Popup -->
-                            <div v-show="showMicrobitPreview"
-                                 class="absolute top-full right-0 mt-2 w-64 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-3">
-                                <div class="text-xs font-medium text-teal-400 mb-2 border-b border-gray-700 pb-1">Live Sensor Data</div>
-                                <div class="grid grid-cols-3 gap-2 text-center">
-                                    <div class="bg-gray-900 rounded p-2">
-                                        <div class="text-xs text-gray-500">X</div>
-                                        <div class="text-lg font-mono text-red-400">{{ microbitLastData.x || '--' }}</div>
-                                    </div>
-                                    <div class="bg-gray-900 rounded p-2">
-                                        <div class="text-xs text-gray-500">Y</div>
-                                        <div class="text-lg font-mono text-green-400">{{ microbitLastData.y || '--' }}</div>
-                                    </div>
-                                    <div class="bg-gray-900 rounded p-2">
-                                        <div class="text-xs text-gray-500">Z</div>
-                                        <div class="text-lg font-mono text-blue-400">{{ microbitLastData.z || '--' }}</div>
-                                    </div>
-                                </div>
-                                <div class="text-xs text-gray-500 mt-2 text-center">
-                                    ID: {{ microbitSensorId }}
-                                </div>
-                            </div>
+                    <!-- External Sensors - Compact Inline Status -->
+                    <div class="text-sm flex items-center gap-3 border-l border-gray-600 pl-4 ml-2">
+                        <!-- Sensor Status Pills - Always visible -->
+                        <div class="flex items-center gap-2">
+                            <!-- Micro:bit Status -->
+                            <button @click="activeSensorTab = 'microbit'; showSensorsPanel = true"
+                                    :class="['flex items-center gap-1.5 px-2 py-1 rounded-full text-xs transition-all',
+                                             microbitConnected ? 'bg-teal-600/20 text-teal-400 ring-1 ring-teal-500/50' : 'bg-gray-700/50 text-gray-500 hover:bg-gray-700']">
+                                <span :class="['w-1.5 h-1.5 rounded-full', microbitConnected ? 'bg-teal-400 animate-pulse' : 'bg-gray-600']"></span>
+                                <span class="hidden sm:inline">micro:bit</span>
+                                <span class="sm:hidden">uB</span>
+                            </button>
+                            <!-- Phone Status -->
+                            <button @click="activeSensorTab = 'phone'; showSensorsPanel = true"
+                                    :class="['flex items-center gap-1.5 px-2 py-1 rounded-full text-xs transition-all',
+                                             phoneConnected ? 'bg-orange-600/20 text-orange-400 ring-1 ring-orange-500/50' : 'bg-gray-700/50 text-gray-500 hover:bg-gray-700']">
+                                <span :class="['w-1.5 h-1.5 rounded-full', phoneConnected ? 'bg-orange-400 animate-pulse' : 'bg-gray-600']"></span>
+                                <span class="hidden sm:inline">phone</span>
+                                <span class="sm:hidden">Ph</span>
+                                <span v-if="phoneSensorCount > 1" class="text-xs opacity-70">{{ phoneSensorCount }}</span>
+                            </button>
+                            <!-- ESP32 Status -->
+                            <button @click="activeSensorTab = 'esp32'; showSensorsPanel = true"
+                                    :class="['flex items-center gap-1.5 px-2 py-1 rounded-full text-xs transition-all',
+                                             esp32Connected ? 'bg-purple-600/20 text-purple-400 ring-1 ring-purple-500/50' : 'bg-gray-700/50 text-gray-500 hover:bg-gray-700']">
+                                <span :class="['w-1.5 h-1.5 rounded-full', esp32Connected ? 'bg-purple-400 animate-pulse' : 'bg-gray-600']"></span>
+                                <span class="hidden sm:inline">ESP32</span>
+                                <span class="sm:hidden">E32</span>
+                            </button>
                         </div>
-                        <!-- Settings Button - Toggle dropdown panel -->
-                        <button @click="showMicrobitPanel = !showMicrobitPanel"
-                                :class="['px-2 py-0.5 rounded text-xs font-medium ml-1', showMicrobitPanel ? 'bg-teal-600 text-white' : 'bg-gray-700 hover:bg-gray-600']"
-                                title="Micro:bit Configuration">
-                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <!-- Settings Button -->
+                        <button @click="showSensorsPanel = !showSensorsPanel"
+                                :class="['p-1.5 rounded transition-all',
+                                         showSensorsPanel ? 'bg-gray-600 text-white' : 'text-gray-500 hover:text-white hover:bg-gray-700']"
+                                title="Sensor Settings">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                             </svg>
                         </button>
-                        <!-- Inline Config Panel - Always visible dropdown -->
-                        <div v-show="showMicrobitPanel"
-                             class="absolute top-full right-0 mt-2 w-80 bg-gray-800 border border-gray-600 rounded-lg shadow-xl z-50 p-4">
-                            <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-700">
-                                <span class="text-sm font-medium text-teal-400">Micro:bit Configuration</span>
-                                <button @click="showMicrobitPanel = false" class="text-gray-500 hover:text-white">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                                    </svg>
-                                </button>
-                            </div>
-
-                            <!-- Connection Status -->
-                            <div class="mb-3 p-2 bg-gray-900 rounded text-xs">
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-gray-500">Status</span>
-                                    <span :class="microbitConnected ? 'text-green-400' : 'text-gray-500'">
-                                        {{ microbitConnected ? 'Connected' : 'Disconnected' }}
-                                    </span>
-                                </div>
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-gray-500">Sensor ID</span>
-                                    <span class="text-white font-mono">{{ microbitSensorId }}</span>
-                                </div>
-                                <div class="flex justify-between">
-                                    <span class="text-gray-500">Samples</span>
-                                    <span class="text-white">{{ microbitSampleCount }}</span>
-                                </div>
-                            </div>
-
-                            <!-- Live Data -->
-                            <div class="mb-3">
-                                <div class="text-xs text-gray-500 mb-2">Live Data</div>
-                                <div class="grid grid-cols-3 gap-2 text-center">
-                                    <div class="bg-gray-900 rounded p-2">
-                                        <div class="text-xs text-gray-600">X</div>
-                                        <div class="text-base font-mono text-red-400">{{ microbitLastData.x || '--' }}</div>
-                                    </div>
-                                    <div class="bg-gray-900 rounded p-2">
-                                        <div class="text-xs text-gray-600">Y</div>
-                                        <div class="text-base font-mono text-green-400">{{ microbitLastData.y || '--' }}</div>
-                                    </div>
-                                    <div class="bg-gray-900 rounded p-2">
-                                        <div class="text-xs text-gray-600">Z</div>
-                                        <div class="text-base font-mono text-blue-400">{{ microbitLastData.z || '--' }}</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Data Routing Toggle -->
-                            <div class="mb-3">
-                                <div class="flex items-center justify-between">
-                                    <span class="text-xs text-gray-500">Send to CORE Network</span>
-                                    <label class="relative inline-flex items-center cursor-pointer">
-                                        <input type="checkbox" v-model="microbitConfig.sendToCore" class="sr-only peer">
-                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-600"></div>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Axis Enable/Disable -->
-                            <div class="mb-3">
-                                <div class="text-xs text-gray-500 mb-2">Axis Selection</div>
-                                <div class="flex gap-3">
-                                    <label class="flex items-center gap-1 text-xs cursor-pointer">
-                                        <input type="checkbox" v-model="microbitConfig.xEnabled" class="rounded w-3 h-3">
-                                        <span class="text-red-400">X</span>
-                                    </label>
-                                    <label class="flex items-center gap-1 text-xs cursor-pointer">
-                                        <input type="checkbox" v-model="microbitConfig.yEnabled" class="rounded w-3 h-3">
-                                        <span class="text-green-400">Y</span>
-                                    </label>
-                                    <label class="flex items-center gap-1 text-xs cursor-pointer">
-                                        <input type="checkbox" v-model="microbitConfig.zEnabled" class="rounded w-3 h-3">
-                                        <span class="text-blue-400">Z</span>
-                                    </label>
-                                </div>
-                            </div>
-
-                            <!-- Advanced Settings Link -->
-                            <button @click="showMicrobitSettings = true; showMicrobitPanel = false"
-                                    class="w-full text-xs text-center text-teal-400 hover:text-teal-300 py-2 border-t border-gray-700">
-                                Advanced Settings →
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>
         </header>
 
+        <!-- External Sensors Slide-out Panel (Below Header) -->
+        <transition name="slide">
+            <div v-show="showSensorsPanel"
+                 class="bg-gray-850 border-b border-gray-700 shadow-lg">
+                <div class="max-w-7xl mx-auto">
+                    <!-- Tab Header - Seamless with panel -->
+                    <div class="flex items-center border-b border-gray-700/50">
+                        <button @click="activeSensorTab = 'microbit'"
+                                :class="['px-4 py-2.5 text-sm font-medium flex items-center gap-2 border-b-2 transition-all',
+                                         activeSensorTab === 'microbit' ? 'border-teal-500 text-teal-400 bg-teal-500/5' : 'border-transparent text-gray-500 hover:text-gray-300']">
+                            <span :class="['w-2 h-2 rounded-full', microbitConnected ? 'bg-teal-400' : 'bg-gray-600']"></span>
+                            Micro:bit
+                        </button>
+                        <button @click="activeSensorTab = 'phone'"
+                                :class="['px-4 py-2.5 text-sm font-medium flex items-center gap-2 border-b-2 transition-all',
+                                         activeSensorTab === 'phone' ? 'border-orange-500 text-orange-400 bg-orange-500/5' : 'border-transparent text-gray-500 hover:text-gray-300']">
+                            <span :class="['w-2 h-2 rounded-full', phoneConnected ? 'bg-orange-400' : 'bg-gray-600']"></span>
+                            Phone
+                            <span v-if="phoneSensorCount > 0" class="text-xs bg-orange-500/20 px-1.5 rounded">{{ phoneSensorCount }}</span>
+                        </button>
+                        <button @click="activeSensorTab = 'esp32'"
+                                :class="['px-4 py-2.5 text-sm font-medium flex items-center gap-2 border-b-2 transition-all',
+                                         activeSensorTab === 'esp32' ? 'border-purple-500 text-purple-400 bg-purple-500/5' : 'border-transparent text-gray-500 hover:text-gray-300']">
+                            <span :class="['w-2 h-2 rounded-full', esp32Connected ? 'bg-purple-400' : 'bg-gray-600']"></span>
+                            ESP32
+                            <span class="text-xs text-gray-600">soon</span>
+                        </button>
+                        <div class="flex-1"></div>
+                        <button @click="showSensorsPanel = false"
+                                class="px-4 py-2 text-gray-500 hover:text-white transition-colors">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7"/>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Tab Content - Horizontal Card Layout -->
+                    <div class="p-4">
+                        <!-- Micro:bit Tab Content -->
+                        <div v-show="activeSensorTab === 'microbit'" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <!-- Status Card -->
+                            <div class="bg-gray-900/50 rounded-lg p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-sm font-medium text-teal-400">Connection</span>
+                                    <button v-if="!microbitConnected"
+                                            @click="connectMicrobit"
+                                            class="px-3 py-1 bg-teal-600 hover:bg-teal-500 rounded text-xs font-medium">
+                                        Connect
+                                    </button>
+                                    <button v-else
+                                            @click="disconnectMicrobit"
+                                            class="px-3 py-1 bg-red-600 hover:bg-red-500 rounded text-xs font-medium">
+                                        Disconnect
+                                    </button>
+                                </div>
+                                <div class="space-y-2 text-xs">
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Status</span>
+                                        <span :class="microbitConnected ? 'text-green-400' : 'text-gray-500'">
+                                            {{ microbitConnected ? 'Connected' : 'Disconnected' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Sensor ID</span>
+                                        <span class="text-white font-mono text-xs">{{ microbitSensorId }}</span>
+                                    </div>
+                                    <div class="flex justify-between">
+                                        <span class="text-gray-500">Samples</span>
+                                        <span class="text-white">{{ microbitSampleCount }}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Live Data Card -->
+                            <div class="bg-gray-900/50 rounded-lg p-4">
+                                <div class="text-sm font-medium text-teal-400 mb-3">Live Data</div>
+                                <div class="grid grid-cols-3 gap-2 text-center">
+                                    <div class="bg-gray-800 rounded p-2">
+                                        <div class="text-xs text-gray-600">X</div>
+                                        <div class="text-lg font-mono text-red-400">{{ microbitLastData.x || '--' }}</div>
+                                    </div>
+                                    <div class="bg-gray-800 rounded p-2">
+                                        <div class="text-xs text-gray-600">Y</div>
+                                        <div class="text-lg font-mono text-green-400">{{ microbitLastData.y || '--' }}</div>
+                                    </div>
+                                    <div class="bg-gray-800 rounded p-2">
+                                        <div class="text-xs text-gray-600">Z</div>
+                                        <div class="text-lg font-mono text-blue-400">{{ microbitLastData.z || '--' }}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Settings Card -->
+                            <div class="bg-gray-900/50 rounded-lg p-4">
+                                <div class="text-sm font-medium text-teal-400 mb-3">Settings</div>
+                                <div class="flex items-center justify-between mb-3">
+                                    <span class="text-xs text-gray-400">Send to CORE</span>
+                                    <label class="relative inline-flex items-center cursor-pointer">
+                                        <input type="checkbox" v-model="microbitConfig.sendToCore" class="sr-only peer">
+                                        <div class="w-9 h-5 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-teal-600"></div>
+                                    </label>
+                                </div>
+                                <div class="text-xs text-gray-500">
+                                    Connect via USB. Requires Chrome/Edge.
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Phone Tab Content - Professional Integrated View -->
+                        <div v-show="activeSensorTab === 'phone'" class="flex gap-4">
+                            <!-- Left: QR Code & Setup (always visible) -->
+                            <div class="w-64 flex-shrink-0 bg-gray-900/50 rounded-lg p-4">
+                                <div class="text-center">
+                                    <div class="text-sm font-medium text-orange-400 mb-3">Connect Phone</div>
+                                    <!-- QR Code Container -->
+                                    <div class="bg-white rounded-lg p-2 mx-auto w-fit mb-3">
+                                        <div id="phoneQrCode" class="w-32 h-32 flex items-center justify-center">
+                                            <svg class="w-8 h-8 text-gray-300 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-gray-500 mb-2">Scan with your phone camera</div>
+                                    <div class="text-xs font-mono text-orange-400/70 break-all px-2" id="phoneUrlDisplay">{{ phoneWebUrl }}</div>
+                                </div>
+
+                                <!-- Connection Status -->
+                                <div class="mt-4 pt-3 border-t border-gray-700/50">
+                                    <div class="flex items-center justify-between text-xs mb-2">
+                                        <span class="text-gray-500">Status</span>
+                                        <span :class="phoneConnected ? 'text-green-400' : 'text-gray-500'">
+                                            {{ phoneConnected ? phoneSensorCount + ' phone' + (phoneSensorCount > 1 ? 's' : '') : 'Waiting...' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs mb-2">
+                                        <span class="text-gray-500">Messages</span>
+                                        <span class="text-white font-mono">{{ phoneMessageCount }}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-xs">
+                                        <span class="text-gray-500">MQTT Bridge</span>
+                                        <span :class="phoneInjectorRunning ? 'text-green-400' : 'text-yellow-500'">
+                                            {{ phoneInjectorRunning ? 'Active' : 'Inactive' }}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <!-- Configure Button -->
+                                <button @click="configurePhoneMqttBridge"
+                                        class="w-full mt-3 py-2 bg-orange-600 hover:bg-orange-500 rounded text-xs font-medium transition-colors">
+                                    {{ phoneInjectorRunning ? 'Reconfigure' : 'Enable MQTT Bridge' }}
+                                </button>
+                            </div>
+
+                            <!-- Right: Live Data Stream -->
+                            <div class="flex-1 bg-gray-900/50 rounded-lg p-4">
+                                <div class="flex items-center justify-between mb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm font-medium text-orange-400">Live Sensor Stream</span>
+                                        <span v-if="phoneConnected" class="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 rounded-full text-xs text-green-400">
+                                            <span class="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse"></span>
+                                            Live
+                                        </span>
+                                    </div>
+                                    <div v-if="phoneSensorCount > 1" class="flex items-center gap-2">
+                                        <span class="text-xs text-gray-500">{{ phoneSensorCount }} devices</span>
+                                        <button @click="showPhoneAdvanced = !showPhoneAdvanced"
+                                                class="text-xs text-orange-400 hover:text-orange-300">
+                                            {{ showPhoneAdvanced ? 'Show Data' : 'Show All' }}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Not Connected State -->
+                                <div v-if="!phoneConnected" class="flex flex-col items-center justify-center py-6 text-center">
+                                    <svg class="w-12 h-12 text-gray-600 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                    </svg>
+                                    <div class="text-sm text-gray-400 mb-1">No phone connected</div>
+                                    <div class="text-xs text-gray-600">Scan the QR code to start streaming sensor data</div>
+                                </div>
+
+                                <!-- Connected - Show Data -->
+                                <div v-else>
+                                    <!-- Live values grid -->
+                                    <div v-if="!showPhoneAdvanced">
+                                        <div class="grid grid-cols-6 gap-2 text-center">
+                                            <!-- Accelerometer -->
+                                            <div class="col-span-3 bg-gray-800/50 rounded-lg p-3">
+                                                <div class="text-xs text-gray-500 mb-2 uppercase tracking-wide">Accelerometer</div>
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <div>
+                                                        <div class="text-xs text-red-400/70">X</div>
+                                                        <div class="text-xl font-mono text-red-400">{{ formatPhoneValue(phoneLastData.ax) }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-green-400/70">Y</div>
+                                                        <div class="text-xl font-mono text-green-400">{{ formatPhoneValue(phoneLastData.ay) }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-blue-400/70">Z</div>
+                                                        <div class="text-xl font-mono text-blue-400">{{ formatPhoneValue(phoneLastData.az) }}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <!-- Orientation -->
+                                            <div class="col-span-3 bg-gray-800/50 rounded-lg p-3">
+                                                <div class="text-xs text-gray-500 mb-2 uppercase tracking-wide">Orientation</div>
+                                                <div class="grid grid-cols-3 gap-2">
+                                                    <div>
+                                                        <div class="text-xs text-yellow-400/70">Alpha</div>
+                                                        <div class="text-xl font-mono text-yellow-400">{{ formatPhoneValue(phoneLastData.alpha) }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-pink-400/70">Beta</div>
+                                                        <div class="text-xl font-mono text-pink-400">{{ formatPhoneValue(phoneLastData.beta) }}</div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-xs text-purple-400/70">Gamma</div>
+                                                        <div class="text-xl font-mono text-purple-400">{{ formatPhoneValue(phoneLastData.gamma) }}</div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- Timestamp -->
+                                        <div class="mt-2 text-xs text-gray-600 text-right">
+                                            Last update: {{ phoneLastData.ts ? new Date(phoneLastData.ts).toLocaleTimeString() : '--' }}
+                                        </div>
+                                    </div>
+
+                                    <!-- Phone list view -->
+                                    <div v-else class="space-y-2 max-h-28 overflow-y-auto">
+                                        <div v-for="phone in connectedPhones" :key="phone.id"
+                                             class="flex items-center justify-between bg-gray-800/50 rounded-lg px-3 py-2">
+                                            <div class="flex items-center gap-2">
+                                                <span class="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></span>
+                                                <span class="text-sm font-mono text-orange-400">{{ phone.id }}</span>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-xs text-gray-500">{{ phone.reading_count }} messages</span>
+                                                <button @click="deleteSensor(phone.id)" class="text-gray-500 hover:text-red-400 transition-colors" title="Delete sensor">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div v-if="connectedPhones.length === 0" class="text-center text-gray-500 py-4 text-xs">
+                                            No phones in list
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- ESP32 Tab Content -->
+                        <div v-show="activeSensorTab === 'esp32'" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div class="md:col-span-3 bg-gray-900/50 rounded-lg p-6 text-center">
+                                <svg class="w-12 h-12 mx-auto mb-3 text-purple-500 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"/>
+                                </svg>
+                                <div class="text-sm text-gray-400 mb-2">ESP32 / M5Stack Support Coming Soon</div>
+                                <div class="text-xs text-gray-500">
+                                    Serial via WebSerial | Arduino/ESPHome | Custom sensors
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
         <!-- Tab Bar -->
-        <div class="bg-gray-800 px-4 pt-2 flex items-end space-x-1 border-b border-gray-700">
+        <div class="bg-gray-800 px-4 pt-3 flex items-end space-x-1 border-b border-gray-700">
             <!-- Quick Start Tab -->
             <button @click="activeTab = 'quickstart'"
-                    :class="['tab-button', activeTab === 'quickstart' ? 'active' : '', 'bg-gradient-to-r from-pink-600 to-purple-600']"
-                    style="background: linear-gradient(135deg, #e94560 0%, #0f3460 100%);">
+                    :class="['tab-button', activeTab === 'quickstart' ? 'active' : '']"
+                    :style="activeTab === 'quickstart' ? '' : 'background: linear-gradient(135deg, #e94560 0%, #0f3460 100%);'">
                 <span class="flex items-center text-white">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M13 10V3L4 14h7v7l9-11h-7z"/>
                     </svg>
@@ -267,11 +488,11 @@
             <button @click="activeTab = 'builder'"
                     :class="['tab-button', activeTab === 'builder' ? 'active' : '']">
                 <span class="flex items-center">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
                     </svg>
-                    Topology Builder
+                    Builder
                 </span>
             </button>
 
@@ -279,29 +500,45 @@
             <button @click="activeTab = 'core'"
                     :class="['tab-button', activeTab === 'core' ? 'active' : '']">
                 <span class="flex items-center">
-                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg class="tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
                     </svg>
-                    CORE GUI
+                    CORE
                 </span>
             </button>
+
+            <!-- Divider before VNC tabs -->
+            <div v-if="vncHosts.length > 0" class="tab-bar-divider"></div>
 
             <!-- Dynamic VNC Host Tabs -->
             <div v-for="host in vncHosts" :key="host.id"
                  @click="activeTab = 'vnc-' + host.id"
                  :class="['tab-button vnc-tab cursor-pointer', activeTab === 'vnc-' + host.id ? 'active' : '']">
                 <span class="flex items-center">
-                    <span class="status-dot" :class="host.status"></span>
+                    <svg class="tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                    </svg>
                     {{ host.name }}
-                    <span @click.stop="removeHost(host.id)"
-                          class="ml-2 text-gray-400 hover:text-red-400 cursor-pointer p-1">
-                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <button @click.stop="removeHost(host.id)"
+                          class="ml-2 text-emerald-400/60 hover:text-red-400 transition-colors rounded-full p-0.5 hover:bg-red-400/20"
+                          title="Close desktop">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
                         </svg>
-                    </span>
+                    </button>
                 </span>
             </div>
+
+            <!-- Clear All VNC Tabs button (when multiple) -->
+            <button v-if="vncHosts.length > 1"
+                    @click="clearAllVncHosts"
+                    class="ml-1 px-2 py-1 text-xs text-gray-500 hover:text-red-400 hover:bg-red-400/10 rounded transition-colors"
+                    title="Close all desktops">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            </button>
         </div>
 
         <!-- Tab Content -->
@@ -610,14 +847,26 @@
 
                         <!-- VNC Hosts Panel -->
                         <div v-show="activePanel === 'hosts'" class="p-4 space-y-3 overflow-y-auto" style="max-height: calc(100vh - 200px);">
-                            <!-- Refresh button -->
-                            <button @click="refreshCoreVncNodes"
-                                    class="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
-                                <svg class="w-4 h-4" :class="{'animate-spin': loadingCoreNodes}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
-                                </svg>
-                                {{ loadingCoreNodes ? 'Scanning...' : 'Scan for VNC Nodes' }}
-                            </button>
+                            <!-- Action buttons -->
+                            <div class="flex gap-2">
+                                <button @click="refreshCoreVncNodes"
+                                        class="flex-1 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                    <svg class="w-4 h-4" :class="{'animate-spin': loadingCoreNodes}" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                                    </svg>
+                                    {{ loadingCoreNodes ? 'Scanning...' : 'Scan' }}
+                                </button>
+                                <button @click="setupAllVnc"
+                                        :disabled="settingUpAllVnc || coreVncNodes.length === 0"
+                                        class="flex-1 py-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg text-sm font-medium flex items-center justify-center gap-2">
+                                    <svg v-if="settingUpAllVnc" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                    </svg>
+                                    <span v-else>🖥️</span>
+                                    {{ settingUpAllVnc ? 'Setting up...' : 'Setup All VNC' }}
+                                </button>
+                            </div>
 
                             <!-- CORE VNC Nodes Section -->
                             <div class="mt-4">
@@ -1650,6 +1899,7 @@ basic.forever(function () {
                 // CORE VNC Nodes state
                 const coreVncNodes = ref([]);
                 const loadingCoreNodes = ref(false);
+                const settingUpAllVnc = ref(false);
 
                 // Quick Start Templates
                 const templates = ref([]);
@@ -1718,6 +1968,37 @@ basic.forever(function () {
                 // Micro:bit Data Routes
                 const microbitRoutes = ref([]);
 
+                // External Sensors Panel State
+                const showSensorsPanel = ref(false);
+                const activeSensorTab = ref('microbit');
+
+                // Phone Sensor State
+                const phoneConnected = ref(false);
+                const phoneSensorCount = ref(0);
+                const phoneInjectorRunning = ref(false);
+                const phoneMessageCount = ref(0);
+                const phoneLastData = ref({ ax: null, ay: null, az: null, alpha: null, beta: null, gamma: null });
+                const showPhoneAdvanced = ref(false);
+                const connectedPhones = ref([]);
+
+                // ESP32 State (placeholder for future)
+                const esp32Connected = ref(false);
+
+                // Total sensor count for badge
+                const totalSensorCount = computed(() => {
+                    let count = 0;
+                    if (microbitConnected.value) count++;
+                    if (phoneConnected.value) count += phoneSensorCount.value;
+                    if (esp32Connected.value) count++;
+                    return count;
+                });
+
+                // Phone Web UI URL - now on same port as dashboard
+                const phoneWebUrl = computed(() => {
+                    // Use same origin as dashboard
+                    return `${window.location.origin}/phone`;
+                });
+
                 // AI Help State
                 const showAiHelpModal = ref(false);
                 const aiConversation = ref([]);
@@ -1758,6 +2039,10 @@ basic.forever(function () {
                     deploying.value = true;
                     deployStatus.value = { title: 'Deploying...', message: 'Creating topology and loading into CORE' };
 
+                    // Clear existing VNC desktop tabs before deploying new topology
+                    // (old desktops won't be valid with new topology)
+                    clearAllVncHosts();
+
                     try {
                         const response = await fetch(`/api/templates/${templateId}/deploy`, { method: 'POST' });
                         const result = await response.json();
@@ -1788,19 +2073,18 @@ basic.forever(function () {
                 const isCodespaces = window.location.hostname.includes('github.dev');
                 const baseHost = window.location.hostname;
 
-                // CORE noVNC URL - include password for auto-login
+                // CORE noVNC URL - now proxied through port 8080 via /core-vnc/
                 const coreVncUrl = computed(() => {
+                    // All access through port 8080 - VNC configured with no authentication
+                    // reconnect=true enables auto-reconnect on disconnect
+                    // reconnect_delay=1000 waits 1 second before reconnecting
+                    const wsPath = 'core-vnc/websockify';
+                    const params = 'autoconnect=true&scale=true&reconnect=true&reconnect_delay=1000';
                     if (isCodespaces) {
-                        // GitHub Codespaces: replace port in hostname
-                        // Current: musical-robot-97wwqxg47x7wh97q5-8080.app.github.dev
-                        // Target:  musical-robot-97wwqxg47x7wh97q5-6080.app.github.dev
-                        const match = baseHost.match(/^(.+)-(\d+)(\.app\.github\.dev)$/);
-                        if (match) {
-                            const newHost = `${match[1]}-6080${match[3]}`;
-                            return `https://${newHost}/vnc.html?autoconnect=true&resize=scale&password=core123`;
-                        }
+                        // For Codespaces: use the /core-vnc/ proxy path through port 8080
+                        return `https://${baseHost}/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
                     }
-                    return 'http://localhost:6080/vnc.html?autoconnect=true&resize=scale&password=core123';
+                    return `http://localhost:8080/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
                 });
 
                 const newHost = ref({
@@ -1968,6 +2252,21 @@ basic.forever(function () {
                         loadDockerImages();
                         loadTopologyNetworks();
                         resetWizard();
+                    }
+                });
+
+                // Watch for phone sensor tab to generate QR code
+                watch(activeSensorTab, (newVal) => {
+                    if (newVal === 'phone') {
+                        // Small delay to ensure DOM element exists
+                        setTimeout(generatePhoneQrCode, 100);
+                    }
+                });
+
+                // Watch for sensors panel opening with phone tab
+                watch(showSensorsPanel, (newVal) => {
+                    if (newVal && activeSensorTab.value === 'phone') {
+                        setTimeout(generatePhoneQrCode, 100);
                     }
                 });
 
@@ -2223,6 +2522,139 @@ basic.forever(function () {
                         }
                     } catch (e) {
                         console.error('Failed to stop Wireshark:', e);
+                    }
+                }
+
+                // Phone Sensor Functions - now using same-origin API
+                async function pollPhoneStatus() {
+                    try {
+                        // Filter for phone sensors from the shared sensor API
+                        const response = await fetch('/api/sensors');
+                        const data = await response.json();
+
+                        // Filter for phone sensors only
+                        const phoneSensors = {};
+                        let count = 0;
+                        if (data.sensors) {
+                            for (const [id, sensor] of Object.entries(data.sensors)) {
+                                if (id.startsWith('phone-')) {
+                                    phoneSensors[id] = sensor;
+                                    count++;
+                                }
+                            }
+                        }
+
+                        phoneSensorCount.value = count;
+                        phoneConnected.value = count > 0;
+
+                        // Store list of connected phones
+                        connectedPhones.value = Object.values(phoneSensors);
+                        const phones = connectedPhones.value;
+                        if (phones.length > 0) {
+                            const firstPhone = phones[0];
+                            // Fetch latest reading
+                            const readingRes = await fetch(`/api/sensors/${firstPhone.id}/readings?limit=1`);
+                            const readings = await readingRes.json();
+                            if (readings.readings && readings.readings.length > 0) {
+                                phoneLastData.value = readings.readings[0];
+                            }
+                        }
+                    } catch (e) {
+                        // API error
+                        phoneConnected.value = false;
+                        phoneSensorCount.value = 0;
+                        connectedPhones.value = [];
+                    }
+
+                    try {
+                        const injectRes = await fetch('/api/inject/status');
+                        const injectData = await injectRes.json();
+                        phoneInjectorRunning.value = injectData.running || false;
+                        phoneMessageCount.value = injectData.message_count || 0;
+                    } catch (e) {
+                        phoneInjectorRunning.value = false;
+                    }
+                }
+
+                function formatPhoneValue(val) {
+                    if (val === null || val === undefined) return '--';
+                    return typeof val === 'number' ? val.toFixed(1) : val;
+                }
+
+                async function deleteSensor(sensorId) {
+                    if (!confirm(`Delete sensor ${sensorId}?`)) return;
+                    try {
+                        const response = await fetch(`/api/sensors/${sensorId}`, {
+                            method: 'DELETE'
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            // Remove from local list
+                            connectedPhones.value = connectedPhones.value.filter(p => p.id !== sensorId);
+                            pollPhoneStatus(); // Refresh status
+                        }
+                    } catch (e) {
+                        console.error('Failed to delete sensor:', e);
+                    }
+                }
+
+                async function configurePhoneMqttBridge() {
+                    try {
+                        const response = await fetch('/api/inject/configure', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                session_id: 1,
+                                broker_node: 'mqtt-broker',
+                                broker_ip: '10.0.1.10',
+                                source_node: 'mqtt-broker'
+                            })
+                        });
+                        const data = await response.json();
+                        if (data.success || data.status === 'configured') {
+                            phoneInjectorRunning.value = true;
+                            alert('MQTT Bridge configured successfully!');
+                        } else {
+                            alert('Failed to configure: ' + (data.error || 'Unknown error'));
+                        }
+                    } catch (e) {
+                        alert('Failed to configure MQTT bridge: ' + e.message);
+                    }
+                }
+
+                // Phone QR Code Generation
+                function generatePhoneQrCode() {
+                    const url = phoneWebUrl.value;
+                    const container = document.getElementById('phoneQrCode');
+                    if (!container) return;
+
+                    try {
+                        if (typeof qrcode === 'undefined') {
+                            console.error('QR code library not loaded');
+                            return;
+                        }
+
+                        // Create QR code using qrcode-generator
+                        const typeNumber = 4; // Type 4 supports URLs well
+                        const errorCorrectionLevel = 'L';
+                        const qr = qrcode(typeNumber, errorCorrectionLevel);
+                        qr.addData(url);
+                        qr.make();
+
+                        // Create image from QR code
+                        container.innerHTML = '';
+                        const img = document.createElement('img');
+                        img.src = qr.createDataURL(4, 0); // cellSize=4, margin=0
+                        img.alt = 'Scan to connect phone';
+                        img.style.width = '128px';
+                        img.style.height = '128px';
+                        img.style.imageRendering = 'pixelated';
+                        container.appendChild(img);
+
+                        console.log('Phone QR Code generated for:', url);
+                    } catch (error) {
+                        console.error('QR Code generation error:', error);
+                        container.innerHTML = '<div class="text-xs text-gray-400">QR failed</div>';
                     }
                 }
 
@@ -2927,10 +3359,24 @@ basic.forever(function () {
                     if (index !== -1) {
                         vncHosts.value.splice(index, 1);
                         if (activeTab.value === 'vnc-' + id) {
-                            activeTab.value = 'builder';
+                            activeTab.value = 'core';
                         }
                         saveHosts();
                     }
+                }
+
+                // Clear all VNC host tabs (used when deploying new topology)
+                function clearAllVncHosts() {
+                    if (vncHosts.value.length === 0) return;
+
+                    // Switch to core tab if currently viewing a VNC tab
+                    if (activeTab.value.startsWith('vnc-')) {
+                        activeTab.value = 'core';
+                    }
+
+                    // Clear all hosts
+                    vncHosts.value = [];
+                    saveHosts();
                 }
 
                 // Handle host iframe load
@@ -2992,25 +3438,17 @@ basic.forever(function () {
                     }
                 }
 
-                // Build VNC URL client-side for proper Codespaces support
+                // Build VNC URL client-side - now uses port 8080 proxy for all VNC
+                // This avoids needing separate port forwarding for each HMI
                 function buildVncUrl(proxyPort) {
+                    // All VNC traffic goes through port 8080 proxy now
+                    const wsPath = `hmi-vnc/${proxyPort}/websockify`;
+                    const params = 'autoconnect=true&scale=true&reconnect=true&reconnect_delay=1000';
                     if (isCodespaces) {
-                        // GitHub Codespaces: build URL with correct hostname format
-                        // Current hostname: musical-robot-97wwqxg47x7wh97q5-8080.app.github.dev
-                        // We need: musical-robot-97wwqxg47x7wh97q5-6081.app.github.dev
-                        // Strategy: Replace the port number in the hostname
-                        const hostname = baseHost;
-                        // Match pattern: codespace-name-PORT.app.github.dev
-                        const match = hostname.match(/^(.+)-(\d+)(\.app\.github\.dev)$/);
-                        if (match) {
-                            const newHostname = `${match[1]}-${proxyPort}${match[3]}`;
-                            return `https://${newHostname}/vnc_lite.html?scale=true`;
-                        }
-                        // Fallback if pattern doesn't match
-                        console.warn('Could not parse Codespaces hostname:', hostname);
-                        return `http://localhost:${proxyPort}/vnc_lite.html?scale=true`;
+                        // Codespaces: use port 8080 proxy path through current hostname
+                        return `https://${baseHost}/hmi-vnc/${proxyPort}/vnc_lite.html?${params}&path=${wsPath}`;
                     } else {
-                        return `http://localhost:${proxyPort}/vnc_lite.html?scale=true`;
+                        return `http://localhost:8080/hmi-vnc/${proxyPort}/vnc_lite.html?${params}&path=${wsPath}`;
                     }
                 }
 
@@ -3042,6 +3480,43 @@ basic.forever(function () {
                         alert(`Error starting VNC: ${e.message}`);
                     } finally {
                         node.vnc_starting = false;
+                    }
+                }
+
+                // Setup VNC for ALL nodes at once (with cleanup)
+                async function setupAllVnc() {
+                    settingUpAllVnc.value = true;
+                    try {
+                        const response = await fetch('/api/vnc/setup-all', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        const data = await response.json();
+
+                        if (data.success) {
+                            // Update local node state with results
+                            if (data.setup_results) {
+                                data.setup_results.forEach(result => {
+                                    const node = coreVncNodes.value.find(n => n.name === result.container);
+                                    if (node && result.success) {
+                                        node.vnc_started = true;
+                                        node.proxy_port = result.port;
+                                        node.vnc_url = result.url;
+                                    }
+                                });
+                            }
+
+                            const successCount = data.setup_results?.filter(r => r.success).length || 0;
+                            const totalCount = data.nodes?.length || 0;
+                            alert(`VNC Setup Complete!\n${successCount}/${totalCount} nodes ready`);
+                        } else {
+                            alert(`VNC setup failed: ${data.error}`);
+                        }
+                    } catch (e) {
+                        console.error('Failed to setup all VNC:', e);
+                        alert(`Error setting up VNC: ${e.message}`);
+                    } finally {
+                        settingUpAllVnc.value = false;
                     }
                 }
 
@@ -3114,11 +3589,17 @@ basic.forever(function () {
                     loadMicrobitConfig();
                     // Load lab state for AI help context
                     loadLabState();
+                    // Initial phone status check
+                    pollPhoneStatus();
+                    // Generate phone QR code after a short delay (to ensure DOM is ready)
+                    setTimeout(generatePhoneQrCode, 500);
 
                     // Refresh hosts periodically
                     setInterval(refreshHosts, 30000);
                     // Also refresh CORE VNC nodes periodically
                     setInterval(refreshCoreVncNodes, 15000);
+                    // Poll phone sensor status periodically
+                    setInterval(pollPhoneStatus, 5000);
 
                     // Listen for lab state changes from other tabs
                     window.addEventListener('storage', (e) => {
@@ -3149,6 +3630,7 @@ basic.forever(function () {
                     addHost,
                     quickAddHost,
                     removeHost,
+                    clearAllVncHosts,
                     onHostLoad,
                     refreshVncHost,
                     onCoreLoad,
@@ -3156,8 +3638,10 @@ basic.forever(function () {
                     // CORE VNC Nodes
                     coreVncNodes,
                     loadingCoreNodes,
+                    settingUpAllVnc,
                     refreshCoreVncNodes,
                     startNodeVnc,
+                    setupAllVnc,
                     openNodeVnc,
                     openNodeVncNewTab,
                     // Add Host Wizard
@@ -3232,6 +3716,25 @@ basic.forever(function () {
                     sendMicrobitCommand,
                     toggleLed,
                     sendLedPattern,
+                    // External Sensors Panel
+                    showSensorsPanel,
+                    activeSensorTab,
+                    totalSensorCount,
+                    // Phone Sensors
+                    phoneConnected,
+                    phoneSensorCount,
+                    phoneInjectorRunning,
+                    phoneMessageCount,
+                    phoneLastData,
+                    phoneWebUrl,
+                    pollPhoneStatus,
+                    showPhoneAdvanced,
+                    connectedPhones,
+                    formatPhoneValue,
+                    configurePhoneMqttBridge,
+                    deleteSensor,
+                    // ESP32 (placeholder)
+                    esp32Connected,
                     // AI Help
                     showAiHelpModal,
                     aiConversation,

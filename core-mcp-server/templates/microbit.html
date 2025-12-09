@@ -825,8 +825,26 @@ basic.forever(function () {
         let sampleCount = 0;
         let sampleTimes = [];
 
-        // Sensor ID for MQTT
-        const sensorId = 'microbit-' + Math.random().toString(36).substr(2, 9);
+        // Sensor ID - priority: URL param > localStorage > random
+        // Use ?id=mybit to set a specific ID, or it persists in localStorage
+        function getSensorId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlId = urlParams.get('id');
+            if (urlId) {
+                // URL param takes priority - save it to localStorage too
+                const fullId = urlId.startsWith('microbit-') ? urlId : 'microbit-' + urlId;
+                localStorage.setItem('microbitSensorId', fullId);
+                return fullId;
+            }
+            // Check localStorage for persisted ID
+            const storedId = localStorage.getItem('microbitSensorId');
+            if (storedId) return storedId;
+            // Generate new random ID and persist it
+            const newId = 'microbit-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('microbitSensorId', newId);
+            return newId;
+        }
+        const sensorId = getSensorId();
         let relayEnabled = true;
 
         // LED Matrix state (5x5 = 25 LEDs)

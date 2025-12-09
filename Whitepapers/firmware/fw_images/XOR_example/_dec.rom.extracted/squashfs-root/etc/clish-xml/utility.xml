@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CLISH_MODULE xmlns="http://clish.sourceforge.net/XMLSchema" 
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+ xsi:schemaLocation="http://clish.sourceforge.net/XMLSchema
+                     http://clish.sourceforge.net/XMLSchema/clish.xsd">
+	<!--=======================================================-->
+
+<VIEW name="enable-view">
+
+	<COMMAND name="show boarddata"
+		help="Show board data">
+		<ACTION>
+		fw_printenv mac_addr
+		fw_printenv target_serial
+		fw_printenv target_burning_time
+		fw_printenv target_status
+		fw_printenv target_bios_version
+		fw_printenv target_software_id
+		fw_printenv Language
+		fw_printenv Country
+		fw_printenv model_name_data
+		fw_printenv silent
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata mac_addr"
+		help="Show board data mac_addr">
+		<ACTION>fw_printenv mac_addr</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata target_serial"
+		help="Show board data target_serial">
+		<ACTION>fw_printenv target_serial</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata target_burning_time"
+		help="Show board data target_burning_time">
+		<ACTION>fw_printenv target_burning_time</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata target_status"
+		help="Show board data target_status">
+		<ACTION>fw_printenv target_status</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata target_bios_version"
+		help="Show board data target_bios_version">
+		<ACTION>fw_printenv target_bios_version</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata target_software_id"
+		help="Show board data target_software_id">
+		<ACTION>fw_printenv target_software_id</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata Language"
+		help="Show board data Language">
+		<ACTION>fw_printenv Language</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata Country"
+		help="Show board data Country">
+		<ACTION>fw_printenv Country</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata model_name_data"
+		help="Show board data model_name_data">
+		<ACTION>fw_printenv model_name_data</ACTION>
+	</COMMAND>
+
+	<COMMAND name="show boarddata silent"
+		help="Show board data silent">
+		<ACTION>fw_printenv silent</ACTION>
+	</COMMAND>
+</VIEW>
+
+
+<VIEW name="configure-view">
+
+<!-- Enable/Disable WiFi ART test -->
+
+	<COMMAND name="wifi art"
+		help="Enable WiFi ART test">
+		<CONFIG/>
+		<ACTION>
+		echo "Enable WiFi ART test"
+		/etc/rc.d/art.sh
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no wifi art"
+		help="Enable WiFi ART test">
+		<CONFIG operation="unset" pattern="^wifi art"/>
+		<ACTION>
+		echo "Disable WiFi ART test"
+		</ACTION>
+	</COMMAND>
+
+<!-- Enable/Disable Serial loopback test -->
+
+	<COMMAND name="serial loopback"
+		help="Enable serial loopback test">
+		<CONFIG/>
+		<PARAM name="mode"
+			help="Serial interface mode"
+			optional="true"
+			mode="switch"
+			ptype="SUBCOMMAND">
+			<PARAM name="RS232"
+				help="Serial loopback test in RS232 mode"
+				mode="subcommand"
+				ptype="SUBCOMMAND"/>
+			<PARAM name="RS422"
+				help="Serial loopback test in RS422 mode"
+				mode="subcommand"
+				ptype="SUBCOMMAND"/>
+			<PARAM name="RS485"
+			        help="Serial loopback test in RS485 mode"
+				mode="subcommand"
+				ptype="SUBCOMMAND">
+				<PARAM name="RS485wire"
+				       help="Serial loopback test in RS485 mode"
+				       mode="switch"
+				       ptype="SUBCOMMAND">
+				<PARAM name="2-wire"
+				       help="Serial loopback test in RS485 2-wire mode"
+				       mode="subcommand"
+				       ptype="SUBCOMMAND"/>
+				<PARAM name="4-wire"
+				       help="Serial loopback test in RS485 4-wire mode"
+				       mode="subcommand"
+				       ptype="SUBCOMMAND"/>
+				</PARAM>
+			</PARAM>
+		</PARAM>
+		<ACTION>
+		if test "${mode}" = "RS485"; then
+			if test "${RS485wire}" = "2-wire"; then
+				intfmode="RS4852"
+			else
+				intfmode="RS4854"
+			fi
+		else
+			intfmode=${mode}
+		fi
+		echo "Enable serial loopback in mode $intfmode"
+		ACTION=add MODE=$intfmode /etc/rc.d/tusb.sh ttyUSB0 &amp;
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no serial loopback"
+		help="Stop serial loopback test">
+		<CONFIG operation="unset" pattern="^serial loopback"/>
+		<ACTION>
+		ACTION=remove /etc/rc.d/tusb.sh ttyUSB0
+		</ACTION>
+	</COMMAND>
+
+
+<!-- set/clear awk board data -->
+
+	<COMMAND name="boarddata mac_addr"
+		help="Set board data mac_addr">
+		<PARAM name="mac_addr"
+			help="This target's MAC address"
+			ptype="STRING"/>
+	  	<CONFIG/>
+		<ACTION>
+		fw_setenv mac_addr "${mac_addr}"
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="boarddata target_serial"
+		help="Set board data target_serial">
+		<PARAM name="target_serial"
+			help="This target's serial number"
+			ptype="STRING"/>
+	  	<CONFIG/>
+		<ACTION>
+		fw_setenv target_serial "${target_serial}"
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no boarddata target_serial"
+		help="Clear board data target_serial">
+		<CONFIG operation="unset" pattern="^boarddata target_serial"/>
+		<ACTION>fw_setenv target_serial</ACTION>
+	</COMMAND>
+
+	<COMMAND name="boarddata target_burning_time"
+		help="Set board data target_burning_time">
+		<PARAM name="target_burning_time"
+			help="This target's burning time (unit: seconds)"
+			ptype="UINT"/>
+	  	<CONFIG/>
+		<ACTION>
+		fw_setenv target_burning_time "${target_burning_time}"
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no boarddata target_burning_time"
+		help="Clear board data target_burning_time">
+		<CONFIG operation="unset" pattern="^boarddata target_burning_time"/>
+		<ACTION>fw_setenv target_burning_time</ACTION>
+	</COMMAND>
+
+
+	<COMMAND name="boarddata target_status"
+		help="Set board data target_status (store in hex format)">
+		<PARAM name="target_status"
+			help="This target's status
+			      MAC_ADDRESS_SET_FLAG	:0
+			      SERIAL_NO_SET_FLAG	:1
+			      MP_FINISH_SET_FLAG	:2
+			      BURNING_FINISH_SET_FLAG	:3
+			      SOFTWARE_ID_SET_FLAG	:4
+			      COUNTRY_CODE_SET_FLAG	:5
+			      FIRMWARE_READY_SET_FLAG	:6
+			      LSDK			:7
+			      EOT			:8
+			      RFMP			:9"
+			ptype="STRING"/>
+	  	<CONFIG/>
+		<ACTION>
+		fw_setenv target_status "${target_status}"
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no boarddata target_status"
+		help="Clear board data target_status">
+		<CONFIG operation="unset" pattern="^boarddata target_status"/>
+		<ACTION>fw_setenv target_status</ACTION>
+	</COMMAND>
+
+	<COMMAND name="boarddata country_code"
+		help="Set board data country_code">
+		<PARAM name="country_code"
+			help="This target's country code
+			      842(US), 392(JP), 250(EU), 826(UNITED_KINGDOM), 76(BRAZIL)"
+			ptype="UINT"/>
+	  	<CONFIG/>
+		<ACTION>
+		fw_setenv Country "${country_code}"
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no boarddata country_code"
+		help="Clear board data country_code">
+		<CONFIG operation="unset" pattern="^boarddata country_code"/>
+		<ACTION>fw_setenv Country</ACTION>
+	</COMMAND>
+
+	<COMMAND name="boarddata silent"
+		help="Set board data silent">
+	  	<CONFIG/>
+		<ACTION>
+		fw_setenv silent 1
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no boarddata silent"
+		help="Clear board data silent">
+		<CONFIG operation="unset" pattern="^boarddata silent"/>
+		<ACTION>fw_setenv silent</ACTION>
+	</COMMAND>
+</VIEW>
+
+
+<!--SLIP interface test for serial interface-->
+<VIEW name="enable-view">
+	<COMMAND name="serial slip"
+		help="Enable slip to CSLIP interface">
+		<PARAM name="localip"
+		       help="local IP address"
+		       ptype="IP_ADDR_MASK"/>
+		<PARAM name="remoteip"
+		       help="remote IP address"
+		       ptype="IP_ADDR_MASK"/>
+	  	<PARAM name="baudrate"
+			help="Serial port baud rate (9600/19200/38400/57600/
+115200/230400/460800/921600)"
+			optional="true"
+			ptype="UINT"/>
+		<ACTION>
+		  killall slattach
+		  if test -z "${baudrate}"; then
+			slattach -s 115200 /dev/ttyUSB0 &amp;
+		  else
+		        slattach -s ${baudrate} /dev/ttyUSB0 &amp;
+		  fi
+		  echo "waiting slattach to finish"; sleep 1
+		  ifconfig sl0 ${localip} pointopoint ${remoteip}
+		</ACTION>
+	</COMMAND>
+
+	<COMMAND name="no serial slip"
+		help="Disable slip to CSLIP interface">
+		<ACTION>
+		  ifconfig sl0 down
+		  killall slattach
+		</ACTION>
+	</COMMAND>
+
+</VIEW>
+
+
+</CLISH_MODULE>

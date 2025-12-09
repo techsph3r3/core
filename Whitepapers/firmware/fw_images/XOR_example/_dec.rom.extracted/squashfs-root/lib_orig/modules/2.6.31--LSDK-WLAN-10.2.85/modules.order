@@ -1,0 +1,6 @@
+kernel/crypto/ecb.ko
+kernel/crypto/arc4.ko
+kernel/drivers/net/wireless/ath/ath9k/ath9k.ko
+kernel/drivers/net/wireless/ath/ath.ko
+kernel/net/wireless/cfg80211.ko
+kernel/net/mac80211/mac80211.ko

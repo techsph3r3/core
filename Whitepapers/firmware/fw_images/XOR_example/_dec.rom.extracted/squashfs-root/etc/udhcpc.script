@@ -1,0 +1,82 @@
+#!/bin/sh
+
+# Arguments
+# $1: action [deconfig | fail | leasefail | renew | bound]
+# $2: update dns or not [yes | no]
+
+# udhcpc script edited by Tim Riker <Tim@Rikers.org>
+[ -z "$1" ] && echo "Error: should be called from udhcpc" && exit 1
+
+RESOLV_CONF="/etc/resolv.conf"
+SUCCESS_TAGFILE="/var/run/dhcpc.tag"
+RECORD_FILE="/var/run/dhcpc_"
+iwdns=0
+[ -n "$broadcast" ] && BROADCAST="broadcast $broadcast"
+[ -n "$subnet" ] && NETMASK="netmask $subnet"
+
+RECORD_FILE="/var/run/dhcpc.log"
+
+echo "update = " $2
+
+case "$1" in
+	deconfig)
+		rm -f $SUCCESS_TAGFILE
+		;;
+	fail|leasefail)
+		;;
+
+	renew|bound)
+		killall -9 zcip > /dev/null 2>&1
+		/sbin/ifconfig $interface $ip $BROADCAST $NETMASK
+		
+		echo "records on" $RECORD_FILE
+
+		echo iface $interface > $RECORD_FILE
+		echo ip $ip >> $RECORD_FILE
+		echo $NETMASK >> $RECORD_FILE
+
+		# Gateway
+		if [ "$2" != "no" ]; then
+			echo del default gw
+			route del default gw 0.0.0.0 dev $interface
+		fi
+
+		for rt in $router ; do
+			if [ "$2" != "no" ]; then
+				echo update gw $rt
+				route add default gw $rt dev $interface
+			fi
+			echo gw $rt >> $RECORD_FILE
+		done
+
+		# DNS
+		if [ "$2" != "no" ]; then
+			echo -n > $RESOLV_CONF
+			echo ";;generate by udhcpc.script" >> $RESOLV_CONF     
+		fi
+
+		for ip in $dns ; do
+			if [ "$2" != "no" ]; then
+				echo update nameserver $ip
+				echo nameserver $ip >> $RESOLV_CONF
+			fi
+			echo nameserver $ip >> $RECORD_FILE
+		done
+		touch $SUCCESS_TAGFILE
+
+		# For iw_route, but the condition should be better
+		if [ "$2" == "no" ]; then
+			killall -SIGUSR2 iw_route
+		fi
+
+		/usr/sbin/iw_ip_update -f $RECORD_FILE -n -r -c
+		;;
+
+	*)
+		echo "Error arg, arg 1= " $1
+		;;
+esac
+
+echo "DONE"
+
+exit 0

@@ -1,0 +1,63 @@
+Modbus {
+  Name                    ""
+  BaudRate                19200
+  Parity                  0
+  SpaceTime               2
+  Timeout                 1000
+  Flags                   8
+  Gap                     30000
+  #GUID                   9cac156c-155a-416b-a27e-4358b7d14924
+  Slave {
+    Name                    "cc"
+    IPaddress               10.0.11.11
+    Subaddress              255
+    SlaveID                 0
+    MaxRequest              16
+    TCPport                 502
+  }
+  Item {
+    Name                    cc1
+    SlaveAdr                0
+    RegisterAdr             37337
+    Type                    0x00000704
+    Count                   1
+    Period                  5000
+    Value                   [ 0 ]
+  }
+  Item {
+    Name                    cc2
+    SlaveAdr                0
+    RegisterAdr             37338
+    Type                    0x00000704
+    Count                   1
+    Period                  5000
+    Value                   [ 0 ]
+  }
+  Item {
+    Name                    cc3
+    SlaveAdr                0
+    RegisterAdr             37339
+    Type                    0x00000704
+    Count                   1
+    Period                  5000
+    Value                   [ 0 ]
+  }
+  Item {
+    Name                    cc4
+    SlaveAdr                0
+    RegisterAdr             37340
+    Type                    0x00000704
+    Count                   1
+    Period                  5000
+    Value                   [ 0 ]
+  }
+  Item {
+    Name                    cc5
+    SlaveAdr                0
+    RegisterAdr             37341
+    Type                    0x00000704
+    Count                   1
+    Period                  5000
+    Value                   [ 0 ]
+  }
+}

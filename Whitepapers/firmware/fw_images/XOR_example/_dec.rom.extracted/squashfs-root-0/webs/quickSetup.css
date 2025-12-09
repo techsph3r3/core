@@ -1,0 +1,385 @@
+*{
+    padding: 0;
+    margin: 0;
+}
+
+body
+{
+	padding-left: 15px;
+	padding-top: 10px;
+	
+	font-family: Verdana;
+    font-size: 10px;
+}
+
+/* NAV AREA ------------------------------------------------------ */
+.NAV
+{
+    display:  block;
+    color: #009966;
+    font-weight: bolder;
+}
+
+.NAV ul{
+    list-style: none;
+}
+
+.NAV li{
+    float: left;
+    position: relative;
+}
+
+.NAV .NAV_BOX {
+	float: left;
+	width: 160px;
+	height:  50px;
+	margin-bottom: 5px;
+	
+	border-bottom: 1px solid #009966;
+	border-radius: 5px;
+}
+
+.NAV .NAV_BOX:hover{
+    background-color: #ccf4de;
+}
+
+.NAV .NAV_BOX_SELECTED{
+	background-color: #009966;
+	font-weight: bolder;
+}
+
+.NAV .NAV_BOX_SELECTED:hover{
+	background-color: #009966;
+	font-weight: bolder;
+}
+
+.NAV .NAV_BOX_DISABLE {
+	background-color: #F2F2F2;
+    font-weight: bolder;
+	border-bottom: 1px solid #b6b6b6;
+}
+
+.NAV .NAV_BOX_DISABLE:hover {
+	background-color: #F2F2F2;
+    font-weight: bolder;
+}
+
+.NAV .NAV_NO {
+	display: block;
+    height: 50px;
+	width: 39px;
+	border-right: solid 1px #FFFFFF;
+	line-height:  50px;
+    text-align:  center;
+	text-decoration: none;
+	color: #009966;
+	
+    background-color: #ccf4de;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    
+    border-top-left-radius: 5px;
+	border-bottom-left-radius: 5px;  
+}
+
+.NAV .NAV_NO_SELECTED{
+	color: #FFFFFF;
+    background-color: #009966;
+}
+
+.NAV .NAV_NO_DISABLE{
+	background-color: #F2F2F2;
+	color: #848484;
+}
+
+.NAV .NAV_DESC {
+	display: block;
+    
+    padding-left: 45px;
+    line-height: 50px;
+    text-decoration: none;
+	color: #009966;
+}
+
+.NAV .NAV_DESC_SELECTED
+{
+	color: #FFFFFF;
+}
+
+.NAV .NAV_DESC_DISABLE{
+    color: #848484;
+}
+
+.NAV .NAV_DESC_2ROW {
+    height: 38px;
+    padding-top: 12px;
+    line-height: 1.3em;
+}
+
+.NAV .NAV_APPEND{
+    float: left;
+    width: 205px;
+}
+
+.NAV_ARROW_BOX
+{
+    margin: 0;
+    padding: 0;
+    display: block;
+    padding: 20px 5px 20px 10px;
+}
+
+.NAV_ARROW 
+{
+    float: left;
+    border: 5px solid #009966;
+    border-color: transparent transparent transparent #009966; 
+}
+
+/* SETTING AERA ---------------------------------------------------*/
+.QS_ERR_MSG{
+    clear: both;
+    font-size: 10pt; 
+    color: red;
+	font-weight: bold;
+    line-height: 2em;
+}
+
+.QS_SETTING
+{
+    clear: both;
+    color: #000000;
+}
+
+.QS_SETTING h2{
+    clear: both;
+    font-size: 10pt; 
+    color: #009966;
+    padding-top: 10px;
+    line-height: 2em;
+}
+
+.QS_SETTING ul{
+    list-style: none;
+	clear: both;
+}
+
+.QS_SETTING li{
+    float: left;
+	line-height:25px;
+}
+
+.QS_SETTING .QS_DESC_TITLE
+{
+	clear: both;
+	display: block;
+	width: 100%;
+	
+	border-left: 3px solid #009966;
+    padding: 5px 0px 5px 10px;
+	
+	font-size: 9pt;
+    font-weight: bold;
+	font-family: Ubuntu, sans-serif;
+    color: black;
+	line-height:1.3em;
+	
+}
+
+.QS_SETTING .QS_SETTING_TITLE{ 
+    clear: both;
+    display: block;
+    width: 395px;
+    
+	border-left: 3px solid #009966;
+    padding-left: 10px;
+	
+    
+    font-size: 9pt;
+    font-weight: bold;
+    color: #009966;
+}
+
+.QS_SETTING .QS_SETTING_VALUE{
+    padding-right: 10px;
+}
+
+.QS_SETTING .QS_SETTING_VALUE_TITLE
+{
+	width: 80px;
+}
+
+.QS_SETTING_BUTTON input{
+    display: block;
+    padding: 0 10px;
+    line-height:  23px;
+    text-align:  center;
+    background-color: #d6d6d4;
+    border: 1px solid #727171;
+    border-radius: 3px;
+    color: #000000;
+    text-decoration:  none;
+    float: left;
+    margin-right: 10px; 
+    font-family: Verdana;
+    font-size: 9px;
+}
+
+.QS_SETTING_BUTTON input:hover{
+    background-color: beige;
+}
+
+.QS_SETTING .QS_TABLE
+{
+	clear: both;
+	padding-left: 10px;
+	border-left: 3px solid #009966;
+}
+
+.QS_TABLE table{
+	margin-top: 10px;
+	border-collapse: collapse;
+}
+
+.QS_TABLE table th{
+	border: 1px solid #009966;
+	background-color: #ccf4de;
+	color: #000000;
+	font-weight: bold;
+	padding-left: 5px;
+	width: 150px;
+	text-align: center;
+}
+
+.QS_TABLE table td{
+	border: 1px solid #009966;
+	/* width: 115px; */
+	text-align: center;
+}
+
+/* QS_WIFI_SETTING --------------------------------------------- */
+.QS_WIFI_SETTING_MENU {
+	clear: both;
+	padding-top: 20px;
+	
+	font-family: Verdana;
+    font-size: 10pt; 
+}
+
+.QS_WIFI_SETTING_MENU a{
+	display: block;
+	width: 164px;
+	height: 60px;
+	
+	
+	background-color: #009966;
+	padding: 30px;
+	border-radius: 10px;
+	margin-bottom: 10px;
+	border: 3px solid #ccf4de;
+	
+	font-weight: bold;
+	color: #FFFFFF;
+	text-decoration: none;
+	
+}
+
+.QS_WIFI_SETTING_MENU p{
+}
+
+/* BUTTON (Cancel, Next, Back, ...) ------------------------------------------------------ */
+.BUTTON_AREA{
+    clear: both;
+    width: 100%;
+    /* position: absolute;
+    bottom: 0px; */
+   
+    overflow: hidden;
+    padding-top: 30px;
+	padding-bottom: 30px;
+}
+
+.BUTTON_AREA div{
+	border-top: 1px dashed silver;
+	width: 100%;
+	padding-top: 10px;
+}
+
+.BUTTON_AREA .BUTTON{
+    display: block;
+    width: 60px;
+    line-height:  25px;
+    text-align:  center;
+    background-color: #d6d6d4;
+    border: 1px solid #727171;
+    border-radius: 3px;
+    color: #000000;
+    text-decoration:  none;
+    float: left;
+    margin-right: 10px; 
+    font-family: Verdana;
+    font-size: 9px;
+}
+
+.BUTTON_AREA .BUTTON:hover{
+    background-color: beige;
+    
+}
+
+/* HELPER (dynamic) ------------------------------------------------------ */
+
+.HELPER_IMG{
+	margin: auto 0 auto 0px;
+	position: relative;
+}
+
+.HELPER_IMG .TOOLTIP_TEXT  {
+    visibility: hidden;
+    width: 300px;
+    font-family: Ubuntu, sans-serif;
+    text-shadow: 0 1px rgba( 69, 69, 69, .5 );
+    line-height: 1.5;
+    color: #000;
+    background: #ccf4de;
+    background: -webkit-gradient( linear, left top, left bottom, from( #FFFFFF ), to( #ccf4de ) );
+    background: -webkit-linear-gradient( top, #FFFFFF, #ccf4de);
+    background: -moz-linear-gradient( top, #FFFFFF, #ccf4de);
+    background: -ms-radial-gradient( top, #FFFFFF, #ccf4de);
+    background: -o-linear-gradient( top, #FFFFFF, #ccf4de);
+    background: linear-gradient( top, #FFFFFF, #ccf4de);
+    
+	-webkit-border-radius: 5px;
+    -moz-border-radius: 5px;
+    border-radius: 5px;
+    border: 2px solid #009966;
+    -webkit-box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+    -moz-box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+    box-shadow: 0 3px 5px rgba( 69, 69, 69, .3 );
+    position: absolute;
+    z-index: 1000;
+    padding: 15px;
+	top: -20px;
+	left: 30px;
+}
+
+.HELPER_IMG .TOOLTIP_TEXT:before {
+	width: 0;
+	height: 0;
+	/* #009966 */
+	 /* rgba(00, 99, 66, .8) */
+	border: 12px solid #009966;
+    border-color: transparent #009966 transparent transparent; 
+    content: '';
+	position: absolute;
+	left: -24px;
+	top: 12px;
+    /* margin-left: -10px;*/
+}
+
+
+.HELPER_IMG:hover .TOOLTIP_TEXT {
+    visibility: visible;
+}
+
+

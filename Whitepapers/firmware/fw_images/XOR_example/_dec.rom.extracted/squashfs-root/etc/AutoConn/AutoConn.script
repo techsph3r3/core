@@ -1,0 +1,245 @@
+#!/bin/sh
+#  AutoConn.script by CHU, MOXA.
+#  Type	 |  Direction   |    	      Content		    |  arg
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+#    1   |  STA -> AP   |  Nonce_STA + Public_STA           |  $2=OUTPUT_FILE  $3=NONCE_STA  $4=PUBLIC_STA
+#    2   |  AP  -> STA  |  Nonce_AP + Public_AP + Token_AP  |  $2=OUTPUT_FILE  $3=DATA_1_OF_4  $4=NONCE_AP   $5=PUBLIC_AP   $6=CERT  $7=CERT_AP  $8=IP_STA  $9=MAC_AP  $10=MAC_STA
+#    3   |  STA -> AP   |  Token			    |  $2=OUTPUT_FILE  $3=Nonce_STA  $4=CERT  $5=CERT_STA $6=LOG_FILE
+#    4   |  AP  -> STA  |  Config			    |  $2=OUTPUT_FILE  $3=Config_STA  $4=IP_STA
+#    5   |  STA		|  STA verify Toekn_AP		    |  $2=DATA_2_OF_4  $3=PRIVATE_STA  $4=MAC_STA  $5=NONCE_STA  $6=CERT  $7=CERT_AP  $8=MAC_AP
+#    6   |  AP		|  AP verify Token_STA		    |  $2=PRIVATE_AP  $3=MAC_AP  $4=NONCE_AP $5=CERT $6=CERT_STA  $7=IP_STA  $8=DATA_3_OF_4  $9=MAC_STA
+#    7   |  STA		|  STA decrypt and load config	    |  $2=DATA_4_OF_4  $3=PRIVATE_STA  $4=CONFIG_STA
+
+
+
+
+case "$1" in
+    	1) # data 1_of_4
+		# 1_of_4 will be like this:
+		# XXXXXXXX (this is public key)
+		# nonce:XXXXXXXXXX
+		
+		nonce=$(cat $3)
+		deviceName=$(getvalue -s board | grep deviceName | awk -F/ '{print $2}')
+	
+		cp $4 $2
+		echo nonce:$nonce >> $2
+		echo deviceName:$deviceName >> $2
+
+		;;
+	2) # data 2_of_4
+		# 2_of_4 will be like this:
+		# XXXXXXXX (this is public key)
+		# nonce:XXXXXXXXXX
+		# token:XXXXXXXXXX
+		# This is AP's work, add .IP_STA in every file name
+
+		Public_STA=/var/AutoConn/public.$8
+		DEBUG_FILE=/var/AutoConn/debug_2.$8
+		TEMP_TOKEN=/var/AutoConn/temp_token_AP.$8
+		TEMP_FILE=/var/AutoConn/temp_2_of_4_data.$8
+		TEMP_NONCE_STA=/var/AutoConn/Nonce_STA.$8
+
+		# get all ingrediant of Token_AP (Nonce_AP + Nonce_STA + CERT + MAC_AP + MAC_STA + CERT_AP)
+		Nonce_AP=$(cat $4)
+		Nonce_STA=$(cat $3 | grep nonce | awk -F: '{print $2}')
+		CERT=$6
+		CERT_AP=$7
+		MAC_STA=$(echo $9 | tr [:upper:] [:lower:])
+		MAC_AP=$(ifconfig $10 | grep HWaddr | awk '{print$5}' | tr [:upper:] [:lower:])
+		
+		echo Nonce_AP=$Nonce_AP > $DEBUG_FILE
+		echo Nonce_STA=$Nonce_STA >> $DEBUG_FILE
+		echo CERT=$CERT >> $DEBUG_FILE
+		echo CERT_AP=$CERT_AP >> $DEBUG_FILE
+		echo MAC_AP=$MAC_AP >> $DEBUG_FILE
+		echo MAC_STA=$MAC_STA >> $DEBUG_FILE
+		echo 2=$2 >> $DEBUG_FILE
+		echo 8=$8 >> $DEBUG_FILE
+		
+		# make Token_AP and hash it	
+		TOKEN=$(echo $Nonce_AP$Nonce_STA$CERT$MAC_AP$MAC_STA$CERT_AP)
+		echo $TOKEN > $TEMP_TOKEN
+		TOKEN_HASH=$(/sbin/openssl sha512 $TEMP_TOKEN | awk '{print $2}')
+
+		# make data 2_of_4 (Nonce_AP + Public_AP + Token_AP)
+		cp $5 $TEMP_FILE
+		echo nonce:$Nonce_AP >> $TEMP_FILE
+		echo token:$TOKEN_HASH >> $TEMP_FILE
+
+		# get Public_STA by removing "nonce:" from data 1_of_4
+		# DO NOT directly use $8.public and $2.$8 in openssl encrypt, somehow it will do nothing.
+		sed '/nonce:/d' $3 > $Public_STA
+	
+		# encrypt data 2_of_4 by Public_STA
+		/sbin/openssl smime -encrypt -aes256 -in $TEMP_FILE -binary -outform DEM -out $2 $Public_STA
+
+		# get Nonce_STA and store for further use
+		echo $Nonce_STA > $TEMP_NONCE_STA
+
+		#rm $TEMP_TOKEN
+		#rm $TEMP_FILE
+
+		;;	
+
+	3) # data 3_of_4
+		# 3_of_4 will be like this:
+		# token:XXXXXXXXXX
+		TEMP_NONCE_AP=/var/AutoConn/Nonce_AP
+		DEBUG_FILE=/var/AutoConn/debug_3
+		TEMP_TOKEN=/var/AutoConn/temp_token_STA
+		TEMP_FILE=/var/AutoConn/temp_3_of_4_data
+		Public_AP=/var/AutoConn/Public_AP
+
+		Nonce_AP=$(cat $TEMP_NONCE_AP)
+		Nonce_STA=$(cat $3)
+		CERT=$4
+		CERT_STA=$5
+		MAC_STA=$(echo $6 | tr [:upper:] [:lower:])
+		MAC_AP=$(echo $7 | tr [:upper:] [:lower:])
+		
+		echo Nonce_AP=$Nonce_AP > $DEBUG_FILE
+		echo Nonce_STA=$Nonce_STA >> $DEBUG_FILE
+		echo CERT=$CERT >> $DEBUG_FILE
+		echo CERT_STA=$CERT_STA >> $DEBUG_FILE
+		echo MAC_AP=$MAC_AP >> $DEBUG_FILE
+		echo MAC_STA=$MAC_STA >> $DEBUG_FILE
+		
+		# make Token_AP and hash it	
+		TOKEN=$(echo $Nonce_AP$Nonce_STA$CERT$MAC_AP$MAC_STA$CERT_STA)
+		echo $TOKEN > $TEMP_TOKEN
+		TOKEN_HASH=$(/sbin/openssl sha512 $TEMP_TOKEN | awk '{print $2}')
+
+		echo token:$TOKEN_HASH > $TEMP_FILE
+		# encrypt data 3_of_4 by Public_AP
+		/sbin/openssl smime -encrypt -aes256 -in $TEMP_FILE -binary -outform DEM -out $2 $Public_AP
+
+		#rm $TEMP_TOKEN
+		#rm $TEMP_FILE
+
+		;;
+
+	4)  # AP send config to STA
+		#$2=OUTPUT_FILE  $3=Config_STA  $4=IP_STA
+
+		Public_STA=/var/AutoConn/public.$4
+		/sbin/openssl smime -encrypt -aes256 -in $3 -binary -outform DEM -out $2 $Public_STA
+
+		# rm $Public_STA
+		;;
+
+	5) # STA verify Token_AP
+
+		TEMP_DECRYPT=/var/AutoConn/temp_2_of_4_decrypt
+		TEMP_TOKEN=/var/AutoConn/temp_token_AP
+		TEMP_TOKEN_AP=/var/AutoConn/temp_token_AP_byAP
+		TEMP_TOKEN_STA=/var/AutoConn/temp_token_AP_bySTA
+		DEBUG_FILE=/var/AutoConn/debug_5
+		TEMP_NONCE_AP=/var/AutoConn/Nonce_AP
+		Public_AP=/var/AutoConn/Public_AP
+
+		# decrypt 2_of_4 by Private_STA
+		/sbin/openssl smime -decrypt -in $2 -binary -inform DEM -out $TEMP_DECRYPT -inkey $3
+
+		# get all ingrediant of Token_AP (Nonce_AP + Nonce_STA + CERT + MAC_AP + MAC_STA + CERT_AP)
+		Nonce_AP=$(cat $TEMP_DECRYPT | grep nonce | awk -F: '{print $2}')
+		Nonce_STA=$(cat $5)
+		CERT=$6
+		CERT_AP=$7
+		MAC_STA=$(echo $4 | tr [:upper:] [:lower:])
+		MAC_AP=$(echo $8 | tr [:upper:] [:lower:])
+		
+		echo Nonce_AP=$Nonce_AP > $DEBUG_FILE
+		echo Nonce_STA=$Nonce_STA >> $DEBUG_FILE
+		echo CERT=$CERT >> $DEBUG_FILE
+		echo CERT_AP=$CERT_AP >> $DEBUG_FILE
+		echo MAC_AP=$MAC_AP >> $DEBUG_FILE
+		echo MAC_STA=$MAC_STA >> $DEBUG_FILE
+		
+		# make Token_AP and hash it	
+		TOKEN=$(echo $Nonce_AP$Nonce_STA$CERT$MAC_AP$MAC_STA$CERT_AP)
+		echo $TOKEN > $TEMP_TOKEN
+		TOKEN_HASH=$(/sbin/openssl sha512 $TEMP_TOKEN | awk '{print $2}')
+		echo $TOKEN_HASH > $TEMP_TOKEN_STA
+
+		# get token
+		Token_AP_recv=$(cat $TEMP_DECRYPT | grep token | awk -F: '{print $2}')
+		echo $Token_AP_recv > $TEMP_TOKEN_AP
+
+		# check if STA's token correct
+		diff $TEMP_TOKEN_STA $TEMP_TOKEN_AP > /var/AutoConn/Token_AP.diff
+
+		# get Public_AP by removing "token:" and "nonce:" from data 2_of_4
+		sed '/nonce:/d /token:/d' $TEMP_DECRYPT > /var/AutoConn/Public_AP
+
+		# get Nonce_AP and store for further usage	
+		echo $Nonce_AP > $TEMP_NONCE_AP
+
+		# get Public_AP by removing "nonce:" and "token:" from data 2_of_4
+		# DO NOT directly use $8.public and $2.$8 in openssl encrypt, somehow it will do nothing.
+		sed '/nonce:/d /token:/d' $TEMP_DECRYPT > $Public_AP
+
+		#rm $TEMP_TOKEN
+		#rm $TEMP_TOKEN_AP
+		#rm $TEMP_TOKEN_STA
+		#rm $TEMP_DECRYPT
+
+		;;
+	6) # AP verify Token_STA
+		#$2=PRIVATE_AP  $3=LOG_FILE  $4=NONCE_AP $5=CERT $6=CERT_STA  $7=IP_STA  $8=DATA_3_OF_4
+
+		TEMP_DECRYPT=/var/AutoConn/temp_3_of_4_decrypt.$7
+		TEMP_TOKEN=/var/AutoConn/temp_token_AP.$7
+		TEMP_TOKEN_AP=/var/AutoConn/temp_token_AP_byAP.$7
+		TEMP_TOKEN_STA=/var/AutoConn/temp_token_AP_bySTA.$7
+		DEBUG_FILE=/var/AutoConn/debug_6.$7
+		TEMP_DIFF_FILE=/var/AutoConn/Token_STA.diff.$7
+		TEMP_NONCE_STA=/var/AutoConn/Nonce_STA.$7
+
+		# decrypt 2_of_4 by Private_STAi
+		/sbin/openssl smime -decrypt -in $8 -binary -inform DEM -out $TEMP_DECRYPT -inkey $2
+
+		# get all ingrediant of Token_AP (Nonce_AP + Nonce_STA + CERT + MAC_AP + MAC_STA + CERT_AP)
+		Nonce_AP=$(cat $4)
+		Nonce_STA=$(cat $TEMP_NONCE_STA)
+		CERT=$5
+		CERT_STA=$6
+		MAC_STA=$(echo $9 | tr [:upper:] [:lower:])
+		MAC_AP=$(ifconfig $3 | grep HWaddr | awk '{print$5}' | tr [:upper:] [:lower:])
+		
+		echo Nonce_AP=$Nonce_AP > $DEBUG_FILE
+		echo Nonce_STA=$Nonce_STA >> $DEBUG_FILE
+		echo CERT=$CERT >> $DEBUG_FILE
+		echo CERT_STA=$CERT_STA >> $DEBUG_FILE
+		echo MAC_AP=$MAC_AP >> $DEBUG_FILE
+		echo MAC_STA=$MAC_STA >> $DEBUG_FILE
+		
+		# make Token_AP and hash it	
+		TOKEN=$(echo $Nonce_AP$Nonce_STA$CERT$MAC_AP$MAC_STA$CERT_STA)
+		echo $TOKEN > $TEMP_TOKEN
+		TOKEN_HASH=$(/sbin/openssl sha512 $TEMP_TOKEN | awk '{print $2}')
+		echo $TOKEN_HASH > $TEMP_TOKEN_AP
+
+		# get token from 3_of_4
+		Token_STA_recv=$(cat $TEMP_DECRYPT | grep token | awk -F: '{print $2}')
+		echo $Token_STA_recv > $TEMP_TOKEN_STA
+		
+		# check if STA's token correct
+		diff $TEMP_TOKEN_STA $TEMP_TOKEN_AP > $TEMP_DIFF_FILE
+	
+		# rm TEMP_DECRYPT
+		# rm TEMP_TOKEN
+		# rm_TEMP_TOKEN_AP
+		# rm TEMP_TOKEN_STA
+		
+		;;
+
+	7) # STA decrypt and load config
+		# $2=DATA_4_OF_4  $3=PRIVATE_STA  $4=CONFIG_STA
+		
+		/sbin/openssl smime -decrypt -in $2 -binary -inform DEM -out $4 -inkey $3
+
+		;;
+esac
+
+exit 0

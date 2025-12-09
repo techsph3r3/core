@@ -134,6 +134,7 @@ SENSOR_DISPLAY_HTML = '''
         .badge.active { background: rgba(0,255,136,0.2); color: #00ff88; }
         .badge.stale { background: rgba(255,150,0,0.2); color: #ff9600; }
         .badge.microbit { background: rgba(0,212,255,0.2); color: #00d4ff; }
+        .badge.phone { background: rgba(255,107,107,0.2); color: #ff6b6b; }
 
         .sensor-grid {
             display: grid;
@@ -156,6 +157,9 @@ SENSOR_DISPLAY_HTML = '''
         .value-box.light .value { color: #feca57; }
         .value-box.sound .value { color: #54a0ff; }
         .value-box.compass .value { color: #a55eea; }
+        .value-box.alpha .value { color: #ffa502; }
+        .value-box.beta .value { color: #ff6b81; }
+        .value-box.gamma .value { color: #a29bfe; }
 
         .button-row {
             display: flex;
@@ -276,7 +280,9 @@ SENSOR_DISPLAY_HTML = '''
             <div class="card-header">
                 <span class="card-title">{{ sensor_id }}</span>
                 <div>
-                    {% if 'microbit' in sensor_id.lower() %}
+                    {% if data.device == 'phone' or 'phone' in sensor_id.lower() %}
+                    <span class="badge phone">Phone</span>
+                    {% elif 'microbit' in sensor_id.lower() %}
                     <span class="badge microbit">micro:bit</span>
                     {% endif %}
                     <span class="badge {{ 'stale' if data.is_stale else 'active' }}">
@@ -285,20 +291,20 @@ SENSOR_DISPLAY_HTML = '''
                 </div>
             </div>
 
-            <!-- Accelerometer -->
-            {% if data.x is defined or data.accelerometer is defined %}
+            <!-- Accelerometer - supports micro:bit (x/y/z, accelerometer.x/y/z) and phone (ax/ay/az) formats -->
+            {% if data.x is defined or data.accelerometer is defined or data.ax is defined %}
             <div class="sensor-grid">
                 <div class="value-box x">
                     <div class="label">Accel X</div>
-                    <div class="value">{{ data.accelerometer.x if data.accelerometer else (data.x if data.x is not none else '--') }}</div>
+                    <div class="value">{{ data.accelerometer.x if data.accelerometer else (("%.2f"|format(data.ax)) if data.ax is defined else (data.x if data.x is not none else '--')) }}</div>
                 </div>
                 <div class="value-box y">
                     <div class="label">Accel Y</div>
-                    <div class="value">{{ data.accelerometer.y if data.accelerometer else (data.y if data.y is not none else '--') }}</div>
+                    <div class="value">{{ data.accelerometer.y if data.accelerometer else (("%.2f"|format(data.ay)) if data.ay is defined else (data.y if data.y is not none else '--')) }}</div>
                 </div>
                 <div class="value-box z">
                     <div class="label">Accel Z</div>
-                    <div class="value">{{ data.accelerometer.z if data.accelerometer else (data.z if data.z is not none else '--') }}</div>
+                    <div class="value">{{ data.accelerometer.z if data.accelerometer else (("%.2f"|format(data.az)) if data.az is defined else (data.z if data.z is not none else '--')) }}</div>
                 </div>
             </div>
             {% endif %}
@@ -327,12 +333,30 @@ SENSOR_DISPLAY_HTML = '''
             </div>
             {% endif %}
 
-            <!-- Compass -->
+            <!-- Compass (micro:bit) -->
             {% if data.compass is defined %}
             <div class="sensor-grid" style="margin-top: 8px;">
                 <div class="value-box compass">
                     <div class="label">Compass</div>
                     <div class="value">{{ data.compass }}°</div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Orientation (phone) - alpha, beta, gamma -->
+            {% if data.alpha is defined or data.beta is defined or data.gamma is defined %}
+            <div class="sensor-grid" style="margin-top: 8px;">
+                <div class="value-box alpha">
+                    <div class="label">Alpha</div>
+                    <div class="value">{{ "%.1f"|format(data.alpha) if data.alpha is defined else '--' }}°</div>
+                </div>
+                <div class="value-box beta">
+                    <div class="label">Beta</div>
+                    <div class="value">{{ "%.1f"|format(data.beta) if data.beta is defined else '--' }}°</div>
+                </div>
+                <div class="value-box gamma">
+                    <div class="label">Gamma</div>
+                    <div class="value">{{ "%.1f"|format(data.gamma) if data.gamma is defined else '--' }}°</div>
                 </div>
             </div>
             {% endif %}
@@ -389,7 +413,7 @@ SENSOR_DISPLAY_HTML = '''
     <div class="no-data">
         <p>No sensor data received yet...</p>
         <p style="margin-top: 10px; font-size: 0.85rem;">
-            Waiting for micro:bit or sensor data on MQTT topic: {{ mqtt_topic }}
+            Waiting for micro:bit or phone sensor data on MQTT topic: {{ mqtt_topic }}
         </p>
     </div>
     {% endif %}

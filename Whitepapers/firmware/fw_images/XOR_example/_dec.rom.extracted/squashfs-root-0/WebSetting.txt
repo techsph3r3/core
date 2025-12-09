@@ -1,0 +1,165 @@
+Main Menu
+========
+- Overview
+  - Product Series
+  - Model name
+  - Serial No.
+  - Firmware version
+  - Operation mode
+  - Device IP address
+  - MAC address
+  - Subnet mask
+  - Gateway
+  - System up time
+  - Country code
+  - Wireless security
+- Basic Settings
+    - System Info Settings
+    - Device name
+    - Device location
+    - Device description
+    - Contact information
+  - Network Settings
+    - IP configuration (Static or DHCP)
+    - IP address
+    - Subnet mask
+    - Gateway
+    - Primary DNS server
+    - Secondary DNS server
+  - Time Settings
+    - Time Zone
+    - Local time (YYYY/MM/DD, HH:MM)
+    - Time server 1
+    - Time server 2
+    - Query period (seconds)
+- Wireless Settings
+  - Basic Wireless Settings
+    - Operation mode (AP/AC)
+    - SSID
+    - SSID broadcast    [AP]
+    - RF type           (A/B/G/Mixd)[AP]
+    - Channel           [AP]
+    - WDS enable        [AP]
+    - Peer Mac Address  [AP]
+  - Security Settings
+    - Security mode   (Open / WEP / WPA / WPA2)
+    
+    [ For WEP ONLY ]
+    - Authentication type  (Open/Shared)
+    - Key type   (ASCII/HEX)
+    - Key length (64/128/152 bits)
+    - key index  (1 ~ 4)
+    - WEP key 1
+    - WEP key 2
+    - WEP key 3
+    - WEP key 4
+    
+    [ For WPA ]
+    - WPA type       (PSK/Enterprise)
+    - Encryption method  ( TKIP / AES )
+
+    [ WPA && PSK && AP]
+    - Passphrase
+    - Key renewal
+    
+    [ WPA && PSK && AC]
+    - PSK
+    
+    [ WPA && Enterprise && AP ]
+    - Primary RADIUS Server IP
+    - Primary RADIUS Port
+    - Primary Shared Key
+    - Secondary RADIUS Server IP
+    - Secondary RADIUS Port
+    - Secondary Shared Key    
+    - Key renewal
+    
+    
+    [ WPA && Enterprise && AC ]
+    - EAP Protocol  (TLS/TTLS/WEP)
+    
+    [ WPA && Enterprise && AC && TLS ]
+    - Certificate information
+    
+    [ WPA && Enterprise && AC && TTLS ]
+    - TTLS INNER ( PAP / CHAP / MS-CHAP / MS-CHAPV2)
+    - Anonymous
+    - User name
+    - Password    
+    
+    [ WPA && Enterprise && AC && PEAP ]
+    - Inner EAP protocol (MS-CHAPV2)
+    - Anonymous
+    - User name
+    - Password        
+    
+  - Advanced Wireless Settings
+    - Transmission Rate:
+    - Transmission Power:
+    - Beacon Interval:
+    - DTIM Interval:
+    - Fragmentation threshold:
+    - RTS threshold:
+  - WLAN Certificate Settings
+    - Certificate file
+    - Certificate issue to
+    - Certificate issue by
+    - Certificate expiration date
+    - Certificate private password
+    - User identity
+- Advanced Settings
+  - VLAN Setting
+  - DHCP Server
+    - Enable/Disable (only for AP mode)
+    - Default gateway
+    - Subnet mask
+    - Primary DNS server
+    - Secondary DNS server
+    - Start IP address
+    - Maximum number of users
+    - Client lease time
+    - Static DHCP mapping
+      - Enable/Disable
+      - IP address
+      - MAC address
+  - Packet Filters
+    - MAC filters
+    - Ethernet type filters
+    - IP protocol filters
+    - TCP/UDP port filters
+  - SNMP Agent
+  - WMM Settings
+  - DDNS
+  - UPnP
+- Auto Warning Settings
+  - System log
+    - System log Event Types
+  - Syslog
+    - Syslog Event Types
+    - Syslog Server Settings
+  - E-mail
+    - E-mail Event Types
+	- E-mail Server Settings
+  - Relay
+    - Relay Event Types
+  - Trap     
+    - Trap Event Types
+	- SNMP Trap Receiver Settings
+- Status
+  - Associated client list
+  - DHCP client list
+  - System Log
+  - Relay Status
+  - Din and Power Status
+- Maintenance
+  - Console Settings
+  - Ping
+  - Sniffer
+  - Firmware Upgrade
+  - Config Import
+  - Config Export
+  - Media Buackup    
+  - Log Export
+  - Load Factory Default
+  - Password
+  - Restart

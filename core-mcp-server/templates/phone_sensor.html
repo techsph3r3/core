@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Phone Sensor - CORE Digital Twin</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            color: #fff;
+            min-height: 100vh;
+            padding: 15px;
+            -webkit-user-select: none;
+            user-select: none;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 { font-size: 1.3rem; display: flex; align-items: center; gap: 10px; }
+        .logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+        }
+        .nav-links { display: flex; gap: 10px; }
+        .nav-links a {
+            color: #aaa; text-decoration: none;
+            padding: 6px 12px; border-radius: 6px;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .nav-links a:hover, .nav-links a.active { color: #fff; background: rgba(255,255,255,0.1); }
+
+        .card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 16px;
+            border: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 16px;
+        }
+        .card h2 {
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            color: #aaa;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Status indicators */
+        .status-indicator {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+        .status-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: #ff4757;
+        }
+        .status-dot.connected { background: #2ed573; }
+        .status-dot.warning { background: #ffa502; }
+
+        /* Buttons */
+        .btn {
+            width: 100%;
+            padding: 14px 16px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .btn-primary { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); color: #fff; }
+        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(255,107,107,0.3); }
+        .btn-success { background: linear-gradient(135deg, #2ed573 0%, #26de81 100%); color: #000; }
+        .btn-danger { background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%); color: #fff; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+        .btn-sm { padding: 8px 14px; font-size: 0.85rem; }
+
+        /* QR Code Section */
+        .qr-section {
+            text-align: center;
+            padding: 20px;
+        }
+        .qr-code {
+            display: inline-block;
+            padding: 15px;
+            background: #fff;
+            border-radius: 12px;
+            margin: 15px 0;
+            min-width: 230px;
+            min-height: 230px;
+        }
+        .qr-code img {
+            display: block;
+        }
+        .qr-instructions {
+            font-size: 0.85rem;
+            color: #888;
+            margin-top: 10px;
+        }
+        .connection-url {
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: #00d4aa;
+            word-break: break-all;
+            margin-top: 10px;
+            padding: 8px;
+            background: rgba(0,0,0,0.3);
+            border-radius: 6px;
+        }
+
+        /* Sensor Data Grid */
+        .sensor-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+        .sensor-item {
+            background: rgba(0,0,0,0.2);
+            padding: 12px 8px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .sensor-item .label { font-size: 0.7rem; color: #888; margin-bottom: 4px; }
+        .sensor-item .value { font-size: 1.3rem; font-weight: 700; font-family: 'Monaco', monospace; }
+        .sensor-item.x .value { color: #ff6b6b; }
+        .sensor-item.y .value { color: #2ed573; }
+        .sensor-item.z .value { color: #70a1ff; }
+        .sensor-item.alpha .value { color: #ffa502; }
+        .sensor-item.beta .value { color: #ff6b81; }
+        .sensor-item.gamma .value { color: #a29bfe; }
+
+        /* Charts */
+        .chart-container { position: relative; height: 180px; margin-top: 10px; }
+
+        /* Permission request */
+        .permission-card {
+            text-align: center;
+            padding: 30px 20px;
+        }
+        .permission-icon {
+            font-size: 48px;
+            margin-bottom: 15px;
+        }
+        .permission-text {
+            font-size: 0.9rem;
+            color: #aaa;
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        /* Console */
+        .console-output {
+            background: #0d1117;
+            border-radius: 8px;
+            padding: 10px;
+            max-height: 120px;
+            overflow-y: auto;
+            font-family: 'Monaco', monospace;
+            font-size: 0.7rem;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+        .console-line { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .console-line.error { color: #ff6b6b; }
+        .console-line.success { color: #2ed573; }
+        .console-line.info { color: #70a1ff; }
+
+        /* Stats */
+        .stats-row {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+        .stat-item .label { font-size: 0.7rem; color: #888; }
+        .stat-item .value { font-size: 1.1rem; font-weight: 600; color: #00d4aa; }
+
+        /* Two-column layout for desktop */
+        @media (min-width: 600px) {
+            .main-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 16px;
+            }
+            .full-width { grid-column: 1 / -1; }
+        }
+
+        /* Streaming indicator */
+        .streaming-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            background: rgba(46, 213, 115, 0.2);
+            border: 1px solid rgba(46, 213, 115, 0.4);
+            border-radius: 20px;
+            font-size: 0.75rem;
+            color: #2ed573;
+        }
+        .streaming-badge .pulse {
+            width: 8px; height: 8px;
+            background: #2ed573;
+            border-radius: 50%;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+        }
+
+        /* Warning box */
+        .warning-box {
+            background: rgba(255, 165, 2, 0.1);
+            border: 1px solid rgba(255, 165, 2, 0.3);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 12px;
+            font-size: 0.8rem;
+            color: #ffa502;
+        }
+
+        /* Sample rate control */
+        .rate-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 12px;
+        }
+        .rate-control input[type="range"] {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255,255,255,0.2);
+            -webkit-appearance: none;
+        }
+        .rate-control input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px; height: 18px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            cursor: pointer;
+        }
+        .rate-buttons {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .rate-btn {
+            padding: 6px 12px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 6px;
+            background: rgba(0,0,0,0.2);
+            color: #aaa;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .rate-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        .rate-btn.active { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                <div class="logo">P</div>
+                Phone Sensor
+            </h1>
+            <nav class="nav-links">
+                <a href="/phone">Phone</a>
+                <a href="/phone-display">Display</a>
+            </nav>
+        </header>
+
+        <!-- QR Code for Desktop View -->
+        <div class="card qr-section" id="qrSection">
+            <h2>Connect Your Phone</h2>
+            <p style="color: #aaa; font-size: 0.85rem; margin-bottom: 15px;">
+                Scan this QR code with your phone to stream sensor data
+            </p>
+            <div class="qr-code" id="qrCode"></div>
+            <div class="qr-instructions">
+                Open your phone's camera and scan the QR code.<br>
+                Make sure your phone and computer are on the same network.
+            </div>
+            <div class="connection-url" id="connectionUrl">Loading...</div>
+        </div>
+
+        <!-- Permission Request (shown on mobile) -->
+        <div class="card permission-card" id="permissionCard" style="display: none;">
+            <div class="permission-icon">📱</div>
+            <h2>Sensor Access Required</h2>
+            <p class="permission-text">
+                This app needs access to your phone's motion sensors (accelerometer, gyroscope)
+                to stream data to the CORE network simulator.
+            </p>
+            <button class="btn btn-primary" id="requestPermissionBtn" onclick="requestSensorPermission()">
+                Enable Sensors
+            </button>
+            <div id="permissionWarning" class="warning-box" style="display: none; margin-top: 12px;"></div>
+        </div>
+
+        <div class="main-grid" id="sensorUI" style="display: none;">
+            <!-- Connection Status -->
+            <div class="card">
+                <h2>Connection</h2>
+                <div class="status-indicator">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Initializing...</span>
+                </div>
+                <button class="btn btn-success" id="streamBtn" onclick="toggleStreaming()">
+                    Start Streaming
+                </button>
+                <div class="stats-row">
+                    <div class="stat-item">
+                        <div class="label">Samples</div>
+                        <div class="value" id="sampleCount">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="label">Rate</div>
+                        <div class="value" id="actualRate">--</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- CORE Network Status -->
+            <div class="card">
+                <h2>CORE Network</h2>
+                <div class="status-indicator">
+                    <div class="status-dot" id="coreDot"></div>
+                    <span id="coreStatus">Checking...</span>
+                </div>
+                <div style="font-size: 0.75rem; color: #888; margin-bottom: 8px;">
+                    Sensor ID: <code style="color: #ff6b6b;" id="sensorIdDisplay">--</code>
+                </div>
+                <div id="streamingBadge" class="streaming-badge" style="display: none;">
+                    <div class="pulse"></div>
+                    <span>Streaming to CORE</span>
+                </div>
+            </div>
+
+            <!-- Accelerometer -->
+            <div class="card">
+                <h2>Accelerometer (m/s²)</h2>
+                <div class="sensor-grid">
+                    <div class="sensor-item x"><div class="label">X</div><div class="value" id="accelX">--</div></div>
+                    <div class="sensor-item y"><div class="label">Y</div><div class="value" id="accelY">--</div></div>
+                    <div class="sensor-item z"><div class="label">Z</div><div class="value" id="accelZ">--</div></div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="accelChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Gyroscope / Orientation -->
+            <div class="card">
+                <h2>Orientation (degrees)</h2>
+                <div class="sensor-grid">
+                    <div class="sensor-item alpha"><div class="label">Alpha</div><div class="value" id="alpha">--</div></div>
+                    <div class="sensor-item beta"><div class="label">Beta</div><div class="value" id="beta">--</div></div>
+                    <div class="sensor-item gamma"><div class="label">Gamma</div><div class="value" id="gamma">--</div></div>
+                </div>
+                <div class="chart-container">
+                    <canvas id="orientChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Sample Rate Control -->
+            <div class="card full-width">
+                <h2>Streaming Rate</h2>
+                <p style="font-size: 0.75rem; color: #888; margin-bottom: 10px;">
+                    Select how often to send sensor data. Minimum is 1 Hz (once per second).
+                </p>
+                <div class="rate-buttons" id="rateButtons">
+                    <button class="rate-btn" data-hz="1" onclick="setRateHz(1)">1 Hz</button>
+                    <button class="rate-btn active" data-hz="0.5" onclick="setRateHz(0.5)">0.5 Hz</button>
+                    <button class="rate-btn" data-hz="0.2" onclick="setRateHz(0.2)">0.2 Hz</button>
+                    <button class="rate-btn" data-hz="0.1" onclick="setRateHz(0.1)">0.1 Hz</button>
+                </div>
+                <div style="text-align: center; margin-top: 12px;">
+                    <span id="rateDisplay" style="font-weight: 600; color: #ff6b6b; font-size: 1.1rem;">Every 2 seconds</span>
+                    <div style="font-size: 0.7rem; color: #666; margin-top: 4px;">
+                        Interval: <span id="intervalDisplay">2000ms</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Console -->
+            <div class="card full-width">
+                <h2>Console</h2>
+                <div class="console-output" id="console"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== State ====================
+        let isStreaming = false;
+        let sampleCount = 0;
+        let sampleTimes = [];
+        let sampleInterval = 2000; // ms between samples (default: 0.5 Hz = every 2 seconds)
+        let currentRateHz = 0.5;   // Hz rate (minimum 1 Hz = 1000ms max speed)
+        let streamingTimer = null;
+        let hasMotionPermission = false;
+        let hasOrientationPermission = false;
+
+        // Current sensor values
+        let currentAccel = { x: 0, y: 0, z: 0 };
+        let currentOrientation = { alpha: 0, beta: 0, gamma: 0 };
+
+        // Sensor ID - priority: URL param > localStorage > random
+        // Use ?id=myphone to set a specific ID, or it persists in localStorage
+        function getSensorId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const urlId = urlParams.get('id');
+            if (urlId) {
+                // URL param takes priority - save it to localStorage too
+                const fullId = urlId.startsWith('phone-') ? urlId : 'phone-' + urlId;
+                localStorage.setItem('phoneSensorId', fullId);
+                return fullId;
+            }
+            // Check localStorage for persisted ID
+            const storedId = localStorage.getItem('phoneSensorId');
+            if (storedId) return storedId;
+            // Generate new random ID and persist it
+            const newId = 'phone-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('phoneSensorId', newId);
+            return newId;
+        }
+        const sensorId = getSensorId();
+
+        // Server endpoint (will be updated based on current URL)
+        let serverEndpoint = '';
+
+        // Chart data
+        const MAX_POINTS = 50;
+        let chartData = {
+            accel: { labels: [], x: [], y: [], z: [] },
+            orient: { labels: [], alpha: [], beta: [], gamma: [] }
+        };
+
+        // ==================== Charts ====================
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+                x: { display: false },
+                y: { display: true, ticks: { color: '#888', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.1)' } }
+            },
+            plugins: { legend: { display: false } },
+            elements: { point: { radius: 0 }, line: { borderWidth: 1.5 } }
+        };
+
+        let accelChart, orientChart;
+
+        function initCharts() {
+            accelChart = new Chart(document.getElementById('accelChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'X', data: [], borderColor: '#ff6b6b', fill: false },
+                        { label: 'Y', data: [], borderColor: '#2ed573', fill: false },
+                        { label: 'Z', data: [], borderColor: '#70a1ff', fill: false }
+                    ]
+                },
+                options: chartOptions
+            });
+
+            orientChart = new Chart(document.getElementById('orientChart'), {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        { label: 'Alpha', data: [], borderColor: '#ffa502', fill: false },
+                        { label: 'Beta', data: [], borderColor: '#ff6b81', fill: false },
+                        { label: 'Gamma', data: [], borderColor: '#a29bfe', fill: false }
+                    ]
+                },
+                options: chartOptions
+            });
+        }
+
+        // ==================== Sensor Permission ====================
+        async function requestSensorPermission() {
+            const warningEl = document.getElementById('permissionWarning');
+            warningEl.style.display = 'none';
+
+            try {
+                // Request DeviceMotion permission (iOS 13+)
+                if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                    const motionPermission = await DeviceMotionEvent.requestPermission();
+                    if (motionPermission === 'granted') {
+                        hasMotionPermission = true;
+                        logConsole('Motion sensor permission granted', 'success');
+                    } else {
+                        throw new Error('Motion permission denied');
+                    }
+                } else {
+                    // Non-iOS or older iOS - permission not required
+                    hasMotionPermission = true;
+                    logConsole('Motion sensors available (no permission required)', 'info');
+                }
+
+                // Request DeviceOrientation permission (iOS 13+)
+                if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                    const orientPermission = await DeviceOrientationEvent.requestPermission();
+                    if (orientPermission === 'granted') {
+                        hasOrientationPermission = true;
+                        logConsole('Orientation sensor permission granted', 'success');
+                    } else {
+                        throw new Error('Orientation permission denied');
+                    }
+                } else {
+                    hasOrientationPermission = true;
+                    logConsole('Orientation sensors available (no permission required)', 'info');
+                }
+
+                // Set up event listeners
+                setupSensorListeners();
+
+                // Show sensor UI
+                document.getElementById('permissionCard').style.display = 'none';
+                document.getElementById('sensorUI').style.display = 'block';
+                document.getElementById('qrSection').style.display = 'none';
+
+                updateConnectionUI(true);
+
+            } catch (error) {
+                warningEl.textContent = 'Error: ' + error.message + '. Please ensure you are using HTTPS and have granted sensor permissions in your browser settings.';
+                warningEl.style.display = 'block';
+                logConsole('Permission error: ' + error.message, 'error');
+            }
+        }
+
+        function setupSensorListeners() {
+            // Accelerometer
+            window.addEventListener('devicemotion', (event) => {
+                const accel = event.accelerationIncludingGravity || event.acceleration;
+                if (accel) {
+                    currentAccel.x = accel.x ? accel.x.toFixed(2) : 0;
+                    currentAccel.y = accel.y ? accel.y.toFixed(2) : 0;
+                    currentAccel.z = accel.z ? accel.z.toFixed(2) : 0;
+                }
+            });
+
+            // Orientation (gyroscope)
+            window.addEventListener('deviceorientation', (event) => {
+                currentOrientation.alpha = event.alpha ? event.alpha.toFixed(1) : 0;
+                currentOrientation.beta = event.beta ? event.beta.toFixed(1) : 0;
+                currentOrientation.gamma = event.gamma ? event.gamma.toFixed(1) : 0;
+            });
+
+            logConsole('Sensor listeners active', 'success');
+        }
+
+        // ==================== Streaming ====================
+        function toggleStreaming() {
+            if (isStreaming) {
+                stopStreaming();
+            } else {
+                startStreaming();
+            }
+        }
+
+        function startStreaming() {
+            isStreaming = true;
+            document.getElementById('streamBtn').textContent = 'Stop Streaming';
+            document.getElementById('streamBtn').className = 'btn btn-danger';
+            document.getElementById('streamingBadge').style.display = 'inline-flex';
+
+            const seconds = sampleInterval / 1000;
+            logConsole(`Streaming started - sending every ${seconds}s (${currentRateHz} Hz)`, 'success');
+
+            // Start sampling loop
+            streamingTimer = setInterval(sampleAndSend, sampleInterval);
+        }
+
+        function stopStreaming() {
+            isStreaming = false;
+            document.getElementById('streamBtn').textContent = 'Start Streaming';
+            document.getElementById('streamBtn').className = 'btn btn-success';
+            document.getElementById('streamingBadge').style.display = 'none';
+
+            if (streamingTimer) {
+                clearInterval(streamingTimer);
+                streamingTimer = null;
+            }
+
+            logConsole('Streaming stopped. Total samples: ' + sampleCount, 'info');
+        }
+
+        function sampleAndSend() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { hour12: false }) + '.' + String(now.getMilliseconds()).slice(0, 1);
+
+            // Update UI displays
+            document.getElementById('accelX').textContent = currentAccel.x;
+            document.getElementById('accelY').textContent = currentAccel.y;
+            document.getElementById('accelZ').textContent = currentAccel.z;
+            document.getElementById('alpha').textContent = currentOrientation.alpha;
+            document.getElementById('beta').textContent = currentOrientation.beta;
+            document.getElementById('gamma').textContent = currentOrientation.gamma;
+
+            // Update charts
+            updateChartData(accelChart, chartData.accel, timeStr,
+                [parseFloat(currentAccel.x), parseFloat(currentAccel.y), parseFloat(currentAccel.z)]);
+            updateChartData(orientChart, chartData.orient, timeStr,
+                [parseFloat(currentOrientation.alpha), parseFloat(currentOrientation.beta), parseFloat(currentOrientation.gamma)]);
+
+            // Build data payload
+            const payload = {
+                // Accelerometer (m/s²)
+                ax: parseFloat(currentAccel.x),
+                ay: parseFloat(currentAccel.y),
+                az: parseFloat(currentAccel.z),
+                // Orientation (phone-specific)
+                alpha: parseFloat(currentOrientation.alpha),
+                beta: parseFloat(currentOrientation.beta),
+                gamma: parseFloat(currentOrientation.gamma),
+                // Timestamp
+                ts: now.getTime(),
+                // Device type
+                device: 'phone'
+            };
+
+            // Send to server
+            sendToServer(payload);
+
+            // Update stats
+            sampleCount++;
+            sampleTimes.push(now.getTime());
+            if (sampleTimes.length > 10) sampleTimes.shift();
+
+            document.getElementById('sampleCount').textContent = sampleCount;
+            if (sampleTimes.length >= 2) {
+                const dt = (sampleTimes[sampleTimes.length - 1] - sampleTimes[0]) / (sampleTimes.length - 1);
+                document.getElementById('actualRate').textContent = (1000 / dt).toFixed(1) + ' Hz';
+            }
+        }
+
+        async function sendToServer(data) {
+            try {
+                // Send to both endpoints for compatibility
+                const promises = [
+                    // Main sensor data endpoint
+                    fetch(`${serverEndpoint}/api/sensors/${sensorId}/data`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    }).catch(() => null),
+                    // Injector endpoint for CORE network traffic
+                    fetch(`${serverEndpoint}/api/inject/${sensorId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    }).catch(() => null)
+                ];
+
+                await Promise.all(promises);
+            } catch (error) {
+                // Silently ignore send errors to avoid flooding console
+            }
+        }
+
+        function updateChartData(chart, dataStore, label, values) {
+            dataStore.labels.push(label);
+            chart.data.labels.push(label);
+            values.forEach((v, i) => {
+                chart.data.datasets[i].data.push(v);
+            });
+
+            while (chart.data.labels.length > MAX_POINTS) {
+                chart.data.labels.shift();
+                dataStore.labels.shift();
+                chart.data.datasets.forEach(ds => ds.data.shift());
+            }
+            chart.update('none');
+        }
+
+        // ==================== UI Helpers ====================
+        function updateConnectionUI(connected) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+
+            if (connected) {
+                dot.classList.add('connected');
+                text.textContent = 'Sensors Active';
+            } else {
+                dot.classList.remove('connected');
+                text.textContent = 'Disconnected';
+            }
+        }
+
+        function setRateHz(hz) {
+            // Enforce minimum 1 Hz (1000ms) as fastest rate
+            if (hz > 1) hz = 1;
+
+            currentRateHz = hz;
+            sampleInterval = Math.round(1000 / hz);
+
+            // Update button states
+            document.querySelectorAll('.rate-btn').forEach(btn => {
+                btn.classList.toggle('active', parseFloat(btn.dataset.hz) === hz);
+            });
+
+            // Update display
+            updateRateDisplayText();
+
+            // If streaming, restart with new rate
+            if (isStreaming) {
+                clearInterval(streamingTimer);
+                streamingTimer = setInterval(sampleAndSend, sampleInterval);
+                logConsole(`Rate changed to ${hz} Hz (every ${sampleInterval}ms)`, 'info');
+            }
+        }
+
+        function updateRateDisplayText() {
+            const seconds = sampleInterval / 1000;
+            let displayText;
+            if (seconds >= 1) {
+                displayText = seconds === 1 ? 'Every 1 second' : `Every ${seconds} seconds`;
+            } else {
+                displayText = `${currentRateHz} samples/sec`;
+            }
+            document.getElementById('rateDisplay').textContent = displayText;
+            document.getElementById('intervalDisplay').textContent = `${sampleInterval}ms`;
+        }
+
+        async function checkCoreStatus() {
+            try {
+                const response = await fetch(`${serverEndpoint}/api/inject/status`);
+                const data = await response.json();
+                const dot = document.getElementById('coreDot');
+                dot.classList.toggle('connected', data.running);
+                document.getElementById('coreStatus').textContent = data.running ?
+                    `Active (${data.message_count} msgs)` : 'Not connected';
+            } catch (e) {
+                document.getElementById('coreStatus').textContent = 'Server unavailable';
+            }
+        }
+
+        function logConsole(message, type = '') {
+            const consoleEl = document.getElementById('console');
+            const line = document.createElement('div');
+            line.className = 'console-line ' + type;
+            line.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+            consoleEl.appendChild(line);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+            while (consoleEl.children.length > 30) consoleEl.removeChild(consoleEl.firstChild);
+        }
+
+        // ==================== QR Code Generation ====================
+        function generateQRCode() {
+            // Get the current URL for the phone to connect to
+            const protocol = window.location.protocol;
+            const host = window.location.host;
+            const phoneUrl = `${protocol}//${host}/phone`;
+
+            document.getElementById('connectionUrl').textContent = phoneUrl;
+            serverEndpoint = `${protocol}//${host}`;
+
+            // Generate QR code using qrcode-generator library
+            const qrContainer = document.getElementById('qrCode');
+            qrContainer.innerHTML = '<p style="color: #666;">Generating QR code...</p>';
+
+            // Wait for library to load
+            setTimeout(() => {
+                try {
+                    if (typeof qrcode === 'undefined') {
+                        throw new Error('QR library not loaded');
+                    }
+
+                    // Create QR code using qrcode-generator
+                    const typeNumber = 4; // Type 4 supports up to 50 chars
+                    const errorCorrectionLevel = 'L';
+                    const qr = qrcode(typeNumber, errorCorrectionLevel);
+                    qr.addData(phoneUrl);
+                    qr.make();
+
+                    // Create image from QR code
+                    qrContainer.innerHTML = '';
+                    const img = document.createElement('img');
+                    img.src = qr.createDataURL(6, 2); // cellSize=6, margin=2
+                    img.alt = 'QR Code to connect phone';
+                    img.style.width = '200px';
+                    img.style.height = '200px';
+                    img.style.imageRendering = 'pixelated';
+                    qrContainer.appendChild(img);
+
+                    console.log('QR Code generated successfully for:', phoneUrl);
+                } catch (error) {
+                    console.error('QR Code error:', error);
+                    // Fallback: show a clickable link
+                    qrContainer.innerHTML = `
+                        <div style="padding: 20px; text-align: center;">
+                            <p style="color: #ff6b6b; margin-bottom: 10px;">QR Code failed to generate</p>
+                            <p style="color: #333; font-size: 12px;">Open this URL on your phone:</p>
+                            <a href="${phoneUrl}" style="color: #1a1a2e; word-break: break-all; font-size: 11px;">${phoneUrl}</a>
+                        </div>
+                    `;
+                }
+            }, 500);
+        }
+
+        // ==================== Initialization ====================
+        function detectDevice() {
+            // Check if we're on a mobile device
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+            if (isMobile) {
+                // On mobile - show permission request
+                document.getElementById('qrSection').style.display = 'none';
+                document.getElementById('permissionCard').style.display = 'block';
+            } else {
+                // On desktop - show QR code
+                document.getElementById('qrSection').style.display = 'block';
+                document.getElementById('permissionCard').style.display = 'none';
+            }
+
+            return isMobile;
+        }
+
+        function init() {
+            // Set server endpoint based on current URL
+            const protocol = window.location.protocol;
+            const host = window.location.host;
+            serverEndpoint = `${protocol}//${host}`;
+
+            // Display sensor ID
+            document.getElementById('sensorIdDisplay').textContent = sensorId;
+
+            // Detect device and show appropriate UI
+            const isMobile = detectDevice();
+
+            if (!isMobile) {
+                // Generate QR code for desktop view
+                generateQRCode();
+            }
+
+            // Initialize charts
+            initCharts();
+
+            // Check if motion sensors are available
+            if (!window.DeviceMotionEvent && !window.DeviceOrientationEvent) {
+                logConsole('Motion sensors not available on this device', 'error');
+            }
+
+            // Check CORE status periodically
+            checkCoreStatus();
+            setInterval(checkCoreStatus, 10000);
+
+            logConsole('Phone Sensor interface initialized', 'info');
+            logConsole('Sensor ID: ' + sensorId, 'info');
+        }
+
+        // Run initialization
+        init();
+    </script>
+</body>
+</html>

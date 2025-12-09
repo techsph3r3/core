@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FxData xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <DataPoints xsi:type="DataPointsBis">
+    <Cusps />
+    <NMax>8</NMax>
+  </DataPoints>
+  <DataPaint xsi:type="DataPaintBis">
+    <YFromZero>false</YFromZero>
+    <MaxX>1</MaxX>
+    <MinX>0</MinX>
+    <MaxY>1</MaxY>
+    <MinY>0</MinY>
+    <ShowRaster>true</ShowRaster>
+    <ShowInterpolation>true</ShowInterpolation>
+    <AxesXAuto>true</AxesXAuto>
+    <AxesYAuto>true</AxesYAuto>
+    <Antialias>true</Antialias>
+    <DX1>0</DX1>
+    <DXn>0</DXn>
+    <Interpolation>Binary</Interpolation>
+    <StartValue>1</StartValue>
+    <XFromZero>true</XFromZero>
+    <OnlineInterpolation>true</OnlineInterpolation>
+  </DataPaint>
+</FxData>

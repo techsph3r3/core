@@ -1,0 +1,75 @@
+* {
+    padding: 0px;
+    margin: 0px;
+}
+
+body{
+	padding-top: 10px;
+	padding-left: 15px;
+	font-family: Verdana;
+    font-size: 9pt;
+}
+
+.SETUP_SEL {
+    width: 70%;
+}
+
+.SETUP_OPTION{
+    clear: both;
+    
+    padding-top: 10px;
+}
+
+.SETUP_OPTION_BUTTON{
+    float: left;
+    display: block;
+    width: 130px;
+    height: 40px;
+    background-color: #009966;
+	/* box-shadow: 3px 3px 3px #ccf4de;*/
+	box-shadow:2px 2px 2px rgba(20%,20%,40%,0.6);
+	/* background: -webkit-gradient(linear, left top, left bottom, from(#ccf4de), to(#009966));
+    background: -moz-linear-gradient(top,  #ccf4de,  #009966); */
+    
+    border: 3px double  #ccf4de;
+    border-radius: 5px;
+    
+    color: #FFFFFF;
+	/* text-shadow: 1px 1px 0px #ccf4de; */
+    font-weight: bold;
+    text-decoration: none;
+    line-height: 40px;
+    text-align: center;
+}
+
+.SETUP_OPTION_BUTTON:hover{
+    background-color: #ccf4de;
+	background: -webkit-gradient(linear, left top, left bottom, from(#FFFFFF), to(#ccf4de));
+    background: -moz-linear-gradient(top,  #FFFFFF,  #ccf4de);
+    border: 3px double  #009966;
+    color: #009966;
+}
+
+.SETUP_OPTION_BUTTON_DISABLE{
+	color: #848484;
+    background-color: #F2F2F2;
+	border: 3px double  #F2F2F2;
+}
+
+.SETUP_OPTION_BUTTON_DISABLE:hover{
+	color: #848484;
+    background-color: #F2F2F2;
+	background: -webkit-gradient(linear, left top, left bottom, from(#F2F2F2), to(#F2F2F2));
+    background: -moz-linear-gradient(top,  #F2F2F2,  #F2F2F2);
+	border: 3px double  #F2F2F2;
+}
+
+.SETUP_OPTION p
+{
+    display: block;
+    width: 200px;
+    float: left;
+    padding-left: 30px;
+    padding-top: 3px;
+    line-height: 1.3em;
+}

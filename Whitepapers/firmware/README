@@ -1,0 +1,130 @@
+some firmware uses XOR "encryption" 
+$ strings AWK3131A_1.6_Build_17091517.rom | tail
+    "Seek AGREEMENT for the date of completion.\0 or Seek AGREEMENT for the date of completion."  
+is XOR key
+
+can do: xortool-xor -s "Seek AGREEMENT for the date of completion.\x00" -f AWK3131A_1.6_Build_17091517.rom > decrypted.rom
+then binwalk the rom
+
+or 
+
+python script:
+
+    '''
+    enc_rom = "AWK3131A_1.7_Build_17102617.rom"
+     
+    def xor(data, key):
+        l = len(key)
+        return bytearray(((data[i] ^ key[i % l]) for i in range(0,len(data))))
+     
+    def main():
+     
+        data = bytearray(open(enc_rom, 'rb').read())
+        key = bytearray("Seek AGREEMENT for the date of completion.\x00")
+        dec_file = xor(data, key)
+     
+        f = open('dec.rom', 'w')
+        f.write(dec_file)
+        f.close()
+     
+    if __name__ == "__main__":
+        main()
+    '''
+
+Misc Info:
+
+From the output of /sbin/fw_printenv we learn that the filesystem is squashfs and the bootloader is u-boot
+From dmesg the squashfs version: squashfs: version 4.0 (2009/01/31) Phillip Lougher
+
+Memory Technology Device (MTD) partition table
+[    0.121093] Creating 14 MTD partitions on "ath-nor0":
+[    0.121093] 0x000000000000-0x000000040000 : "u-boot"
+[    0.121093] 0x000000040000-0x000000050000 : "u-boot-env"
+[    0.121093] 0x000000050000-0x000000250000 : "kernel"
+[    0.121093] 0x000000250000-0x000000b50000 : "root"
+[    0.121093] 0x000000b50000-0x000000e50000 : "userdisk"
+[    0.125000] 0x000000e50000-0x000000e70000 : "log1"
+[    0.125000] 0x000000e70000-0x000000e90000 : "log2"
+[    0.125000] 0x000000e90000-0x000000eb0000 : "version"
+[    0.125000] 0x000000eb0000-0x000000ed0000 : "config1"
+[    0.125000] 0x000000ed0000-0x000000ef0000 : "config2"
+[    0.128906] 0x000000ef0000-0x000000fb0000 : "configData"
+[    0.128906] 0x000000fb0000-0x000000fe0000 : "mib0"
+[    0.128906] 0x000000fe0000-0x000000ff0000 : "ART"
+[    0.128906] 0x000000ff0000-0x000001000000 : "fis"
+
+/sbin # ./fw_printenv 
+bootargs=console=ttyS0,115200 root=31:03 rootfstype=squashfs init=/sbin/init mtdparts=ath-nor0:256k(u-boot),64k(u-boot-env),2048k(kernel),9216k(root),3072k(userdisk),128k(log1),128k(log2),128k(version),128k(config1),128k(config2),768k(configData),192k(mib0),64k(ART),64k(fis)
+bootcmd=
+bootdelay=1
+baudrate=115200
+ethaddr=0x00:0xaa:0xbb:0xcc:0xdd:0xee
+dir=
+lu=tftp 0x80060000 ${dir}u-boot.bin&&erase 0x9f000000 +$filesize&&cp.b $fileaddr 0x9f000000 $filesize
+lf=tftp 0x80060000 ${dir}root.sq&&erase 0x9f250000 +0x900000&&cp.b $fileaddr 0x9f250000 $filesize
+lk=tftp 0x80060000 ${dir}vmlinux.lzma.uImage&&erase 0x9f050000 +$filesize&&cp.b $fileaddr 0x9f050000 $filesize
+lusr=tftp 0x80060000 ${dir}userdisk.sq&&erase 0x9fb50000 +0x300000&&cp.b $fileaddr 0x9fb50000 $filesize
+ethact=eth0
+target_bios_version=1.1.12.6
+fwr_verify=1
+flag_eth_phy=2
+flag_eth_type=1
+burnin_serial=0
+silent=1
+flag_cmu=1
+flag_gps=1
+target_burning_time=72000
+flag_eot=0
+init_led=imm 20 6 60;imm 20 7 1f
+on_led=imm 20 2 0;imm 20 3 0
+off_led=imm 20 2 ff;imm 20 3 ff
+init_beeper=imm 20 7 ef
+on_beeper=imm 20 3 10
+off_beeper=imm 20 3 0
+target_model_name=awk-3131a
+fwr_filename=awk-3131a.rom
+flag_art=1
+flag_poe=1
+flag_wifi_module=5
+flag_mp=1
+Country=840
+burning=36000
+target_software_id=0x00008400
+flag_idgen=1
+target_serial=871
+mac_addr=0090E8572307
+op=0x00000007
+flag_macgen=1
+flag_burn=1
+flag_txrx=1
+stdin=serial
+stdout=nulldev
+stderr=nulldev
+preboot=autoscr
+default_bios_version=1.1.12.6
+art=81
+flash=echo src-$fwr_addr len-$fwr_len flash-$fwr_flash_addr && erase $fwr_flash_addr +$fwr_len&&cp.b $fwr_addr $fwr_flash_addr $fwr_len
+fis_init=fwr init kernel 9f050000 200000&&fwr init root 9f250000 900000 && fwr init userdisk 9fb50000 300000
+fwr_upgrade=iwdec && fwr integrity magic&&run fis_init && fwr upgrade kernel flash && fwr upgrade root flash && fwr upgrade userdisk flash && fwr master flash
+beep=run off_beeper init_beeper;cycle 1 200 off_beeper on_beeper off_beeper off_beeper off_beeper
+tftp_ping=silent on;cycle 10 500 off_led on_led;ping $serverip
+server_msg=silent off; echo please set-up TFTP server at $serverip with $fwr_filename for firmware recovery.
+fwr_recovery=run init_led;run server_msg;until run tftp_ping;do;run server_msg;done;silent off;tftp 80060000 $fwr_filename&&run fwr_upgrade
+idgen_flag=if itest $op -set 8;then set flag_idgen 1;fi
+mac_flag=if itest $op -set 2;then set flag_macgen 1;fi
+eot_flag_set=if itest $op -set 20 && test $flag_eot -eq 0;then set flag_eot 1;set target_burning_time $burning;fi
+eot_flag_clear=if itest $op -clear 20 && test $flag_eot -eq 1;then set flag_eot 0;set target_burning_time $burning;fi
+all_idgen_flag=run idgen_flag;run mac_flag;run eot_flag_set;run eot_flag_clear;saveenv
+all_macgen_flag=run idgen_flag;run mac_flag;saveenv
+idgen=set burning $target_burning_time;iwmm target_software_id Country burning op
+macgen=iwmm target_serial mac_addr op
+abort=2
+filesize=847f72
+fileaddr=80060000
+ipaddr=192.168.127.253
+serverip=192.168.127.1
+magic=8919123028877700
+fwr_addr=87fa1148
+fwr_len=000000a0
+fwr_flash_addr=9fe90000
+flag_asqc=1

@@ -1,0 +1,8 @@
+# Device        Mount point   filesystem  parameters  dump fsck
+proc            /proc          proc       defaults    0     0
+/dev/pts		/dev/pts       devpts     defaults    0     0
+/dev/mtdblock4  /usr           squashfs   defaults    0     0
+/dev/mtdblock10  /configData    jffs2      defaults    0     0
+tmpfs           /var           tmpfs      size=16M    0     0
+sysfs           /sys          sysfs       defaults    0     0
+
