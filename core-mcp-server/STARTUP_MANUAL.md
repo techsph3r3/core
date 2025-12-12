@@ -9,17 +9,42 @@ This guide covers how to start all services for the CORE Network Emulator + IoT 
 
 ## Quick Start (TL;DR)
 
+Copy and paste this entire block to start everything:
+
 ```bash
 # 1. Start the core-novnc container
 docker start core-novnc
 
-# 2. Fix VNC to listen on all interfaces and start CORE GUI
-docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
-docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui &"
+# 2. Clean up stale VNC lock files and restart VNC server
+docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
 
-# 3. Start the Web Dashboard
+# 3. Wait for display to be ready, then start CORE GUI
+sleep 2
+docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &"
+
+# 4. Start the Web Dashboard
 cd /workspaces/core/core-mcp-server
+pkill -f web_ui.py 2>/dev/null
 nohup python3 web_ui.py --host 0.0.0.0 --port 8080 > /tmp/webui.log 2>&1 &
+
+# 5. Print access URLs
+sleep 2
+echo ""
+echo "=== Services Started ==="
+if [ -n "$CODESPACE_NAME" ]; then
+  echo "Web Dashboard: https://$CODESPACE_NAME-8080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
+  echo "noVNC Desktop: https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
+else
+  echo "Web Dashboard: http://localhost:8080"
+  echo "noVNC Desktop: http://localhost:6080"
+fi
+echo "VNC Password: core123"
+```
+
+Or use the one-liner:
+
+```bash
+docker start core-novnc && docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no" && sleep 2 && docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &" && cd /workspaces/core/core-mcp-server && pkill -f web_ui.py 2>/dev/null; nohup python3 web_ui.py --host 0.0.0.0 --port 8080 > /tmp/webui.log 2>&1 &
 ```
 
 ## Service URLs
@@ -75,11 +100,11 @@ docker ps | grep core-novnc
 
 ### Step 2: Start VNC Server (Important!)
 
-The VNC server may start with `-localhost=1` which prevents the dashboard from connecting. You must restart it with `-localhost no`:
+The VNC server may start with `-localhost=1` which prevents the dashboard from connecting. You must restart it with `-localhost no`. Also clean up any stale lock files from previous sessions:
 
 ```bash
-# Kill existing VNC and restart with correct settings
-docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
+# Kill existing VNC, clean lock files, and restart with correct settings
+docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
 ```
 
 **Why this matters:** The dashboard's embedded VNC viewer connects via websocket proxy. If VNC only listens on localhost (127.0.0.1), the connection fails.
@@ -92,13 +117,24 @@ docker exec core-novnc netstat -tlnp | grep 5901
 
 ### Step 3: Start CORE GUI
 
+**Important:** Wait 2 seconds after starting VNC before launching CORE GUI. The display needs time to initialize.
+
 ```bash
-docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui &"
+# Wait for display to be ready
+sleep 2
+
+# Start CORE GUI
+docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &"
 ```
 
 Verify CORE GUI is running:
 ```bash
 docker exec core-novnc pgrep -a core-gui
+```
+
+Check for errors if it's not running:
+```bash
+docker exec core-novnc cat /tmp/core-gui.log
 ```
 
 ### Step 4: Start the Web Dashboard
@@ -158,11 +194,24 @@ sleep 5
 
 ### Problem: CORE GUI not visible in VNC
 
-**Cause:** CORE GUI process not started
+**Cause 1:** CORE GUI process not started
 
 **Fix:**
 ```bash
-docker exec core-novnc bash -c "export DISPLAY=:1 && /opt/core/venv/bin/core-gui &"
+sleep 2
+docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &"
+```
+
+**Cause 2:** Display not ready (error: "xhost: unable to open display :1")
+
+This happens when CORE GUI starts before VNC server fully initializes.
+
+**Fix:**
+```bash
+# Restart VNC and wait before starting GUI
+docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
+sleep 2
+docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &"
 ```
 
 ### Problem: Web dashboard not responding
