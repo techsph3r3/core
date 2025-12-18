@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Industrial Digital Twin - OpenPLC Integration</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #1a1a1a; }
+    #twin-frame { width: 100%; height: 100%; border: none; }
+
+    /* Control Panel - Upper Right */
+    #control-panel {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(71, 85, 105, 0.5);
+      border-radius: 12px;
+      padding: 16px;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      z-index: 10000;
+      min-width: 300px;
+      max-width: 340px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(71, 85, 105, 0.5);
+    }
+
+    .panel-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #64748b;
+    }
+    .status-indicator.running { background: #22c55e; animation: pulse 2s infinite; }
+    .status-indicator.stopped { background: #f59e0b; }
+    .status-indicator.fault { background: #ef4444; animation: pulse 0.5s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+      50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+    }
+
+    /* Mode Toggle */
+    .mode-toggle {
+      display: flex;
+      background: rgba(30, 41, 59, 0.8);
+      border-radius: 8px;
+      padding: 4px;
+      margin-bottom: 16px;
+    }
+
+    .mode-btn {
+      flex: 1;
+      padding: 10px 12px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      cursor: pointer;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+
+    .mode-btn.active {
+      background: linear-gradient(135deg, #3b82f6, #2563eb);
+      color: white;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+    }
+
+    .mode-btn:hover:not(.active) {
+      background: rgba(51, 65, 85, 0.8);
+      color: #e2e8f0;
+    }
+
+    /* Status Section */
+    .status-section {
+      background: rgba(30, 41, 59, 0.5);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .status-section-title {
+      font-weight: 600;
+      font-size: 11px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 8px;
+    }
+
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .status-row:last-child { margin-bottom: 0; }
+
+    .status-label { color: #94a3b8; font-size: 11px; }
+    .status-value { font-weight: 600; font-size: 12px; }
+    .status-value.on { color: #22c55e; }
+    .status-value.off { color: #64748b; }
+
+    /* Control Buttons */
+    .control-buttons {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .ctrl-btn {
+      padding: 12px 8px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+      transition: all 0.15s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .ctrl-btn.start { background: #22c55e; color: white; }
+    .ctrl-btn.start:hover { background: #16a34a; }
+    .ctrl-btn.stop { background: #ef4444; color: white; }
+    .ctrl-btn.stop:hover { background: #dc2626; }
+    .ctrl-btn.reset { background: #3b82f6; color: white; }
+    .ctrl-btn.reset:hover { background: #2563eb; }
+    .ctrl-btn.spawn { background: #8b5cf6; color: white; grid-column: span 3; }
+    .ctrl-btn.spawn:hover { background: #7c3aed; }
+    .ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Diverter Status */
+    .diverter-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+    }
+
+    .diverter-status {
+      text-align: center;
+      padding: 8px;
+      border-radius: 6px;
+      background: rgba(30, 41, 59, 0.6);
+    }
+
+    .diverter-status .color-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .diverter-status .indicator {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      margin: 0 auto;
+      border: 2px solid rgba(255,255,255,0.2);
+    }
+
+    .diverter-status.red .indicator { background: #64748b; }
+    .diverter-status.red.active .indicator { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+    .diverter-status.white .indicator { background: #64748b; }
+    .diverter-status.white.active .indicator { background: #f8fafc; box-shadow: 0 0 10px #f8fafc; }
+    .diverter-status.blue .indicator { background: #64748b; }
+    .diverter-status.blue.active .indicator { background: #3b82f6; box-shadow: 0 0 10px #3b82f6; }
+
+    /* Connection Status */
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .connection-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+    .connection-dot.connected { background: #22c55e; }
+    .connection-dot.disconnected { background: #ef4444; }
+    .connection-dot.polling { background: #f59e0b; animation: blink 0.5s infinite; }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* Counters */
+    .counter-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+
+    .counter-item {
+      text-align: center;
+      padding: 8px;
+      border-radius: 6px;
+      background: rgba(30, 41, 59, 0.6);
+    }
+
+    .counter-item .label { font-size: 10px; color: #94a3b8; margin-bottom: 4px; }
+    .counter-item .value { font-size: 16px; font-weight: 700; color: #f1f5f9; }
+  </style>
+</head>
+<body>
+  <!-- Control Panel -->
+  <div id="control-panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <div class="status-indicator" id="system-status"></div>
+        PLC Control
+      </div>
+      <div class="connection-status">
+        <div class="connection-dot" id="conn-dot"></div>
+        <span id="conn-text">Disconnected</span>
+      </div>
+    </div>
+
+    <!-- Mode Toggle -->
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="btn-local" onclick="setMode('local')">Local Sim</button>
+      <button class="mode-btn" id="btn-openplc" onclick="setMode('openplc')">OpenPLC</button>
+    </div>
+
+    <!-- Control Buttons -->
+    <div class="control-buttons">
+      <button class="ctrl-btn start" onclick="sendCommand('start')">Start</button>
+      <button class="ctrl-btn stop" onclick="sendCommand('stop')">Stop</button>
+      <button class="ctrl-btn reset" onclick="sendCommand('reset')">Reset</button>
+      <button class="ctrl-btn spawn" onclick="spawnBox()">Spawn Package</button>
+    </div>
+
+    <!-- PLC Status -->
+    <div class="status-section">
+      <div class="status-section-title">System Status</div>
+      <div class="status-row">
+        <span class="status-label">Conveyor</span>
+        <span class="status-value" id="conveyor-status">OFF</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Speed</span>
+        <span class="status-value" id="conveyor-speed">0%</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">Fault</span>
+        <span class="status-value" id="fault-status">NONE</span>
+      </div>
+    </div>
+
+    <!-- Diverter Status -->
+    <div class="status-section">
+      <div class="status-section-title">Diverters</div>
+      <div class="diverter-grid">
+        <div class="diverter-status red" id="diverter-red">
+          <div class="color-label">Red</div>
+          <div class="indicator"></div>
+        </div>
+        <div class="diverter-status white" id="diverter-white">
+          <div class="color-label">White</div>
+          <div class="indicator"></div>
+        </div>
+        <div class="diverter-status blue" id="diverter-blue">
+          <div class="color-label">Blue</div>
+          <div class="indicator"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Counters -->
+    <div class="status-section">
+      <div class="status-section-title">Counters</div>
+      <div class="counter-grid">
+        <div class="counter-item">
+          <div class="label">Red</div>
+          <div class="value" id="count-red">0</div>
+        </div>
+        <div class="counter-item">
+          <div class="label">White</div>
+          <div class="value" id="count-white">0</div>
+        </div>
+        <div class="counter-item">
+          <div class="label">Blue</div>
+          <div class="value" id="count-blue">0</div>
+        </div>
+        <div class="counter-item">
+          <div class="label">Total</div>
+          <div class="value" id="count-total">0</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Digital Twin iFrame -->
+  <iframe id="twin-frame" src="/static/digital-twin-v2/index.html"></iframe>
+
+  <script>
+    // ===== STATE =====
+    let currentMode = 'local';
+    let plcState = {
+      conveyor_run: false,
+      conveyor_speed: 50,
+      diverter_red: false,
+      diverter_white: false,
+      diverter_blue: false,
+      count_red: 0,
+      count_white: 0,
+      count_blue: 0,
+      count_total: 0,
+      fault: false,
+      run_light: false,
+      ready_light: true
+    };
+    let pollInterval = null;
+    let isPolling = false;
+
+    // ===== TWIN CONTROL API =====
+    // This object provides the API that the new digital twin looks for
+    const twinControlAPI = {
+      // Called by twin to check if conveyor should run
+      isConveyorRunning: function() {
+        if (currentMode === 'local') {
+          // In local mode, the twin's internal logic handles this
+          return null; // Return null to let internal logic work
+        }
+        return plcState.conveyor_run;
+      },
+
+      // Called by twin to get conveyor speed (0-100)
+      getConveyorSpeed: function() {
+        return plcState.conveyor_speed;
+      },
+
+      // Called by twin to check if a diverter is active
+      isDiverterActive: function(color) {
+        if (currentMode === 'local') {
+          return null; // Let internal logic handle it
+        }
+        switch(color) {
+          case 'red': return plcState.diverter_red;
+          case 'white': return plcState.diverter_white;
+          case 'blue': return plcState.diverter_blue;
+          default: return false;
+        }
+      },
+
+      // Called by twin when sensor state changes (edge detection)
+      reportSensor: function(name, value) {
+        console.log(`Sensor reported: ${name} = ${value}`);
+        if (currentMode === 'openplc') {
+          // Send sensor state to PLC via bridge
+          fetch('/api/plc/sensor', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sensor: name, value: value })
+          }).catch(err => console.error('Failed to report sensor:', err));
+        }
+      }
+    };
+
+    // ===== IFRAME SETUP =====
+    const twinFrame = document.getElementById('twin-frame');
+
+    twinFrame.onload = function() {
+      // Inject the twinControl API into the iframe
+      try {
+        twinFrame.contentWindow.twinControl = currentMode === 'openplc' ? twinControlAPI : null;
+        console.log('Twin control API ' + (currentMode === 'openplc' ? 'injected' : 'disabled (local mode)'));
+      } catch(e) {
+        console.error('Failed to inject twinControl:', e);
+      }
+    };
+
+    // ===== MODE SWITCHING =====
+    function setMode(mode) {
+      currentMode = mode;
+
+      // Update UI
+      document.getElementById('btn-local').classList.toggle('active', mode === 'local');
+      document.getElementById('btn-openplc').classList.toggle('active', mode === 'openplc');
+
+      // Stop/start polling
+      if (mode === 'openplc') {
+        startPolling();
+        // Inject twinControl API
+        try {
+          twinFrame.contentWindow.twinControl = twinControlAPI;
+        } catch(e) {}
+      } else {
+        stopPolling();
+        // Remove twinControl API so twin uses internal logic
+        try {
+          twinFrame.contentWindow.twinControl = null;
+        } catch(e) {}
+        // Reset UI to show local simulation is running
+        updateUI({
+          conveyor_run: true,
+          conveyor_speed: 50,
+          diverter_red: false,
+          diverter_white: false,
+          diverter_blue: false,
+          count_red: 0,
+          count_white: 0,
+          count_blue: 0,
+          count_total: 0,
+          fault: false
+        });
+        document.getElementById('conn-dot').className = 'connection-dot connected';
+        document.getElementById('conn-text').textContent = 'Local Simulation';
+      }
+    }
+
+    // ===== PLC POLLING =====
+    function startPolling() {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(pollPLC, 200); // Poll every 200ms
+      document.getElementById('conn-text').textContent = 'Connecting...';
+      document.getElementById('conn-dot').className = 'connection-dot polling';
+    }
+
+    function stopPolling() {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+      }
+    }
+
+    async function pollPLC() {
+      if (isPolling) return;
+      isPolling = true;
+
+      try {
+        const response = await fetch('/api/plc/state');
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+
+        const data = await response.json();
+        plcState = {
+          conveyor_run: data.conveyor_run || false,
+          conveyor_speed: data.conveyor_speed || 50,
+          diverter_red: data.diverter_red || false,
+          diverter_white: data.diverter_white || false,
+          diverter_blue: data.diverter_blue || false,
+          count_red: data.count_red || 0,
+          count_white: data.count_white || 0,
+          count_blue: data.count_blue || 0,
+          count_total: data.count_total || 0,
+          fault: data.fault_light || data.alarm || false,
+          run_light: data.run_light || false,
+          ready_light: data.ready_light || false
+        };
+
+        updateUI(plcState);
+        document.getElementById('conn-dot').className = 'connection-dot connected';
+        document.getElementById('conn-text').textContent = 'Connected to PLC';
+
+      } catch(err) {
+        console.error('Poll error:', err);
+        document.getElementById('conn-dot').className = 'connection-dot disconnected';
+        document.getElementById('conn-text').textContent = 'Connection Failed';
+      }
+
+      isPolling = false;
+    }
+
+    // ===== UI UPDATE =====
+    function updateUI(state) {
+      // System status indicator
+      const statusEl = document.getElementById('system-status');
+      if (state.fault) {
+        statusEl.className = 'status-indicator fault';
+      } else if (state.conveyor_run) {
+        statusEl.className = 'status-indicator running';
+      } else {
+        statusEl.className = 'status-indicator stopped';
+      }
+
+      // Conveyor status
+      const convStatus = document.getElementById('conveyor-status');
+      convStatus.textContent = state.conveyor_run ? 'RUNNING' : 'STOPPED';
+      convStatus.className = 'status-value ' + (state.conveyor_run ? 'on' : 'off');
+
+      // Speed
+      document.getElementById('conveyor-speed').textContent = state.conveyor_speed + '%';
+
+      // Fault
+      const faultEl = document.getElementById('fault-status');
+      faultEl.textContent = state.fault ? 'ACTIVE' : 'NONE';
+      faultEl.className = 'status-value ' + (state.fault ? 'on' : 'off');
+      faultEl.style.color = state.fault ? '#ef4444' : '#64748b';
+
+      // Diverters
+      document.getElementById('diverter-red').className = 'diverter-status red' + (state.diverter_red ? ' active' : '');
+      document.getElementById('diverter-white').className = 'diverter-status white' + (state.diverter_white ? ' active' : '');
+      document.getElementById('diverter-blue').className = 'diverter-status blue' + (state.diverter_blue ? ' active' : '');
+
+      // Counters
+      document.getElementById('count-red').textContent = state.count_red;
+      document.getElementById('count-white').textContent = state.count_white;
+      document.getElementById('count-blue').textContent = state.count_blue;
+      document.getElementById('count-total').textContent = state.count_total;
+    }
+
+    // ===== COMMANDS =====
+    async function sendCommand(cmd) {
+      if (currentMode === 'local') {
+        // In local mode, dispatch events to twin
+        switch(cmd) {
+          case 'start':
+            try { twinFrame.contentWindow.dispatchEvent(new Event('toggle-power-motors')); } catch(e) {}
+            break;
+          case 'stop':
+            try { twinFrame.contentWindow.dispatchEvent(new Event('toggle-power-motors')); } catch(e) {}
+            break;
+          case 'reset':
+            // Reset counters in local mode
+            break;
+        }
+        return;
+      }
+
+      // OpenPLC mode - send to bridge
+      try {
+        const response = await fetch('/api/plc/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: cmd })
+        });
+        if (!response.ok) {
+          console.error('Command failed:', response.status);
+        }
+      } catch(err) {
+        console.error('Command error:', err);
+      }
+    }
+
+    function spawnBox() {
+      try {
+        twinFrame.contentWindow.dispatchEvent(new Event('spawn-box'));
+      } catch(e) {
+        console.error('Failed to spawn box:', e);
+      }
+    }
+
+    // ===== INIT =====
+    // Start in local mode
+    setMode('local');
+  </script>
+</body>
+</html>

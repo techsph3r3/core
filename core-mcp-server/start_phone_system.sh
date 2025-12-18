@@ -70,9 +70,12 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # Detect environment and show URLs
+# VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
+VNC_PASSWORD="core123"
+
 if [ -n "$CODESPACE_NAME" ]; then
     PHONE_URL="https://$CODESPACE_NAME-8081.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
-    NOVNC_URL="https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
+    NOVNC_URL="https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
 
     echo -e "${YELLOW}GitHub Codespace URLs:${NC}"
     echo ""
@@ -88,11 +91,12 @@ if [ -n "$CODESPACE_NAME" ]; then
     echo ""
     echo -e "${YELLOW}Note:${NC} Make sure port 8081 is set to 'Public' in Codespace port settings"
 else
+    NOVNC_URL="http://localhost:6080/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
     echo -e "${YELLOW}Local URLs:${NC}"
     echo ""
     echo -e "  ${CYAN}Phone Sensor Page:${NC}  http://localhost:8081/phone"
     echo -e "  ${CYAN}Phone Display:${NC}      http://localhost:8081/phone-display"
-    echo -e "  ${CYAN}noVNC Desktop:${NC}      http://localhost:6080"
+    echo -e "  ${CYAN}noVNC Desktop:${NC}      ${NOVNC_URL}"
     echo ""
     echo -e "${YELLOW}QR Code Connection:${NC}"
     echo "  1. Open http://localhost:8081/phone on your desktop"

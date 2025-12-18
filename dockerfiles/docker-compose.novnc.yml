@@ -12,6 +12,7 @@ services:
     pid: host
     ports:
       - "6080:6080"   # noVNC web interface
+      - "6081-6085:6081-6085"  # HMI VNC proxies
       - "5901:5901"   # VNC server (optional, for native VNC clients)
       - "50051:50051" # CORE gRPC API
     environment:

@@ -1,0 +1,874 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Industrial Digital Twin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #1a1a1a; }
+      #root { height: 100%; }
+
+      /* Hide the bundled app's left panel */
+      .hide-bundled-panel {
+        display: none !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+      }
+
+      /* Our Control Panel - Upper Right */
+      #control-panel {
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: rgba(15, 23, 42, 0.95);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(71, 85, 105, 0.5);
+        border-radius: 12px;
+        padding: 16px;
+        color: #fff;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-size: 13px;
+        z-index: 10000;
+        min-width: 280px;
+        max-width: 320px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      }
+
+      #control-panel .panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(71, 85, 105, 0.5);
+      }
+
+      #control-panel .panel-title {
+        font-weight: 700;
+        font-size: 15px;
+        color: #f1f5f9;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .status-indicator {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #64748b;
+      }
+      .status-indicator.running { background: #22c55e; animation: pulse 2s infinite; }
+      .status-indicator.stopped { background: #f59e0b; }
+      .status-indicator.fault { background: #ef4444; animation: pulse 0.5s infinite; }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+        50% { opacity: 0.8; box-shadow: 0 0 0 4px rgba(34, 197, 94, 0); }
+      }
+
+      /* Mode Toggle */
+      .mode-toggle {
+        display: flex;
+        background: rgba(30, 41, 59, 0.8);
+        border-radius: 8px;
+        padding: 4px;
+        margin-bottom: 16px;
+      }
+
+      .mode-btn {
+        flex: 1;
+        padding: 10px 12px;
+        border: none;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .mode-btn.active {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        color: white;
+        box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+      }
+
+      .mode-btn:hover:not(.active) {
+        background: rgba(51, 65, 85, 0.8);
+        color: #e2e8f0;
+      }
+
+      /* Status Section */
+      .status-section {
+        background: rgba(30, 41, 59, 0.5);
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+      }
+
+      .status-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .status-row:last-child { margin-bottom: 0; }
+
+      .status-label {
+        color: #94a3b8;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .status-value {
+        font-weight: 600;
+        font-size: 12px;
+      }
+      .status-value.on { color: #22c55e; }
+      .status-value.off { color: #64748b; }
+
+      /* Control Buttons */
+      .control-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .ctrl-btn {
+        padding: 12px 8px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 700;
+        transition: all 0.15s ease;
+        text-transform: uppercase;
+      }
+      .ctrl-btn:active { transform: scale(0.95); }
+      .ctrl-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+      .ctrl-btn.start {
+        background: linear-gradient(135deg, #22c55e, #16a34a);
+        color: white;
+      }
+      .ctrl-btn.start:hover:not(:disabled) { background: linear-gradient(135deg, #4ade80, #22c55e); }
+
+      .ctrl-btn.stop {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+      }
+      .ctrl-btn.stop:hover:not(:disabled) { background: linear-gradient(135deg, #f87171, #ef4444); }
+
+      .ctrl-btn.reset {
+        background: linear-gradient(135deg, #6366f1, #4f46e5);
+        color: white;
+      }
+      .ctrl-btn.reset:hover:not(:disabled) { background: linear-gradient(135deg, #818cf8, #6366f1); }
+
+      /* Spawn Buttons */
+      .spawn-section { margin-bottom: 12px; }
+
+      .spawn-section-title {
+        color: #94a3b8;
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+
+      .spawn-buttons {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+
+      .spawn-btn {
+        padding: 10px 8px;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 700;
+        transition: all 0.15s ease;
+        text-transform: uppercase;
+      }
+      .spawn-btn:active { transform: scale(0.95); }
+
+      .spawn-btn.red { background: linear-gradient(135deg, #ef4444, #dc2626); color: white; }
+      .spawn-btn.white { background: linear-gradient(135deg, #f1f5f9, #e2e8f0); color: #1e293b; }
+      .spawn-btn.blue { background: linear-gradient(135deg, #3b82f6, #2563eb); color: white; }
+
+      .spawn-random {
+        width: 100%;
+        padding: 8px;
+        border: 2px dashed rgba(148, 163, 184, 0.3);
+        border-radius: 8px;
+        background: transparent;
+        color: #94a3b8;
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+      .spawn-random:hover {
+        border-color: rgba(148, 163, 184, 0.6);
+        color: #e2e8f0;
+        background: rgba(51, 65, 85, 0.3);
+      }
+
+      /* Counters */
+      .counters {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        margin-top: 12px;
+      }
+
+      .counter-box {
+        background: rgba(30, 41, 59, 0.5);
+        border-radius: 8px;
+        padding: 8px 6px;
+        text-align: center;
+      }
+
+      .counter-value {
+        font-size: 16px;
+        font-weight: 700;
+        color: #f1f5f9;
+        line-height: 1;
+      }
+
+      .counter-label {
+        font-size: 8px;
+        color: #64748b;
+        text-transform: uppercase;
+        margin-top: 4px;
+      }
+
+      .counter-box.red .counter-value { color: #f87171; }
+      .counter-box.white .counter-value { color: #e2e8f0; }
+      .counter-box.blue .counter-value { color: #60a5fa; }
+      .counter-box.total .counter-value { color: #a78bfa; }
+
+      /* PLC Connection Info */
+      .plc-info {
+        margin-top: 12px;
+        padding: 10px;
+        border-radius: 6px;
+        font-size: 10px;
+        background: rgba(30, 41, 59, 0.5);
+      }
+      .plc-info.connected { border-left: 3px solid #22c55e; }
+      .plc-info.disconnected { border-left: 3px solid #f87171; }
+      .plc-info.local { border-left: 3px solid #f59e0b; }
+
+      .plc-info-title { font-weight: 600; color: #e2e8f0; margin-bottom: 4px; }
+      .plc-info-detail { color: #94a3b8; }
+
+      /* Keyboard hint */
+      .keyboard-hint {
+        margin-top: 8px;
+        font-size: 9px;
+        color: #475569;
+        text-align: center;
+      }
+
+      kbd {
+        background: rgba(51, 65, 85, 0.5);
+        padding: 2px 5px;
+        border-radius: 3px;
+        font-family: inherit;
+        margin: 0 2px;
+      }
+    </style>
+
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "three/": "https://aistudiocdn.com/three@^0.181.2/",
+    "three": "https://aistudiocdn.com/three@^0.181.2",
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
+    "cannon-es": "https://aistudiocdn.com/cannon-es@^0.20.0"
+  }
+}
+</script>
+
+  <!-- Digital Twin Control System - Full PLC Integration -->
+  <script>
+    /**
+     * Digital Twin Control System with OpenPLC Integration
+     *
+     * Two modes:
+     * 1. LOCAL - Bundled JS logic runs the simulation autonomously
+     * 2. PLC   - OpenPLC controls conveyor/diverters via Modbus, 3D twin reports sensors
+     *
+     * In PLC mode:
+     * - Conveyor runs only when PLC output 'conveyor_run' is true
+     * - Diverters activate based on PLC outputs
+     * - 3D twin sends sensor data (color detection) to PLC inputs
+     * - Counters come from PLC holding registers
+     */
+    (function() {
+      'use strict';
+
+      // Control Mode: 'local' or 'plc'
+      let controlMode = 'local';
+
+      // PLC state
+      const plcState = {
+        connected: false,
+        bridgeConnected: false,
+        ws: null,
+        outputs: {
+          conveyor_run: false,
+          diverter_red: false,
+          diverter_white: false,
+          diverter_blue: false,
+          alarm: false,
+          run_light: false,
+          fault_light: false,
+          ready_light: true
+        },
+        registers: {
+          count_red: 0,
+          count_white: 0,
+          count_blue: 0,
+          count_total: 0,
+          conveyor_speed: 50
+        }
+      };
+
+      // Local counters (for local mode)
+      const localCounters = { red: 0, white: 0, blue: 0, total: 0 };
+
+      // ====== PLC COMMUNICATION ======
+
+      function connectPLC() {
+        if (plcState.ws && plcState.ws.readyState === WebSocket.OPEN) return;
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/plc-io`;
+
+        console.log('PLC Bridge: Connecting to', wsUrl);
+
+        try {
+          plcState.ws = new WebSocket(wsUrl);
+
+          plcState.ws.onopen = () => {
+            console.log('PLC Bridge: Connected');
+            plcState.bridgeConnected = true;
+            updateUI();
+            // Request current state
+            plcState.ws.send(JSON.stringify({ type: 'get_state' }));
+            plcState.ws.send(JSON.stringify({ type: 'get_io_map' }));
+          };
+
+          plcState.ws.onmessage = (event) => {
+            try {
+              const msg = JSON.parse(event.data);
+
+              if (msg.type === 'plc_state') {
+                plcState.connected = msg.data.connected;
+                if (msg.data.outputs) {
+                  Object.assign(plcState.outputs, msg.data.outputs);
+                }
+                if (msg.data.registers) {
+                  Object.assign(plcState.registers, msg.data.registers);
+                }
+                updateUI();
+              }
+            } catch (e) {
+              console.error('PLC message error:', e);
+            }
+          };
+
+          plcState.ws.onclose = () => {
+            console.log('PLC Bridge: Disconnected');
+            plcState.bridgeConnected = false;
+            plcState.connected = false;
+            updateUI();
+            setTimeout(connectPLC, 3000);
+          };
+
+          plcState.ws.onerror = (e) => {
+            console.error('PLC Bridge: Error', e);
+          };
+
+        } catch (e) {
+          console.error('PLC connection failed:', e);
+          setTimeout(connectPLC, 3000);
+        }
+      }
+
+      // Send sensor state to PLC
+      function sendSensorToPLC(name, value) {
+        if (plcState.ws && plcState.ws.readyState === WebSocket.OPEN) {
+          plcState.ws.send(JSON.stringify({
+            type: 'sensor',
+            name: name,
+            value: !!value
+          }));
+        }
+      }
+
+      // Send button press (momentary) to PLC
+      function sendButtonToPLC(name) {
+        sendSensorToPLC(name, true);
+        setTimeout(() => sendSensorToPLC(name, false), 150);
+      }
+
+      // ====== SPAWN & CONTROL ======
+
+      function spawnBox() {
+        window.dispatchEvent(new Event('spawn-box'));
+        if (controlMode === 'local') {
+          localCounters.total++;
+          updateUI();
+        }
+      }
+
+      // Control functions
+      function startSystem() {
+        if (controlMode === 'plc') {
+          sendButtonToPLC('start_button');
+        }
+      }
+
+      function stopSystem() {
+        if (controlMode === 'plc') {
+          sendButtonToPLC('stop_button');
+        }
+      }
+
+      function resetSystem() {
+        if (controlMode === 'plc') {
+          sendButtonToPLC('reset_button');
+        } else {
+          localCounters.red = 0;
+          localCounters.white = 0;
+          localCounters.blue = 0;
+          localCounters.total = 0;
+          updateUI();
+        }
+      }
+
+      function emergencyStop() {
+        if (controlMode === 'plc') {
+          sendSensorToPLC('estop', true);
+          // E-stop stays latched until reset
+        }
+      }
+
+      // ====== EXPOSE GLOBAL CONTROL INTERFACE ======
+
+      window.twinControl = {
+        getMode: () => controlMode,
+        setMode: (mode) => {
+          if (mode === 'local' || mode === 'plc') {
+            controlMode = mode;
+            updateUI();
+            console.log('Control mode:', mode);
+          }
+        },
+
+        // Spawn
+        spawnBox: spawnBox,
+
+        // PLC Controls
+        start: startSystem,
+        stop: stopSystem,
+        reset: resetSystem,
+        estop: emergencyStop,
+
+        // Get current state (for 3D twin to read)
+        isConveyorRunning: () => {
+          if (controlMode === 'local') return true; // Local mode: always running
+          return plcState.outputs.conveyor_run;
+        },
+
+        isDiverterActive: (color) => {
+          if (controlMode === 'local') return false; // Local mode handles internally
+          return plcState.outputs[`diverter_${color}`] || false;
+        },
+
+        getConveyorSpeed: () => {
+          if (controlMode === 'local') return 50;
+          return plcState.registers.conveyor_speed || 50;
+        },
+
+        // Report sensor detection (3D twin calls this when package passes sensor)
+        reportSensor: (sensorName, value) => {
+          if (controlMode === 'plc') {
+            sendSensorToPLC(sensorName, value);
+
+            // Also send package_present when any color is detected
+            if (value && (sensorName === 'sensor_red' || sensorName === 'sensor_white' || sensorName === 'sensor_blue')) {
+              sendSensorToPLC('package_present', true);
+              setTimeout(() => sendSensorToPLC('package_present', false), 200);
+            }
+          } else {
+            // Local mode: track counts
+            if (value) {
+              if (sensorName === 'sensor_red') localCounters.red++;
+              else if (sensorName === 'sensor_white') localCounters.white++;
+              else if (sensorName === 'sensor_blue') localCounters.blue++;
+              updateUI();
+            }
+          }
+        },
+
+        // Get counters
+        getCounters: () => {
+          if (controlMode === 'plc') {
+            return {
+              red: plcState.registers.count_red || 0,
+              white: plcState.registers.count_white || 0,
+              blue: plcState.registers.count_blue || 0,
+              total: plcState.registers.count_total || 0
+            };
+          }
+          return { ...localCounters };
+        },
+
+        // Get PLC state
+        getPLCState: () => ({ ...plcState }),
+        isConnected: () => plcState.connected,
+        isBridgeConnected: () => plcState.bridgeConnected
+      };
+
+      // ====== HIDE BUNDLED LEFT PANEL ======
+
+      function hideBundledPanel() {
+        const allDivs = document.querySelectorAll('div');
+
+        for (const div of allDivs) {
+          if (div.id === 'control-panel' || div.closest('#control-panel')) continue;
+
+          const classes = div.className || '';
+
+          // Match the bundled panel's Tailwind classes
+          if (classes.includes('absolute') &&
+              classes.includes('top-4') &&
+              classes.includes('left-4')) {
+            div.classList.add('hide-bundled-panel');
+          }
+
+          // Also check by computed position
+          const style = window.getComputedStyle(div);
+          if ((style.position === 'absolute' || style.position === 'fixed') && div.id !== 'control-panel') {
+            const rect = div.getBoundingClientRect();
+            if (rect.left < 50 && rect.top < 50 && rect.width > 150 && rect.height > 150) {
+              if (div.querySelectorAll('button').length > 0) {
+                div.classList.add('hide-bundled-panel');
+              }
+            }
+          }
+        }
+      }
+
+      function setupPanelHider() {
+        hideBundledPanel();
+        const observer = new MutationObserver(hideBundledPanel);
+        observer.observe(document.body, { childList: true, subtree: true });
+        setInterval(hideBundledPanel, 1000);
+      }
+
+      // ====== UI ======
+
+      function updateUI() {
+        const panel = document.getElementById('control-panel');
+        if (!panel) return;
+
+        // Mode buttons
+        panel.querySelectorAll('.mode-btn').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.mode === controlMode);
+        });
+
+        // Status indicator
+        const indicator = panel.querySelector('.status-indicator');
+        if (indicator) {
+          indicator.className = 'status-indicator';
+          if (controlMode === 'plc') {
+            if (plcState.outputs.fault_light) {
+              indicator.classList.add('fault');
+            } else if (plcState.outputs.run_light || plcState.outputs.conveyor_run) {
+              indicator.classList.add('running');
+            } else if (plcState.outputs.ready_light) {
+              indicator.classList.add('stopped');
+            }
+          } else {
+            indicator.classList.add('running'); // Local always running
+          }
+        }
+
+        // Control buttons - only enabled in PLC mode
+        const startBtn = panel.querySelector('.ctrl-btn.start');
+        const stopBtn = panel.querySelector('.ctrl-btn.stop');
+        const resetBtn = panel.querySelector('.ctrl-btn.reset');
+        if (startBtn) startBtn.disabled = (controlMode !== 'plc');
+        if (stopBtn) stopBtn.disabled = (controlMode !== 'plc');
+
+        // Status values
+        if (controlMode === 'plc') {
+          updateStatusValue('conveyor', plcState.outputs.conveyor_run);
+          updateStatusValue('diverter-red', plcState.outputs.diverter_red);
+          updateStatusValue('diverter-white', plcState.outputs.diverter_white);
+          updateStatusValue('diverter-blue', plcState.outputs.diverter_blue);
+        } else {
+          updateStatusValue('conveyor', true);
+          updateStatusValue('diverter-red', false);
+          updateStatusValue('diverter-white', false);
+          updateStatusValue('diverter-blue', false);
+        }
+
+        // Counters
+        const counters = window.twinControl.getCounters();
+        const redEl = document.getElementById('counter-red');
+        const whiteEl = document.getElementById('counter-white');
+        const blueEl = document.getElementById('counter-blue');
+        const totalEl = document.getElementById('counter-total');
+        if (redEl) redEl.textContent = counters.red;
+        if (whiteEl) whiteEl.textContent = counters.white;
+        if (blueEl) blueEl.textContent = counters.blue;
+        if (totalEl) totalEl.textContent = counters.total;
+
+        // PLC info
+        const plcInfo = panel.querySelector('.plc-info');
+        const plcTitle = panel.querySelector('.plc-info-title');
+        const plcDetail = panel.querySelector('.plc-info-detail');
+
+        if (plcInfo && plcTitle && plcDetail) {
+          if (controlMode === 'local') {
+            plcInfo.className = 'plc-info local';
+            plcTitle.textContent = 'Local Simulation';
+            plcDetail.textContent = 'Conveyor always running. Sorting uses JS logic.';
+          } else if (plcState.connected) {
+            plcInfo.className = 'plc-info connected';
+            plcTitle.textContent = 'OpenPLC Connected';
+            plcDetail.textContent = 'PLC controls conveyor & diverters via Modbus.';
+          } else if (plcState.bridgeConnected) {
+            plcInfo.className = 'plc-info disconnected';
+            plcTitle.textContent = 'Bridge OK - PLC Offline';
+            plcDetail.textContent = 'WebSocket bridge running. Waiting for PLC...';
+          } else {
+            plcInfo.className = 'plc-info disconnected';
+            plcTitle.textContent = 'Disconnected';
+            plcDetail.textContent = 'Connecting to PLC bridge...';
+          }
+        }
+      }
+
+      function updateStatusValue(id, isOn) {
+        const el = document.getElementById(`status-${id}`);
+        if (el) {
+          el.textContent = isOn ? 'ON' : 'OFF';
+          el.className = 'status-value ' + (isOn ? 'on' : 'off');
+        }
+      }
+
+      // ====== CREATE CONTROL PANEL ======
+
+      function createControlPanel() {
+        const div = document.createElement('div');
+        div.id = 'control-panel';
+        div.innerHTML = `
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="status-indicator running"></span>
+              Sorting Facility
+            </div>
+          </div>
+
+          <div class="mode-toggle">
+            <button class="mode-btn active" data-mode="local">Local</button>
+            <button class="mode-btn" data-mode="plc">OpenPLC</button>
+          </div>
+
+          <div class="control-buttons">
+            <button class="ctrl-btn start" onclick="window.twinControl.start()" disabled>START</button>
+            <button class="ctrl-btn stop" onclick="window.twinControl.stop()" disabled>STOP</button>
+            <button class="ctrl-btn reset" onclick="window.twinControl.reset()">RESET</button>
+          </div>
+
+          <div class="status-section">
+            <div class="status-row">
+              <span class="status-label">Conveyor</span>
+              <span id="status-conveyor" class="status-value on">ON</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Diverter Red</span>
+              <span id="status-diverter-red" class="status-value off">OFF</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Diverter White</span>
+              <span id="status-diverter-white" class="status-value off">OFF</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">Diverter Blue</span>
+              <span id="status-diverter-blue" class="status-value off">OFF</span>
+            </div>
+          </div>
+
+          <div class="spawn-section">
+            <div class="spawn-section-title">Spawn Package</div>
+            <div class="spawn-buttons">
+              <button class="spawn-btn red" onclick="window.twinControl.spawnBox()">Red</button>
+              <button class="spawn-btn white" onclick="window.twinControl.spawnBox()">White</button>
+              <button class="spawn-btn blue" onclick="window.twinControl.spawnBox()">Blue</button>
+            </div>
+            <button class="spawn-random" onclick="window.twinControl.spawnBox()">
+              Spawn Random Package
+            </button>
+          </div>
+
+          <div class="counters">
+            <div class="counter-box red">
+              <div id="counter-red" class="counter-value">0</div>
+              <div class="counter-label">Red</div>
+            </div>
+            <div class="counter-box white">
+              <div id="counter-white" class="counter-value">0</div>
+              <div class="counter-label">White</div>
+            </div>
+            <div class="counter-box blue">
+              <div id="counter-blue" class="counter-value">0</div>
+              <div class="counter-label">Blue</div>
+            </div>
+            <div class="counter-box total">
+              <div id="counter-total" class="counter-value">0</div>
+              <div class="counter-label">Total</div>
+            </div>
+          </div>
+
+          <div class="plc-info local">
+            <div class="plc-info-title">Local Simulation</div>
+            <div class="plc-info-detail">Conveyor always running. Sorting uses JS logic.</div>
+          </div>
+
+          <div class="keyboard-hint">
+            <kbd>Space</kbd> Spawn &nbsp;|&nbsp; Switch to <strong>OpenPLC</strong> mode for PLC control
+          </div>
+        `;
+
+        document.body.appendChild(div);
+
+        // Mode toggle
+        div.querySelectorAll('.mode-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            window.twinControl.setMode(btn.dataset.mode);
+          });
+        });
+
+        updateUI();
+      }
+
+      // ====== ANIMATION CONTROL ======
+      // Inject PLC control into the bundled 3D app's animation loop
+
+      function hookConveyorAnimation() {
+        // The bundled app uses Three.js. We need to intercept the animation.
+        // Since we can't modify the bundled code, we'll override requestAnimationFrame
+        // to inject our conveyor speed control.
+
+        let lastConveyorState = true;
+        let animationPaused = false;
+
+        // Create a CSS class to pause/slow animations
+        const style = document.createElement('style');
+        style.id = 'plc-animation-control';
+        style.textContent = `
+          .conveyor-stopped canvas {
+            /* We can't directly stop Three.js, but we can signal the state */
+          }
+        `;
+        document.head.appendChild(style);
+
+        // Periodically check and update conveyor state
+        setInterval(() => {
+          const shouldRun = controlMode === 'local' || plcState.outputs.conveyor_run;
+
+          if (shouldRun !== lastConveyorState) {
+            lastConveyorState = shouldRun;
+            console.log('Conveyor state changed:', shouldRun ? 'RUNNING' : 'STOPPED');
+
+            // Dispatch custom event for any listeners
+            window.dispatchEvent(new CustomEvent('conveyor-state', {
+              detail: { running: shouldRun, speed: plcState.registers.conveyor_speed || 50 }
+            }));
+
+            // Toggle body class
+            document.body.classList.toggle('conveyor-stopped', !shouldRun);
+          }
+        }, 100);
+
+        // Also expose time scale control
+        window.setConveyorSpeed = (speed) => {
+          // This would need Three.js access to actually change animation speed
+          console.log('Conveyor speed set to:', speed);
+        };
+      }
+
+      // ====== PHYSICS SPEED CONTROL ======
+      // Attempt to control Three.js/Cannon physics time step
+
+      function setupPhysicsControl() {
+        // Try to find and modify the physics world time step
+        const originalRAF = window.requestAnimationFrame;
+        let frameSkip = 0;
+
+        window.requestAnimationFrame = function(callback) {
+          // In PLC mode with conveyor stopped, we still render but slow down physics
+          return originalRAF.call(window, function(timestamp) {
+            // Check if conveyor should be running
+            const shouldRun = controlMode === 'local' || plcState.outputs.conveyor_run;
+
+            if (!shouldRun) {
+              // Skip some frames to slow down animation when stopped
+              frameSkip++;
+              if (frameSkip % 10 !== 0) {
+                // Still call the callback but with modified delta time
+                // This slows down but doesn't completely stop the animation
+              }
+            } else {
+              frameSkip = 0;
+            }
+
+            callback(timestamp);
+          });
+        };
+      }
+
+      // ====== INIT ======
+
+      function init() {
+        createControlPanel();
+        setupPanelHider();
+        connectPLC();
+        hookConveyorAnimation();
+        // setupPhysicsControl(); // Commented out - too aggressive
+        setInterval(updateUI, 250);
+      }
+
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+      } else {
+        init();
+      }
+
+    })();
+  </script>
+
+  <script type="module" crossorigin src="./assets/index-CUtS29dY.js"></script>
+</head>
+  <body>
+    <div id="root"></div>
+</body>
+</html>

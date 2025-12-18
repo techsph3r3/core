@@ -1,0 +1,1736 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Industrial Digital Twin</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #0f0f11; }
+  #root { height: 100%; }
+  /* Custom Scrollbar for panel */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: #1f1f1f; }
+  ::-webkit-scrollbar-thumb { background: #444; borderRadius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #555; }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "react": "https://aistudiocdn.com/react@^19.2.1",
+    "react/": "https://aistudiocdn.com/react@^19.2.1/",
+    "react-dom": "https://aistudiocdn.com/react-dom@^19.2.1",
+    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client.js",
+    "three": "https://aistudiocdn.com/three@^0.181.2",
+    "three/": "https://aistudiocdn.com/three@^0.181.2/",
+    "cannon-es": "https://aistudiocdn.com/cannon-es@^0.20.0"
+  }
+}
+</script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react,typescript" data-type="module">
+
+// --- IMPORTS ---
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import ReactDOM from 'react-dom/client';
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+
+// --- CONSTANTS ---
+const GRAVITY = -9.82;
+const TIME_STEP = 1 / 60;
+
+// --- TRAVEL TIME MEASUREMENT ---
+// Track when packages pass sensors and when diverters activate
+// This helps calibrate the PLC timing constants
+const travelTimeLog = {
+  sensorEvents: [],   // {time, color, boxId, event: 'enter'|'exit'}
+  diverterEvents: [], // {time, color, state}
+  lastDiverterState: { red: false, white: false, blue: false },
+
+  logSensor(color, boxId, entering) {
+    const now = performance.now();
+    this.sensorEvents.push({
+      time: now,
+      color,
+      boxId,
+      event: entering ? 'enter' : 'exit'
+    });
+    console.log(`[TIMING] ${entering ? '📦→' : '📦←'} ${color.toUpperCase()} sensor ${entering ? 'DETECTED' : 'CLEARED'} box=${boxId} t=${(now/1000).toFixed(2)}s`);
+
+    // If entering, find matching diverter activation time
+    if (entering) {
+      this.checkTravelTime(color, boxId, now);
+    }
+  },
+
+  logDiverter(color, state) {
+    const now = performance.now();
+    if (state !== this.lastDiverterState[color]) {
+      this.diverterEvents.push({ time: now, color, state });
+      console.log(`[TIMING] ${state ? '🚪↗' : '🚪↙'} ${color.toUpperCase()} diverter ${state ? 'OPEN' : 'CLOSED'} t=${(now/1000).toFixed(2)}s`);
+      this.lastDiverterState[color] = state;
+    }
+  },
+
+  checkTravelTime(color, boxId, sensorTime) {
+    // Find the most recent diverter activation for this color after the sensor event
+    // This is called when sensor triggers; we'll look for diverter later
+    setTimeout(() => {
+      const recentDiverter = this.diverterEvents
+        .filter(e => e.color === color && e.state === true && e.time > sensorTime)
+        .sort((a, b) => a.time - b.time)[0];
+
+      if (recentDiverter) {
+        const travelTimeMs = recentDiverter.time - sensorTime;
+        console.log(`[TIMING] ⏱️ ${color.toUpperCase()} travel time: ${(travelTimeMs/1000).toFixed(3)}s (${Math.round(travelTimeMs/100)} shift cycles at 100ms/cycle)`);
+      }
+    }, 5000); // Check after 5 seconds to allow diverter to activate
+  },
+
+  // Calculate recommended shift register positions based on measured travel times
+  getRecommendedPositions() {
+    const colors = ['red', 'white', 'blue'];
+    const recommendations = {};
+
+    colors.forEach(color => {
+      const enters = this.sensorEvents.filter(e => e.color === color && e.event === 'enter');
+      const diverterOpens = this.diverterEvents.filter(e => e.color === color && e.state === true);
+
+      if (enters.length > 0 && diverterOpens.length > 0) {
+        // Match sensor events with subsequent diverter opens
+        const travelTimes = [];
+        enters.forEach(sensorEvent => {
+          const nextDiverter = diverterOpens.find(d => d.time > sensorEvent.time && d.time < sensorEvent.time + 10000);
+          if (nextDiverter) {
+            travelTimes.push(nextDiverter.time - sensorEvent.time);
+          }
+        });
+
+        if (travelTimes.length > 0) {
+          const avgMs = travelTimes.reduce((a, b) => a + b, 0) / travelTimes.length;
+          const avgBits = Math.round(avgMs / 100); // 100ms per shift cycle
+          recommendations[color] = {
+            avgTravelTimeMs: Math.round(avgMs),
+            recommendedBitPosition: avgBits,
+            samples: travelTimes.length
+          };
+        }
+      }
+    });
+
+    console.log('[TIMING] Recommended diverter positions:', recommendations);
+    return recommendations;
+  }
+};
+
+// Make available globally for debugging
+window.travelTimeLog = travelTimeLog;
+
+const MATERIALS = {
+  ground: new CANNON.Material('ground'),
+  object: new CANNON.Material('object'),
+  conveyor: new CANNON.Material('conveyor'),
+  pusher: new CANNON.Material('pusher'),
+  rail: new CANNON.Material('rail'),
+};
+
+const CONTACT_MATERIALS = [
+  new CANNON.ContactMaterial(MATERIALS.ground, MATERIALS.object, { friction: 0.5, restitution: 0.2 }),
+  new CANNON.ContactMaterial(MATERIALS.object, MATERIALS.object, { friction: 0.4, restitution: 0.1 }),
+  new CANNON.ContactMaterial(MATERIALS.conveyor, MATERIALS.object, { friction: 0.9, restitution: 0.0 }),
+  new CANNON.ContactMaterial(MATERIALS.pusher, MATERIALS.object, { friction: 0.1, restitution: 0.5 }),
+  new CANNON.ContactMaterial(MATERIALS.rail, MATERIALS.object, { friction: 0.0, restitution: 0.1 }),
+];
+
+// --- TYPES ---
+export interface ISimulationEntity {
+  id: string;
+  mesh: THREE.Object3D;
+  body: CANNON.Body;
+  type: 'static' | 'dynamic' | 'kinematic' | 'sensor';
+  data?: any;
+  update?: (dt: number, time: number) => void; 
+}
+
+export type ProductColor = 'red' | 'white' | 'blue';
+
+// --- FACTORY FUNCTIONS ---
+
+/**
+ * Creates a dynamic product box with physics properties.
+ * @param {string} id - Unique identifier.
+ * @param {object} pos - Initial position {x, y, z}.
+ * @param {ProductColor} colorType - Color of the box (red, white, blue).
+ * @returns {ISimulationEntity} The created entity.
+ */
+const createProductBox = (id, pos, colorType) => {
+  const size = { x: 1.05, y: 0.5, z: 0.5 };
+  const mass = 5; 
+  const colorMap = {
+    red: 0xef4444,
+    white: 0xf8fafc,
+    blue: 0x3b82f6
+  };
+  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const material = new THREE.MeshStandardMaterial({ 
+    color: colorMap[colorType], roughness: 0.4, metalness: 0.1
+  }); 
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+
+  const shape = new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
+  const body = new CANNON.Body({
+    mass: mass,
+    material: MATERIALS.object,
+    position: new CANNON.Vec3(pos.x, pos.y, pos.z),
+    fixedRotation: false 
+  });
+  body.addShape(shape);
+  body.linearDamping = 0.5;
+  body.angularDamping = 0.99; 
+  return { id, mesh, body, type: 'dynamic', data: { color: colorType } };
+};
+
+const createFloor = () => {
+  const geometry = new THREE.PlaneGeometry(60, 60);
+  const material = new THREE.MeshStandardMaterial({ 
+    color: 0x111827, roughness: 0.8, side: THREE.DoubleSide
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.receiveShadow = true;
+  const shape = new CANNON.Plane();
+  const body = new CANNON.Body({ mass: 0, material: MATERIALS.ground });
+  body.addShape(shape);
+  body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+  return { id: 'floor', mesh, body, type: 'static' };
+};
+
+const createConveyor = (id, pos, length, width, initialSpeed, direction = new CANNON.Vec3(0, 0, 1)) => {
+  const height = 0.2;
+  const mesh = new THREE.Group();
+  mesh.position.set(pos.x, pos.y, pos.z);
+  if (Math.abs(direction.x) > 0.5) mesh.rotation.y = Math.PI / 2;
+
+  const frameGeo = new THREE.BoxGeometry(width, height - 0.05, length);
+  const frameMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const frame = new THREE.Mesh(frameGeo, frameMat);
+  frame.position.y = -0.05;
+  frame.receiveShadow = true;
+  mesh.add(frame);
+
+  const slatCount = Math.floor(length * 2); 
+  const slats = [];
+  const slatGeo = new THREE.BoxGeometry(width - 0.1, 0.05, 0.4);
+  const slatMatA = new THREE.MeshStandardMaterial({ color: 0x222222 });
+  const slatMatB = new THREE.MeshStandardMaterial({ color: 0x2a2a2a });
+
+  for (let i = 0; i < slatCount; i++) {
+    const slat = new THREE.Mesh(slatGeo, i % 2 === 0 ? slatMatA : slatMatB);
+    const zPos = -length/2 + (i / slatCount) * length;
+    slat.position.set(0, height/2, zPos);
+    slat.receiveShadow = true;
+    mesh.add(slat);
+    slats.push(slat);
+  }
+
+  const shape = new CANNON.Box(new CANNON.Vec3(width / 2, height / 2, length / 2));
+  const body = new CANNON.Body({
+    mass: 0, 
+    material: MATERIALS.conveyor,
+    position: new CANNON.Vec3(pos.x, pos.y, pos.z),
+  });
+  if (Math.abs(direction.x) > 0.5) body.quaternion.setFromEuler(0, Math.PI / 2, 0);
+  body.addShape(shape);
+
+  let currentSpeed = initialSpeed;
+  const update = (dt, time) => {
+    if (currentSpeed !== 0) {
+        const dist = currentSpeed * time * 0.001;
+        slats.forEach((slat, i) => {
+          let zBase = -length/2 + (i / slatCount) * length;
+          let zCurrent = zBase + dist;
+          const relativeZ = (zCurrent + length/2) % length;
+          const wrappedZ = relativeZ < 0 ? relativeZ + length : relativeZ;
+          slat.position.z = -length/2 + wrappedZ;
+        });
+    }
+  };
+  const setSpeed = (s) => {
+    currentSpeed = s;
+    body.userData.conveyorSpeed = s;
+  };
+  body.userData = { conveyorSpeed: currentSpeed, transportDir: direction };
+  return { id, mesh, body, type: 'static', update, setSpeed };
+};
+
+const createRail = (id, pos, size) => {
+  const geometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+  const material = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.5, roughness: 0.5 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(pos.x, pos.y, pos.z);
+  mesh.castShadow = true;
+  mesh.receiveShadow = true;
+  const shape = new CANNON.Box(new CANNON.Vec3(size.x / 2, size.y / 2, size.z / 2));
+  const body = new CANNON.Body({
+    mass: 0,
+    material: MATERIALS.rail,
+    position: new CANNON.Vec3(pos.x, pos.y, pos.z),
+  });
+  body.addShape(shape);
+  return { id, mesh, body, type: 'static' };
+};
+
+const createSensor = (id, pos, colorIndicator) => {
+  const size = 0.2;
+  const geometry = new THREE.BoxGeometry(size * 0.5, 0.2, size * 0.5);
+  const material = new THREE.MeshBasicMaterial({ color: colorIndicator, transparent: true, opacity: 0.4 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(pos.x, pos.y, pos.z); 
+
+  const standGeo = new THREE.BoxGeometry(0.05, 1, 0.05);
+  const standMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const stand = new THREE.Mesh(standGeo, standMat);
+  stand.position.set(0.4, 0.5, 0);
+  mesh.add(stand);
+  
+  const lightGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
+  const lightMat = new THREE.MeshBasicMaterial({ color: 0x333333 }); 
+  const light = new THREE.Mesh(lightGeo, lightMat);
+  light.name = 'SensorLight'; 
+  light.position.set(0, 0.5, 0); 
+  stand.add(light);
+
+  const shape = new CANNON.Box(new CANNON.Vec3(size, 0.5, size));
+  const body = new CANNON.Body({
+    mass: 0,
+    isTrigger: true,
+    position: new CANNON.Vec3(pos.x, 0.5, pos.z),
+  });
+  body.addShape(shape);
+  return { id, mesh, body, type: 'sensor', data: { baseColor: colorIndicator } };
+};
+
+const createDiverter = (id, pivotPos) => {
+  const armLength = 2.8; 
+  const armHeight = 0.3;
+  const armThickness = 0.15; 
+  const swingSpeed = 5.0; 
+  
+  const geometry = new THREE.BoxGeometry(armThickness, armHeight, armLength);
+  geometry.translate(0, 0, armLength / 2);
+  const material = new THREE.MeshStandardMaterial({ color: 0xf59e0b, roughness: 0.2, metalness: 0.5 });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.castShadow = true;
+  mesh.position.set(pivotPos.x, pivotPos.y, pivotPos.z);
+  
+  const hingeGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.4);
+  const hingeMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+  const hinge = new THREE.Mesh(hingeGeo, hingeMat);
+  hinge.position.set(0, 0, 0); 
+  mesh.add(hinge);
+
+  const shape = new CANNON.Box(new CANNON.Vec3(armThickness / 2, armHeight / 2, armLength / 2));
+  const body = new CANNON.Body({
+    mass: 0, type: CANNON.Body.KINEMATIC, material: MATERIALS.pusher,
+    position: new CANNON.Vec3(pivotPos.x, pivotPos.y, pivotPos.z),
+  });
+  body.addShape(shape, new CANNON.Vec3(0, 0, armLength / 2));
+
+  let active = false;
+  let currentAngle = 0; 
+  const targetAngleOpen = Math.PI / 3.5; 
+  const targetAngleClosed = 0;
+
+  const update = (dt) => {
+    const target = active ? targetAngleOpen : targetAngleClosed;
+    const diff = target - currentAngle;
+    if (Math.abs(diff) > 0.01) {
+      const step = Math.sign(diff) * swingSpeed * dt;
+      currentAngle = (Math.abs(step) > Math.abs(diff)) ? target : currentAngle + step;
+    } else {
+      currentAngle = target;
+    }
+    body.quaternion.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), currentAngle);
+  };
+  const setActive = (isActive) => { active = isActive; };
+  return { id, mesh, body, type: 'kinematic', update, setActive };
+};
+
+const createCabinet = (id, pos, type) => {
+  const width = 1.0;
+  const height = 1.8;
+  const depth = 0.5;
+  const mesh = new THREE.Group();
+  mesh.position.set(pos.x, pos.y + height/2, pos.z);
+  const boxGeo = new THREE.BoxGeometry(width, height, depth);
+  const boxMat = new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.3, metalness: 0.6 });
+  const box = new THREE.Mesh(boxGeo, boxMat);
+  box.castShadow = true;
+  box.receiveShadow = true;
+  mesh.add(box);
+  const stripeGeo = new THREE.BoxGeometry(width + 0.02, 0.1, depth + 0.02);
+  const stripeColor = type === 'motor' ? 0xf97316 : 0x3b82f6;
+  const stripeMat = new THREE.MeshBasicMaterial({ color: stripeColor });
+  const stripe = new THREE.Mesh(stripeGeo, stripeMat);
+  stripe.position.y = 0.6;
+  mesh.add(stripe);
+  
+  // FIX: Create missing Cannon Body for cabinet
+  const shape = new CANNON.Box(new CANNON.Vec3(width/2, height/2, depth/2));
+  const body = new CANNON.Body({
+    mass: 0, material: MATERIALS.object,
+    position: new CANNON.Vec3(pos.x, pos.y + height/2, pos.z)
+  });
+  body.addShape(shape);
+
+  return { id, mesh, body, type: 'static' };
+};
+
+// --- SIMULATION ENGINE ---
+
+/**
+ * Core class managing the physics world, 3D scene, and game loop.
+ * STRICTLY listens to window.sortingControl for all logic.
+ */
+class SimulationEngine {
+  constructor(container) {
+    this.entities = new Map();
+    this.previousSensorStates = new Map(); // Track sensor state for edge detection
+    this.isRunning = false;
+    this.initFailed = false;
+    this.animationId = 0;
+    
+    this.container = container;
+
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x0f0f11);
+    this.scene.fog = new THREE.Fog(0x0f0f11, 15, 60);
+
+    this.camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+    this.camera.position.set(20, 20, 20); 
+    this.camera.lookAt(0, 0, 0);
+
+    try {
+      this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    } catch (e) {
+      console.warn("High-performance WebGL failed.", e);
+      try {
+        this.renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false, precision: 'mediump', powerPreference: 'default', failIfMajorPerformanceCaveat: false });
+      } catch (e2) {
+        this.initFailed = true;
+      }
+    }
+
+    if (this.renderer) {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      this.renderer.setSize(container.clientWidth, container.clientHeight);
+      container.appendChild(this.renderer.domElement);
+      this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+      this.controls.enableDamping = true;
+      this.controls.maxPolarAngle = Math.PI / 2 - 0.1; 
+    }
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+    this.scene.add(ambientLight);
+
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+    dirLight.position.set(5, 15, 5);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    this.scene.add(dirLight);
+
+    this.world = new CANNON.World();
+    this.world.gravity.set(0, GRAVITY, 0);
+    this.world.broadphase = new CANNON.NaiveBroadphase();
+    CONTACT_MATERIALS.forEach(cm => this.world.addContactMaterial(cm));
+
+    this.buildScene();
+    this.onResize = this.onResize.bind(this);
+    this.handleCameraView = this.handleCameraView.bind(this);
+
+    window.addEventListener('resize', this.onResize);
+    window.addEventListener('camera-view', this.handleCameraView);
+    this.loop = this.loop.bind(this);
+  }
+
+  handleCameraView(e) {
+      if (!this.controls || !e.detail) return;
+      const type = e.detail;
+      const duration = 1000; // not used for snap, but could be for tween
+      const now = performance.now();
+      
+      // Simple snapping for now, could implement tweening if library allowed
+      let pos = {x: 20, y: 20, z: 20};
+      let target = {x: 0, y: 0, z: 0};
+
+      switch(type) {
+          case 'overview': pos = {x: 20, y: 20, z: 20}; target = {x:0, y:0, z:0}; break;
+          case 'side': pos = {x: 20, y: 5, z: 0}; target = {x:0, y:0, z:0}; break;
+          case 'red': pos = {x: -8, y: 8, z: -7}; target = {x:0, y:0, z:-7}; break;
+          case 'white': pos = {x: -8, y: 8, z: 3}; target = {x:0, y:0, z:3}; break;
+          case 'blue': pos = {x: -8, y: 8, z: 13}; target = {x:0, y:0, z:13}; break;
+      }
+      
+      this.camera.position.set(pos.x, pos.y, pos.z);
+      this.controls.target.set(target.x, target.y, target.z);
+      this.controls.update();
+  }
+
+  buildScene() {
+    this.addEntity(createFloor());
+    this.addEntity(createCabinet('cabinet_motor', { x: 5, y: 0, z: -15 }, 'motor'));
+    this.addEntity(createCabinet('cabinet_plc', { x: 7, y: 0, z: -15 }, 'plc'));
+
+    const beltLength = 40; 
+    const beltWidth = 1.4;
+    const beltSpeed = 2.5;
+    this.addEntity(createConveyor('conveyor_main', { x: 0, y: 0.2, z: 0 }, beltLength, beltWidth, beltSpeed));
+
+    const stations = [
+      { color: 'red', zSens: -12, pivotZ: -7, takeoutZ: -6.5 },
+      { color: 'white', zSens: -2, pivotZ: 3, takeoutZ: 3.5 },
+      { color: 'blue', zSens: 8, pivotZ: 13, takeoutZ: 13.5 }
+    ];
+
+    const rx = 0.75; 
+    const startZ = -beltLength / 2;
+    const endZ = beltLength / 2;
+    const sideBeltWidth = 1.5;
+    const gap = sideBeltWidth + 0.5;
+
+    this.addEntity(createRail('rail_left_full', { x: -rx, y: 0.4, z: 0 }, { x: 0.1, y: 0.4, z: beltLength }));
+
+    let rz = startZ;
+    stations.forEach(st => {
+        const gapStart = st.takeoutZ - gap/2;
+        const gapEnd = st.takeoutZ + gap/2;
+        if (gapStart > rz) {
+            const len = gapStart - rz;
+            const c = rz + len/2;
+            this.addEntity(createRail(`rail_r_${c}`, { x: rx, y: 0.4, z: c }, { x: 0.1, y: 0.4, z: len }));
+        }
+        rz = gapEnd;
+    });
+    if (rz < endZ) {
+        const len = endZ - rz;
+        const c = rz + len/2;
+        this.addEntity(createRail(`rail_r_end`, { x: rx, y: 0.4, z: c }, { x: 0.1, y: 0.4, z: len }));
+    }
+
+    const colorHex = { red: 0xef4444, white: 0xffffff, blue: 0x3b82f6 };
+    stations.forEach(st => {
+       const c = st.color;
+       this.addEntity(createSensor(`sensor_${c}`, { x: 0, y: 0.2, z: st.zSens }, colorHex[c]));
+       this.addEntity(createDiverter(`pusher_${c}`, { x: -rx, y: 0.4, z: st.pivotZ }));
+       this.createPivotPost(st.color + "_pivot", { x: -rx, y: 0.4, z: st.pivotZ });
+       const sideBeltLen = 6;
+       const sideBeltX = 0.75 + (sideBeltLen / 2);
+       this.addEntity(createConveyor(
+         `conveyor_side_${c}`, { x: sideBeltX, y: 0.2, z: st.takeoutZ }, sideBeltLen, sideBeltWidth, 
+         0, new CANNON.Vec3(1, 0, 0)
+       ));
+       // UPDATED: Exit Sensor at x=3.5 with Amber color
+       this.addEntity(createSensor(`exit_sensor_${c}`, { x: 3.5, y: 0.2, z: st.takeoutZ }, 0xffaa00));
+    });
+  }
+
+  createPivotPost(id, pos) {
+    const geo = new THREE.CylinderGeometry(0.12, 0.12, 0.5);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(pos.x, pos.y, pos.z);
+    mesh.castShadow = true;
+    this.scene.add(mesh);
+  }
+
+  addEntity(entity) {
+    this.entities.set(entity.id, entity);
+    this.scene.add(entity.mesh);
+    this.world.addBody(entity.body);
+  }
+
+  removeEntity(id) {
+    const entity = this.entities.get(id);
+    if (entity) {
+      this.scene.remove(entity.mesh);
+      this.world.removeBody(entity.body);
+      this.entities.delete(id);
+    }
+  }
+
+  spawnBox(color = null) {
+    if (this.initFailed) return;
+    const id = `box_${Date.now()}`;
+    const colors = ['red', 'white', 'blue'];
+    // Default to random if no specific color provided
+    const colorType = color && colors.includes(color) ? color : colors[Math.floor(Math.random() * colors.length)];
+    const box = createProductBox(id, { x: 0, y: 1.5, z: -18 }, colorType);
+    this.addEntity(box);
+  }
+
+  clearAllBoxes() {
+    // Remove all dynamic entities (boxes) from the simulation
+    const toRemove = [];
+    this.entities.forEach((entity, id) => {
+      if (entity.type === 'dynamic') {
+        toRemove.push(id);
+      }
+    });
+    toRemove.forEach(id => this.removeEntity(id));
+    console.log(`[SIM] Cleared ${toRemove.length} boxes from simulation`);
+  }
+
+  start() {
+    if (!this.isRunning && !this.initFailed) {
+      this.isRunning = true;
+      this.isPaused = false;
+      this.lastFrameTime = performance.now();
+
+      // Add visibility/pause event listeners
+      this.handlePause = () => {
+        this.isPaused = true;
+        console.log('[SIM] Simulation paused (tab hidden)');
+      };
+      this.handleResume = () => {
+        this.isPaused = false;
+        // Reset frame time to avoid huge delta on resume
+        this.lastFrameTime = performance.now();
+        console.log('[SIM] Simulation resumed (tab visible)');
+      };
+
+      window.addEventListener('simulation-pause', this.handlePause);
+      window.addEventListener('simulation-resume', this.handleResume);
+
+      this.loop();
+    }
+  }
+
+  stop() {
+    this.isRunning = false;
+    cancelAnimationFrame(this.animationId);
+    window.removeEventListener('simulation-pause', this.handlePause);
+    window.removeEventListener('simulation-resume', this.handleResume);
+  }
+
+  loop() {
+    if (!this.isRunning) return;
+    this.animationId = requestAnimationFrame(this.loop);
+
+    // Skip physics updates when paused (tab hidden) but keep rendering
+    if (this.isPaused) {
+      // Still render the scene so it looks correct when user switches back
+      if (this.controls) this.controls.update();
+      if (this.renderer) this.renderer.render(this.scene, this.camera);
+      return;
+    }
+
+    this.runPLCLogic();
+    this.updateKinematics(TIME_STEP);
+    this.world.step(TIME_STEP);
+
+    this.entities.forEach(entity => {
+      entity.mesh.position.copy(entity.body.position);
+      entity.mesh.quaternion.copy(entity.body.quaternion);
+      if (entity.body.position.y < -5) this.removeEntity(entity.id);
+    });
+
+    if (this.controls) this.controls.update();
+    if (this.renderer) this.renderer.render(this.scene, this.camera);
+  }
+
+  /**
+   * Only handles sensor reading and reporting.
+   * Logic decisions are now fully external.
+   */
+  runPLCLogic() {
+    const sortingControl = window.sortingControl;
+
+    // We check sensors physics
+    const stations = [
+      { color: 'red', mainSensor: 'sensor_red', exitSensor: 'exit_sensor_red', diverter: 'pusher_red' },
+      { color: 'white', mainSensor: 'sensor_white', exitSensor: 'exit_sensor_white', diverter: 'pusher_white' },
+      { color: 'blue', mainSensor: 'sensor_blue', exitSensor: 'exit_sensor_blue', diverter: 'pusher_blue' },
+    ];
+
+    stations.forEach(st => {
+      // 1. Detect Main Sensor
+      const sensorEntity = this.entities.get(st.mainSensor);
+      let detected = false;
+      if (sensorEntity) {
+        const sensorBodyPos = sensorEntity.body.position;
+        const light = sensorEntity.mesh.getObjectByName('SensorLight');
+        if (light) light.material.color.setHex(0x333333); 
+        for (const [key, entity] of this.entities) {
+          if (entity.type === 'dynamic') {
+            const dx = entity.body.position.x - sensorBodyPos.x;
+            const dz = entity.body.position.z - sensorBodyPos.z;
+            if (Math.sqrt(dx*dx + dz*dz) < 0.2 && entity.data?.color === st.color) {
+              detected = true;
+              if (light) light.material.color.setHex(0x00ff00); 
+              break;
+            }
+          }
+        }
+      }
+
+      // Report Main Sensor (Twin -> PLC)
+      if (sortingControl && sortingControl.reportSensor) {
+        const prev = this.previousSensorStates.get(st.mainSensor) || false;
+        if (detected !== prev) {
+            sortingControl.reportSensor(`sensor_${st.color}`, detected);
+            this.previousSensorStates.set(st.mainSensor, detected);
+
+            // Log timing event for travel time measurement
+            // Find which box was detected (for tracking)
+            let detectedBoxId = 'unknown';
+            if (detected && sensorEntity) {
+              for (const [key, entity] of this.entities) {
+                if (entity.type === 'dynamic' && entity.data?.color === st.color) {
+                  const dx = entity.body.position.x - sensorEntity.body.position.x;
+                  const dz = entity.body.position.z - sensorEntity.body.position.z;
+                  if (Math.sqrt(dx*dx + dz*dz) < 0.3) {
+                    detectedBoxId = key;
+                    break;
+                  }
+                }
+              }
+            }
+            travelTimeLog.logSensor(st.color, detectedBoxId, detected);
+        }
+      }
+
+      // 2. Detect Exit Sensor (NEW)
+      const exitSensorEntity = this.entities.get(st.exitSensor);
+      let exitDetected = false;
+      if (exitSensorEntity) {
+        const exitPos = exitSensorEntity.body.position;
+        const exitLight = exitSensorEntity.mesh.getObjectByName('SensorLight');
+        if (exitLight) exitLight.material.color.setHex(0x333333);
+
+        for (const [key, entity] of this.entities) {
+          if (entity.type === 'dynamic') {
+             const dx = entity.body.position.x - exitPos.x;
+             const dz = entity.body.position.z - exitPos.z;
+             // Larger radius for exit detection, detect any package
+             if (Math.sqrt(dx*dx + dz*dz) < 0.4) {
+                 exitDetected = true;
+                 if (exitLight) exitLight.material.color.setHex(0xffff00); // Yellow for exit
+                 break;
+             }
+          }
+        }
+      }
+
+      // Report Exit Sensor (Twin -> PLC)
+      if (sortingControl && sortingControl.reportSensor) {
+         const prevExit = this.previousSensorStates.get(st.exitSensor) || false;
+         if (exitDetected !== prevExit) {
+             sortingControl.reportSensor(`exit_${st.color}`, exitDetected);
+             this.previousSensorStates.set(st.exitSensor, exitDetected);
+         }
+      }
+
+      // 3. Actuate Diverter (PLC -> Twin)
+      let diverterActive = false;
+      if (sortingControl && sortingControl.isDiverterActive) {
+        diverterActive = sortingControl.isDiverterActive(st.color);
+      }
+      const diverter = this.entities.get(st.diverter);
+      if (diverter && diverter.setActive) diverter.setActive(diverterActive);
+
+      // Log diverter state changes for timing measurement
+      travelTimeLog.logDiverter(st.color, diverterActive);
+    });
+  }
+
+  updateKinematics(dt) {
+    const time = performance.now();
+    const mainBelt = this.entities.get('conveyor_main');
+    const sortingControl = window.sortingControl;
+
+    // Conveyor Speed Control - PLC Only
+    let targetSpeed = 0;
+    
+    if (sortingControl) {
+        // Must strictly check API
+        const shouldRun = sortingControl.isConveyorRunning ? sortingControl.isConveyorRunning() : false;
+        
+        if (shouldRun) {
+            const rawSpeed = sortingControl.getConveyorSpeed ? sortingControl.getConveyorSpeed() : 0;
+            // Map 0-100 to 0-5.0 m/s (50 = 2.5 m/s)
+            targetSpeed = (rawSpeed / 20.0);
+        } else {
+            targetSpeed = 0;
+        }
+    } else {
+        // No API? Default to stopped in "PLC Mode"
+        targetSpeed = 0;
+    }
+
+    if (mainBelt) mainBelt.setSpeed(targetSpeed);
+
+    // Set Side Belt Speeds (Mirror main belt state for exit logic)
+    const sideSpeed = targetSpeed > 0 ? 3.0 : 0;
+    ['red', 'white', 'blue'].forEach(c => {
+        const sideBelt = this.entities.get(`conveyor_side_${c}`);
+        if (sideBelt && sideBelt.setSpeed) {
+            sideBelt.setSpeed(sideSpeed);
+        }
+    });
+
+    this.entities.forEach(entity => {
+      if (entity.update) entity.update(dt, time);
+    });
+
+    // Physics contact logic for belts (Friction/Push)
+    this.world.contacts.forEach(c => {
+      const bi = c.bi;
+      const bj = c.bj;
+      let conveyorBody, boxBody;
+      if (bi.material && bi.material.name === 'conveyor') { conveyorBody = bi; boxBody = bj; }
+      else if (bj.material && bj.material.name === 'conveyor') { conveyorBody = bj; boxBody = bi; }
+
+      if (conveyorBody && boxBody && boxBody.mass > 0) {
+        const speed = conveyorBody.userData.conveyorSpeed || 0;
+        const dir = conveyorBody.userData.transportDir || new CANNON.Vec3(0,0,1);
+        
+        if (Math.abs(speed) > 0.01) {
+            const tvX = dir.x * speed;
+            const tvZ = dir.z * speed;
+            if (Math.abs(dir.z) > 0.5) { 
+                 const isBeingPushedX = Math.abs(boxBody.velocity.x) > 0.5;
+                 if (!isBeingPushedX) {
+                     boxBody.velocity.z = boxBody.velocity.z * 0.8 + tvZ * 0.2;
+                     boxBody.velocity.x = boxBody.velocity.x * 0.98; 
+                 } else {
+                     boxBody.velocity.z = boxBody.velocity.z * 0.9 + tvZ * 0.1;
+                 }
+            } else { 
+                 boxBody.velocity.x = boxBody.velocity.x * 0.8 + tvX * 0.2;
+                 boxBody.velocity.z = boxBody.velocity.z * 0.9; 
+            }
+            boxBody.angularVelocity.set(0, 0, 0);
+            boxBody.quaternion.setFromEuler(0, 0, 0);
+        }
+      }
+    });
+  }
+  
+  onResize() {
+    if (!this.renderer || !this.camera) return;
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(width, height);
+  };
+
+  dispose() {
+    this.stop();
+    window.removeEventListener('resize', this.onResize);
+    window.removeEventListener('camera-view', this.handleCameraView);
+    if (this.renderer) {
+      this.renderer.dispose();
+      if (this.renderer.domElement && this.renderer.domElement.parentNode === this.container) {
+        this.container.removeChild(this.renderer.domElement);
+      }
+    }
+  }
+}
+
+// --- NEW COMPONENTS ---
+
+const StatusBadge = ({ label, active, color = "bg-green-500" }) => (
+    <div className={`flex items-center gap-2 px-3 py-1.5 rounded bg-neutral-800 border border-neutral-700`}>
+        <div className={`w-2 h-2 rounded-full ${active ? `${color} shadow-[0_0_8px_currentColor]` : 'bg-neutral-600'}`}></div>
+        <span className={`text-[10px] font-bold uppercase tracking-wider ${active ? 'text-white' : 'text-neutral-500'}`}>{label}</span>
+    </div>
+);
+
+const ControlButton = ({ label, color, onClick, active }) => (
+  <button 
+    onClick={onClick}
+    className={`
+      h-10 px-4 rounded font-bold text-xs uppercase tracking-wider transition-all
+      active:scale-95 flex items-center justify-center
+      ${color} 
+      ${active ? 'brightness-125 scale-[0.98] ring-2 ring-white/20' : 'hover:brightness-110'}
+    `}
+  >
+    {label}
+  </button>
+);
+
+const WideControlPanel = () => {
+    const [status, setStatus] = useState({ 
+        connected: false, running: false, speed: 0, 
+        redDiv: false, whiteDiv: false, blueDiv: false 
+    });
+    const [counters, setCounters] = useState({ red: 0, white: 0, blue: 0, total: 0 });
+    const [autoSpawn, setAutoSpawn] = useState(false);
+    const [spawnInterval, setSpawnInterval] = useState(5);  // Minimum 5 seconds between spawns
+    const autoSpawnTimer = useRef(null);
+
+    // Polling Loop for Interface Updates (React loop separate from Physics loop)
+    useEffect(() => {
+        const interval = setInterval(() => {
+            const api = window.sortingControl;
+            if (api) {
+                setStatus({
+                    connected: true,
+                    running: api.isConveyorRunning ? api.isConveyorRunning() : false,
+                    speed: api.getConveyorSpeed ? api.getConveyorSpeed() : 0,
+                    redDiv: api.isDiverterActive ? api.isDiverterActive('red') : false,
+                    whiteDiv: api.isDiverterActive ? api.isDiverterActive('white') : false,
+                    blueDiv: api.isDiverterActive ? api.isDiverterActive('blue') : false,
+                });
+                if (api.getCounters) {
+                    setCounters(api.getCounters());
+                }
+            } else {
+                setStatus(s => ({ ...s, connected: false }));
+            }
+        }, 100);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Auto Spawner with visibility change handling
+    // When page loses focus, pause spawning to prevent box accumulation
+    useEffect(() => {
+        let intervalId = null;
+        let wasSpawning = false;
+
+        const startSpawning = () => {
+            if (autoSpawn && !document.hidden) {
+                intervalId = setInterval(() => {
+                    window.dispatchEvent(new CustomEvent('spawn-box'));
+                }, spawnInterval * 1000);
+            }
+        };
+
+        const stopSpawning = () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        };
+
+        // Handle visibility changes - pause spawning when tab loses focus
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                wasSpawning = intervalId !== null;
+                stopSpawning();
+                // Dispatch event to pause physics
+                window.dispatchEvent(new CustomEvent('simulation-pause'));
+            } else {
+                // Resume physics
+                window.dispatchEvent(new CustomEvent('simulation-resume'));
+                // Resume spawning if it was active
+                if (wasSpawning || autoSpawn) {
+                    startSpawning();
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        if (autoSpawn) {
+            startSpawning();
+        } else {
+            stopSpawning();
+        }
+
+        autoSpawnTimer.current = intervalId;
+
+        return () => {
+            stopSpawning();
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [autoSpawn, spawnInterval]);
+
+    const reportBtn = (name) => {
+        console.log('[BTN] reportBtn called:', name);
+
+        // Try sortingControl from self, parent, or top window (handles nested iframes)
+        const ctrl = window.sortingControl || window.parent?.sortingControl || window.top?.sortingControl;
+        if (ctrl?.reportSensor) {
+            console.log('[BTN] Sending via sortingControl WebSocket');
+            ctrl.reportSensor(name, true);
+            setTimeout(() => ctrl.reportSensor(name, false), 200);
+        } else {
+            console.log('[BTN] sortingControl not available, trying postMessage and REST API');
+            // Also try postMessage to parent (for nested iframes)
+            try {
+                window.parent.postMessage({ type: 'sensor_report', name: name, value: true }, '*');
+                setTimeout(() => {
+                    window.parent.postMessage({ type: 'sensor_report', name: name, value: false }, '*');
+                }, 200);
+            } catch (e) {
+                console.log('[BTN] postMessage failed:', e);
+            }
+        }
+
+        // Reset button also clears all boxes from the simulation
+        if (name === 'reset_button') {
+            console.log('[BTN] Reset pressed - clearing all boxes');
+            window.dispatchEvent(new CustomEvent('clear-boxes'));
+        }
+
+        // ALWAYS try REST API for button commands (most reliable)
+        const cmdMap = {
+            'start_button': 'start',
+            'stop_button': 'stop',
+            'reset_button': 'reset'
+        };
+        const cmd = cmdMap[name];
+        if (cmd) {
+            console.log('[BTN] Sending REST API command:', cmd);
+            fetch('/api/plc/command', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({command: cmd})
+            })
+            .then(r => r.json())
+            .then(data => console.log('[BTN] REST API response:', data))
+            .catch(e => console.error('[BTN] REST API error:', e));
+        }
+    };
+    
+    const sendCamera = (view) => window.dispatchEvent(new CustomEvent('camera-view', { detail: view }));
+    const spawn = (color) => window.dispatchEvent(new CustomEvent('spawn-box', { detail: color }));
+
+    return (
+        <div className="absolute bottom-0 left-0 w-full bg-[#111] border-t border-neutral-800 p-4 text-white flex gap-6 items-stretch shadow-2xl z-50 overflow-x-auto">
+            
+            {/* 1. STATUS COLUMN */}
+            <div className="flex flex-col gap-2 min-w-[140px] border-r border-neutral-800 pr-4">
+                <div className="text-[10px] text-neutral-500 uppercase font-bold mb-1">System Status</div>
+                <StatusBadge label={status.connected ? "PLC ONLINE" : "PLC OFFLINE"} active={status.connected} color="bg-emerald-500" />
+                <StatusBadge label={status.running ? "CONVEYOR RUN" : "CONVEYOR STOP"} active={status.running} color="bg-blue-500" />
+                <div className="flex justify-between gap-1 mt-1">
+                    <div className={`w-full h-1 rounded ${status.redDiv ? 'bg-red-500 shadow-[0_0_5px_red]' : 'bg-neutral-800'}`} />
+                    <div className={`w-full h-1 rounded ${status.whiteDiv ? 'bg-white shadow-[0_0_5px_white]' : 'bg-neutral-800'}`} />
+                    <div className={`w-full h-1 rounded ${status.blueDiv ? 'bg-blue-500 shadow-[0_0_5px_blue]' : 'bg-neutral-800'}`} />
+                </div>
+            </div>
+
+            {/* 2. MANUAL CONTROLS */}
+            <div className="flex flex-col gap-2 min-w-[180px] border-r border-neutral-800 pr-4">
+                <div className="text-[10px] text-neutral-500 uppercase font-bold mb-1">Manual Override</div>
+                <div className="grid grid-cols-2 gap-2">
+                    <ControlButton label="Start" color="bg-emerald-700 text-white" onClick={() => reportBtn('start_button')} />
+                    <ControlButton label="Stop" color="bg-amber-700 text-white" onClick={() => reportBtn('stop_button')} />
+                    <ControlButton label="Reset" color="bg-blue-700 text-white" onClick={() => reportBtn('reset_button')} />
+                    <ControlButton label="E-STOP" color="bg-red-600 text-white animate-pulse" onClick={() => window.sortingControl?.reportSensor('estop', true)} />
+                </div>
+            </div>
+
+            {/* 3. SPAWNER */}
+            <div className="flex flex-col gap-2 min-w-[200px] border-r border-neutral-800 pr-4">
+                <div className="text-[10px] text-neutral-500 uppercase font-bold mb-1 flex justify-between">
+                    <span>Product Feed</span>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                        <input type="checkbox" checked={autoSpawn} onChange={e => setAutoSpawn(e.target.checked)} className="accent-blue-500" />
+                        <span className={autoSpawn ? "text-blue-400" : "text-neutral-600"}>AUTO</span>
+                    </label>
+                </div>
+                <div className="flex gap-1">
+                   <button onClick={() => spawn('red')} className="flex-1 h-8 bg-red-900 hover:bg-red-700 rounded text-[10px] font-bold">RED</button>
+                   <button onClick={() => spawn('white')} className="flex-1 h-8 bg-neutral-700 hover:bg-neutral-600 rounded text-[10px] font-bold">WHT</button>
+                   <button onClick={() => spawn('blue')} className="flex-1 h-8 bg-blue-900 hover:bg-blue-700 rounded text-[10px] font-bold">BLU</button>
+                </div>
+                {autoSpawn && (
+                    <div className="flex items-center gap-2">
+                        <input type="range" min="5" max="15" value={spawnInterval} onChange={e => setSpawnInterval(Number(e.target.value))} className="w-full h-1 bg-neutral-700 appearance-none rounded" />
+                        <span className="text-[10px] font-mono text-neutral-400 w-6">{spawnInterval}s</span>
+                    </div>
+                )}
+            </div>
+
+            {/* 4. COUNTERS */}
+            <div className="flex flex-col gap-2 min-w-[120px] border-r border-neutral-800 pr-4">
+                <div className="text-[10px] text-neutral-500 uppercase font-bold mb-1">Production Counts</div>
+                <div className="grid grid-cols-2 gap-y-1 text-xs font-mono">
+                    <span className="text-red-400">RED:</span> <span className="text-right">{counters.red}</span>
+                    <span className="text-neutral-400">WHT:</span> <span className="text-right">{counters.white}</span>
+                    <span className="text-blue-400">BLU:</span> <span className="text-right">{counters.blue}</span>
+                    <span className="text-white border-t border-neutral-700 mt-1 pt-1">TOT:</span> <span className="text-right border-t border-neutral-700 mt-1 pt-1">{counters.total}</span>
+                </div>
+            </div>
+
+            {/* 5. CAMERAS */}
+            <div className="flex flex-col gap-2 min-w-[100px]">
+                <div className="text-[10px] text-neutral-500 uppercase font-bold mb-1">CCTV</div>
+                <div className="grid grid-cols-2 gap-1">
+                    <button onClick={() => sendCamera('overview')} className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[9px] rounded py-1">MAIN</button>
+                    <button onClick={() => sendCamera('side')} className="bg-neutral-800 hover:bg-neutral-700 text-neutral-300 text-[9px] rounded py-1">SIDE</button>
+                    <button onClick={() => sendCamera('red')} className="bg-neutral-800 hover:bg-neutral-700 text-red-400 text-[9px] rounded py-1">ST-1</button>
+                    <button onClick={() => sendCamera('white')} className="bg-neutral-800 hover:bg-neutral-700 text-white text-[9px] rounded py-1">ST-2</button>
+                    <button onClick={() => sendCamera('blue')} className="bg-neutral-800 hover:bg-neutral-700 text-blue-400 text-[9px] rounded py-1">ST-3</button>
+                </div>
+            </div>
+
+        </div>
+    );
+};
+
+const SimulationView = () => {
+  const containerRef = useRef(null);
+  const engineRef = useRef(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const engine = new SimulationEngine(containerRef.current);
+    engineRef.current = engine;
+    if (engine.initFailed) {
+      setError("WebGL Context Creation Failed");
+    } else {
+      engine.start();
+    }
+    return () => engine.dispose();
+  }, []); 
+
+  useEffect(() => {
+    const handleSpawn = (e) => engineRef.current?.spawnBox(e.detail);
+    const handleClear = () => engineRef.current?.clearAllBoxes();
+    window.addEventListener('spawn-box', handleSpawn);
+    window.addEventListener('clear-boxes', handleClear);
+    return () => {
+      window.removeEventListener('spawn-box', handleSpawn);
+      window.removeEventListener('clear-boxes', handleClear);
+    };
+  }, []);
+
+  return (
+    <div className="w-full h-full relative">
+      <div ref={containerRef} className="w-full h-full bg-neutral-900 overflow-hidden" />
+      {error && (
+         <div className="absolute inset-0 flex items-center justify-center bg-black/80 z-50">
+           <div className="bg-neutral-800 border border-red-500 p-8 rounded-lg max-w-lg text-center shadow-2xl">
+             <h3 className="text-red-500 font-bold text-xl mb-4">Graphics Initialization Error</h3>
+             <p className="text-neutral-300 mb-4">{error}</p>
+           </div>
+         </div>
+      )}
+    </div>
+  );
+};
+
+// ============================================
+// PLC ENGINEERING PANEL - Slide-in panel for PLC analysis and control
+// ============================================
+const PLCEngineeringPanel = ({ isOpen, onClose }) => {
+    const [activeTab, setActiveTab] = useState('code');
+    const [stCode, setStCode] = useState('// Loading ST code...');
+    const [plcValues, setPlcValues] = useState({});
+    const [forcedValues, setForcedValues] = useState({});
+    const [scanRate, setScanRate] = useState(10);
+    const [aiPrompt, setAiPrompt] = useState('');
+    const [aiResponse, setAiResponse] = useState('');
+    const [aiLoading, setAiLoading] = useState(false);
+    const [codeModified, setCodeModified] = useState(false);
+    const [uploadStatus, setUploadStatus] = useState('');
+
+    // Load ST code on mount
+    useEffect(() => {
+        if (isOpen) {
+            fetch('/api/plc/st-code')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.code) setStCode(data.code);
+                })
+                .catch(() => setStCode('// Error loading ST code'));
+        }
+    }, [isOpen]);
+
+    // Poll PLC values (for both Monitor and Force tabs)
+    useEffect(() => {
+        if (!isOpen || (activeTab !== 'monitor' && activeTab !== 'force')) return;
+        const interval = setInterval(() => {
+            fetch('/api/plc/values')
+                .then(r => r.json())
+                .then(data => {
+                    setPlcValues(data);
+                    // Sync forced_outputs from server to keep UI in sync
+                    if (data.forced_outputs) {
+                        setForcedValues(data.forced_outputs);
+                    }
+                })
+                .catch(() => {});
+        }, 200);
+        return () => clearInterval(interval);
+    }, [isOpen, activeTab]);
+
+    const handleCodeChange = (newCode) => {
+        setStCode(newCode);
+        setCodeModified(true);
+    };
+
+    const uploadCode = async () => {
+        setUploadStatus('Uploading...');
+        try {
+            const resp = await fetch('/api/plc/upload-st', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ code: stCode })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                setUploadStatus('✓ Uploaded & Compiled');
+                setCodeModified(false);
+            } else {
+                setUploadStatus('✗ Error: ' + (data.error || 'Unknown'));
+            }
+        } catch (e) {
+            setUploadStatus('✗ Upload failed');
+        }
+        setTimeout(() => setUploadStatus(''), 5000);
+    };
+
+    const forceValue = async (name, value) => {
+        try {
+            const resp = await fetch('/api/plc/force', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, value, force: true })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                // Sync with server's forced_outputs state
+                setForcedValues(data.forced_outputs || { [name]: value });
+                console.log(`[FORCE] ${name} forced to ${value}`, data);
+            } else {
+                console.error('[FORCE] Server reported failure:', data);
+            }
+        } catch (e) {
+            console.error('Force failed:', e);
+        }
+    };
+
+    const releaseForce = async (name) => {
+        try {
+            const resp = await fetch('/api/plc/force', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ name, force: false })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                // Sync with server's forced_outputs state
+                setForcedValues(data.forced_outputs || {});
+                console.log(`[FORCE] Released force on ${name}`, data);
+            } else {
+                console.error('[FORCE] Release failed:', data);
+            }
+        } catch (e) {
+            console.error('Release failed:', e);
+        }
+    };
+
+    const analyzeWithAI = async () => {
+        if (!aiPrompt.trim()) return;
+        setAiLoading(true);
+        setAiResponse('Analyzing...');
+        try {
+            const resp = await fetch('/api/ai/analyze-plc', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    prompt: aiPrompt,
+                    code: stCode,
+                    values: plcValues
+                })
+            });
+            const data = await resp.json();
+            setAiResponse(data.response || 'No response');
+        } catch (e) {
+            setAiResponse('Error: ' + e.message);
+        }
+        setAiLoading(false);
+    };
+
+    const tabs = [
+        { id: 'code', label: 'ST Code', icon: '📝' },
+        { id: 'monitor', label: 'Monitor', icon: '📊' },
+        { id: 'force', label: 'Force', icon: '⚡' },
+        { id: 'cie', label: 'CIE Risk', icon: '🛡️' },
+        { id: 'ai', label: 'AI', icon: '🤖' },
+    ];
+
+    // Cyber-Informed Engineering (CIE) Risk Analysis
+    // Based on INL's Cyber-Informed Engineering methodology
+    const cieRisks = [
+        {
+            id: 'timing-manipulation',
+            category: 'Logic Manipulation',
+            risk: 'Timer Value Tampering',
+            description: 'Attacker modifies DELAY_TIME or HOLD_TIME values via Modbus to cause mis-sorting',
+            impact: 'High',
+            likelihood: 'Medium',
+            engineeredControl: 'Hardcode timing constants, remove from Modbus-accessible registers',
+            status: 'mitigated',
+            cwe: 'CWE-400'
+        },
+        {
+            id: 'sensor-spoofing',
+            category: 'Input Manipulation',
+            risk: 'Color Sensor Spoofing',
+            description: 'False sensor readings injected via MW100-102 cause incorrect diverter activation',
+            impact: 'Medium',
+            likelihood: 'High',
+            engineeredControl: 'Add sensor plausibility checks (timing between detections, sequence validation)',
+            status: 'partial',
+            cwe: 'CWE-345'
+        },
+        {
+            id: 'dos-flooding',
+            category: 'Availability',
+            risk: 'Modbus Command Flooding',
+            description: 'Rapid register writes overwhelm PLC scan cycle',
+            impact: 'High',
+            likelihood: 'Medium',
+            engineeredControl: 'Rate limiting in I/O bridge, watchdog timer for communication health',
+            status: 'mitigated',
+            cwe: 'CWE-400'
+        },
+        {
+            id: 'state-corruption',
+            category: 'Logic Manipulation',
+            risk: 'System State Bypass',
+            description: 'Direct manipulation of system_running flag bypasses start/stop controls',
+            impact: 'High',
+            likelihood: 'Low',
+            engineeredControl: 'State variable is internal (not Modbus mapped), use edge detection for buttons',
+            status: 'mitigated',
+            cwe: 'CWE-471'
+        },
+        {
+            id: 'counter-manipulation',
+            category: 'Data Integrity',
+            risk: 'Production Counter Tampering',
+            description: 'Attacker modifies MW0-3 to hide theft or sabotage',
+            impact: 'Medium',
+            likelihood: 'Medium',
+            engineeredControl: 'Log counter changes, add redundant counter in non-Modbus memory',
+            status: 'unmitigated',
+            cwe: 'CWE-471'
+        },
+        {
+            id: 'emergency-bypass',
+            category: 'Safety',
+            risk: 'E-Stop Signal Injection/Blocking',
+            description: 'Attacker triggers false E-stop or blocks legitimate E-stop',
+            impact: 'Critical',
+            likelihood: 'Low',
+            engineeredControl: 'Hardware E-stop circuit independent of PLC, E-stop via hardwired relay',
+            status: 'partial',
+            cwe: 'CWE-693'
+        }
+    ];
+
+    // Define PLC variables for monitoring/forcing
+    const plcVariables = {
+        outputs: [
+            { name: 'conveyor_run', label: 'Conveyor Run', type: 'bool', addr: 'QX0.0' },
+            { name: 'diverter_red', label: 'Diverter Red', type: 'bool', addr: 'QX0.1' },
+            { name: 'diverter_white', label: 'Diverter White', type: 'bool', addr: 'QX0.2' },
+            { name: 'diverter_blue', label: 'Diverter Blue', type: 'bool', addr: 'QX0.3' },
+            { name: 'alarm', label: 'Alarm', type: 'bool', addr: 'QX0.4' },
+            { name: 'run_light', label: 'Run Light', type: 'bool', addr: 'QX0.5' },
+            { name: 'fault_light', label: 'Fault Light', type: 'bool', addr: 'QX0.6' },
+            { name: 'ready_light', label: 'Ready Light', type: 'bool', addr: 'QX0.7' },
+        ],
+        inputs: [
+            { name: 'sensor_red', label: 'Sensor Red', type: 'bool', addr: 'MW100' },
+            { name: 'sensor_white', label: 'Sensor White', type: 'bool', addr: 'MW101' },
+            { name: 'sensor_blue', label: 'Sensor Blue', type: 'bool', addr: 'MW102' },
+            { name: 'start_button', label: 'Start Button', type: 'bool', addr: 'MW105' },
+            { name: 'stop_button', label: 'Stop Button', type: 'bool', addr: 'MW106' },
+            { name: 'reset_button', label: 'Reset Button', type: 'bool', addr: 'MW107' },
+        ],
+        registers: [
+            { name: 'count_red', label: 'Count Red', type: 'int', addr: 'MW0' },
+            { name: 'count_white', label: 'Count White', type: 'int', addr: 'MW1' },
+            { name: 'count_blue', label: 'Count Blue', type: 'int', addr: 'MW2' },
+            { name: 'count_total', label: 'Count Total', type: 'int', addr: 'MW3' },
+            { name: 'conveyor_speed', label: 'Conveyor Speed', type: 'int', addr: 'MW4' },
+        ]
+    };
+
+    return (
+        <div className={`fixed top-0 right-0 h-full bg-[#0d0d0f] border-l border-neutral-800 shadow-2xl z-[100] transition-all duration-300 ${isOpen ? 'w-[500px]' : 'w-0'} overflow-hidden`}>
+            {isOpen && (
+                <div className="flex flex-col h-full">
+                    {/* Header */}
+                    <div className="flex items-center justify-between p-3 border-b border-neutral-800 bg-[#111]">
+                        <div className="flex items-center gap-2">
+                            <span className="text-lg">🔧</span>
+                            <h2 className="text-white font-bold">PLC Engineering</h2>
+                        </div>
+                        <button onClick={onClose} className="text-neutral-500 hover:text-white text-xl">&times;</button>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex border-b border-neutral-800 bg-[#111]">
+                        {tabs.map(tab => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`flex-1 py-2 px-2 text-[10px] font-bold uppercase transition-colors ${activeTab === tab.id ? 'text-blue-400 border-b-2 border-blue-400 bg-blue-500/10' : 'text-neutral-500 hover:text-neutral-300'}`}
+                            >
+                                <span className="mr-1">{tab.icon}</span>{tab.label}
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-auto p-4">
+                        {/* CODE TAB */}
+                        {activeTab === 'code' && (
+                            <div className="flex flex-col h-full gap-3">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[10px] text-neutral-500 uppercase font-bold">Structured Text Program</span>
+                                    <div className="flex items-center gap-2">
+                                        {codeModified && <span className="text-yellow-500 text-[10px]">● Modified</span>}
+                                        {uploadStatus && <span className="text-[10px]">{uploadStatus}</span>}
+                                        <button
+                                            onClick={uploadCode}
+                                            disabled={!codeModified}
+                                            className={`px-3 py-1 rounded text-[10px] font-bold ${codeModified ? 'bg-blue-600 hover:bg-blue-500 text-white' : 'bg-neutral-800 text-neutral-500'}`}
+                                        >
+                                            Upload to PLC
+                                        </button>
+                                    </div>
+                                </div>
+                                <textarea
+                                    value={stCode}
+                                    onChange={e => handleCodeChange(e.target.value)}
+                                    className="flex-1 w-full bg-[#1a1a1c] text-green-400 font-mono text-[11px] p-3 rounded border border-neutral-800 resize-none focus:outline-none focus:border-blue-500"
+                                    spellCheck={false}
+                                    style={{ minHeight: '400px', tabSize: 4 }}
+                                />
+                            </div>
+                        )}
+
+                        {/* MONITOR TAB */}
+                        {activeTab === 'monitor' && (
+                            <div className="space-y-4">
+                                <div>
+                                    <h3 className="text-[10px] text-neutral-500 uppercase font-bold mb-2">Outputs (QX)</h3>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {plcVariables.outputs.map(v => (
+                                            <div key={v.name} className="flex items-center justify-between bg-[#1a1a1c] p-2 rounded border border-neutral-800">
+                                                <div>
+                                                    <div className="text-[10px] text-neutral-400">{v.addr}</div>
+                                                    <div className="text-xs text-white">{v.label}</div>
+                                                </div>
+                                                <div className={`w-3 h-3 rounded-full ${plcValues.outputs?.[v.name] ? 'bg-green-500 shadow-[0_0_8px_#22c55e]' : 'bg-neutral-700'}`} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-[10px] text-neutral-500 uppercase font-bold mb-2">Inputs (MW)</h3>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {plcVariables.inputs.map(v => (
+                                            <div key={v.name} className="flex items-center justify-between bg-[#1a1a1c] p-2 rounded border border-neutral-800">
+                                                <div>
+                                                    <div className="text-[10px] text-neutral-400">{v.addr}</div>
+                                                    <div className="text-xs text-white">{v.label}</div>
+                                                </div>
+                                                <div className={`w-3 h-3 rounded-full ${plcValues.inputs?.[v.name] ? 'bg-yellow-500 shadow-[0_0_8px_#eab308]' : 'bg-neutral-700'}`} />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-[10px] text-neutral-500 uppercase font-bold mb-2">Registers</h3>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {plcVariables.registers.map(v => (
+                                            <div key={v.name} className="flex items-center justify-between bg-[#1a1a1c] p-2 rounded border border-neutral-800">
+                                                <div>
+                                                    <div className="text-[10px] text-neutral-400">{v.addr}</div>
+                                                    <div className="text-xs text-white">{v.label}</div>
+                                                </div>
+                                                <div className="text-sm font-mono text-cyan-400">{plcValues.registers?.[v.name] ?? '-'}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* FORCE TAB */}
+                        {activeTab === 'force' && (
+                            <div className="space-y-4">
+                                <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded">
+                                    <div className="text-yellow-400 text-xs font-bold">⚠️ Force Mode</div>
+                                    <div className="text-yellow-300/70 text-[10px] mt-1">
+                                        Forcing writes directly to PLC output coils via Modbus.
+                                        Note: PLC may overwrite values during scan cycle.
+                                    </div>
+                                </div>
+                                <div>
+                                    <h3 className="text-[10px] text-neutral-500 uppercase font-bold mb-2">Force Outputs</h3>
+                                    <div className="space-y-2">
+                                        {plcVariables.outputs.map(v => {
+                                            const isForced = forcedValues[v.name] !== undefined;
+                                            const forcedValue = forcedValues[v.name];
+                                            const actualValue = plcValues.outputs?.[v.name];
+                                            return (
+                                            <div key={v.name} className={`flex items-center justify-between p-2 rounded border ${isForced ? 'bg-yellow-500/10 border-yellow-500/30' : 'bg-[#1a1a1c] border-neutral-800'}`}>
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="text-xs text-white">{v.label}</div>
+                                                        {isForced && (
+                                                            <span className="text-[9px] px-1.5 py-0.5 bg-yellow-500/30 text-yellow-300 rounded font-bold">
+                                                                FORCED {forcedValue ? 'ON' : 'OFF'}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] text-neutral-500">{v.addr}</span>
+                                                        <span className="text-[10px] text-neutral-400">|</span>
+                                                        <span className={`text-[10px] ${actualValue ? 'text-green-400' : 'text-neutral-500'}`}>
+                                                            Actual: {actualValue ? 'ON' : 'OFF'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => forceValue(v.name, true)}
+                                                        className={`px-2 py-1 text-white text-[10px] rounded transition-all ${isForced && forcedValue ? 'bg-green-500 ring-2 ring-green-400' : 'bg-green-700 hover:bg-green-600'}`}
+                                                    >
+                                                        ON
+                                                    </button>
+                                                    <button
+                                                        onClick={() => forceValue(v.name, false)}
+                                                        className={`px-2 py-1 text-white text-[10px] rounded transition-all ${isForced && !forcedValue ? 'bg-red-500 ring-2 ring-red-400' : 'bg-red-700 hover:bg-red-600'}`}
+                                                    >
+                                                        OFF
+                                                    </button>
+                                                    <button
+                                                        onClick={() => releaseForce(v.name)}
+                                                        disabled={!isForced}
+                                                        className={`px-2 py-1 text-white text-[10px] rounded ${isForced ? 'bg-blue-600 hover:bg-blue-500' : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'}`}
+                                                    >
+                                                        Release
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                                {/* Force status summary */}
+                                {Object.keys(forcedValues).length > 0 && (
+                                    <div className="bg-yellow-500/10 border border-yellow-500/30 p-3 rounded">
+                                        <div className="text-yellow-400 text-[10px] font-bold mb-1">Active Forces ({Object.keys(forcedValues).length})</div>
+                                        <div className="flex flex-wrap gap-1">
+                                            {Object.entries(forcedValues).map(([name, value]) => (
+                                                <span key={name} className="text-[9px] px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded">
+                                                    {name}: {value ? 'ON' : 'OFF'}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* CIE RISK TAB - Cyber-Informed Engineering */}
+                        {activeTab === 'cie' && (
+                            <div className="space-y-4">
+                                <div className="bg-blue-500/10 border border-blue-500/30 p-3 rounded">
+                                    <div className="text-blue-400 text-xs font-bold">🛡️ Cyber-Informed Engineering (CIE)</div>
+                                    <div className="text-blue-300/70 text-[10px] mt-1">
+                                        Engineering out cyber risk through design. Based on INL's CCE methodology.
+                                    </div>
+                                </div>
+
+                                {/* Risk Summary */}
+                                <div className="grid grid-cols-3 gap-2">
+                                    <div className="bg-green-500/10 border border-green-500/30 p-2 rounded text-center">
+                                        <div className="text-green-400 text-lg font-bold">{cieRisks.filter(r => r.status === 'mitigated').length}</div>
+                                        <div className="text-green-300/70 text-[9px]">MITIGATED</div>
+                                    </div>
+                                    <div className="bg-yellow-500/10 border border-yellow-500/30 p-2 rounded text-center">
+                                        <div className="text-yellow-400 text-lg font-bold">{cieRisks.filter(r => r.status === 'partial').length}</div>
+                                        <div className="text-yellow-300/70 text-[9px]">PARTIAL</div>
+                                    </div>
+                                    <div className="bg-red-500/10 border border-red-500/30 p-2 rounded text-center">
+                                        <div className="text-red-400 text-lg font-bold">{cieRisks.filter(r => r.status === 'unmitigated').length}</div>
+                                        <div className="text-red-300/70 text-[9px]">UNMITIGATED</div>
+                                    </div>
+                                </div>
+
+                                {/* Risk List */}
+                                <div className="space-y-2">
+                                    <h3 className="text-[10px] text-neutral-500 uppercase font-bold">Identified Design Risks</h3>
+                                    {cieRisks.map(risk => (
+                                        <div key={risk.id} className={`p-3 rounded border ${
+                                            risk.status === 'mitigated' ? 'bg-green-500/5 border-green-500/20' :
+                                            risk.status === 'partial' ? 'bg-yellow-500/5 border-yellow-500/20' :
+                                            'bg-red-500/5 border-red-500/20'
+                                        }`}>
+                                            <div className="flex items-start justify-between gap-2">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold ${
+                                                            risk.status === 'mitigated' ? 'bg-green-500/20 text-green-400' :
+                                                            risk.status === 'partial' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                            'bg-red-500/20 text-red-400'
+                                                        }`}>
+                                                            {risk.status.toUpperCase()}
+                                                        </span>
+                                                        <span className="text-[9px] text-neutral-500">{risk.category}</span>
+                                                        <span className="text-[9px] text-cyan-400 font-mono">{risk.cwe}</span>
+                                                    </div>
+                                                    <div className="text-xs text-white font-bold mt-1">{risk.risk}</div>
+                                                    <div className="text-[10px] text-neutral-400 mt-1">{risk.description}</div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-1">
+                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded ${
+                                                        risk.impact === 'Critical' ? 'bg-red-600 text-white' :
+                                                        risk.impact === 'High' ? 'bg-orange-600 text-white' :
+                                                        'bg-yellow-600 text-black'
+                                                    }`}>{risk.impact}</span>
+                                                </div>
+                                            </div>
+                                            <div className="mt-2 pt-2 border-t border-neutral-800">
+                                                <div className="text-[9px] text-neutral-500 uppercase">Engineered Control:</div>
+                                                <div className="text-[10px] text-emerald-400 mt-0.5">{risk.engineeredControl}</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {/* CIE Principles */}
+                                <div className="bg-[#1a1a1c] p-3 rounded border border-neutral-800">
+                                    <div className="text-[10px] text-neutral-500 uppercase font-bold mb-2">CIE Design Principles Applied</div>
+                                    <div className="space-y-1 text-[10px]">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-green-400">✓</span>
+                                            <span className="text-neutral-300">Edge detection prevents repeated triggers</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-green-400">✓</span>
+                                            <span className="text-neutral-300">Internal state variables (not Modbus exposed)</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-green-400">✓</span>
+                                            <span className="text-neutral-300">Hardcoded timing constants</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-yellow-400">◐</span>
+                                            <span className="text-neutral-300">E-stop should be hardware-based</span>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-red-400">✗</span>
+                                            <span className="text-neutral-300">Counter integrity monitoring needed</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* AI TAB */}
+                        {activeTab === 'ai' && (
+                            <div className="flex flex-col h-full gap-3">
+                                <div className="text-[10px] text-neutral-500 uppercase font-bold">AI-Powered PLC Analysis</div>
+                                <div className="bg-[#1a1a1c] p-3 rounded border border-neutral-800">
+                                    <div className="text-[10px] text-neutral-400 mb-2">Ask about the PLC code, suggest improvements, or analyze for security issues:</div>
+                                    <textarea
+                                        value={aiPrompt}
+                                        onChange={e => setAiPrompt(e.target.value)}
+                                        placeholder="E.g., 'Analyze this code for timing issues' or 'Suggest improvements for reliability'"
+                                        className="w-full bg-[#111] text-white text-xs p-2 rounded border border-neutral-700 resize-none h-20"
+                                    />
+                                    <div className="flex gap-2 mt-2">
+                                        <button
+                                            onClick={analyzeWithAI}
+                                            disabled={aiLoading}
+                                            className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold rounded disabled:opacity-50"
+                                        >
+                                            {aiLoading ? 'Analyzing...' : '🤖 Analyze'}
+                                        </button>
+                                        <button
+                                            onClick={() => setAiPrompt('Check this code for security vulnerabilities and CWE issues')}
+                                            className="px-3 py-1 bg-red-600/50 hover:bg-red-500/50 text-white text-[10px] rounded"
+                                        >
+                                            Security Audit
+                                        </button>
+                                        <button
+                                            onClick={() => setAiPrompt('Suggest improvements for this sorting logic')}
+                                            className="px-3 py-1 bg-blue-600/50 hover:bg-blue-500/50 text-white text-[10px] rounded"
+                                        >
+                                            Suggest Improvements
+                                        </button>
+                                    </div>
+                                </div>
+                                {aiResponse && (
+                                    <div className="flex-1 bg-[#1a1a1c] p-3 rounded border border-neutral-800 overflow-auto">
+                                        <div className="text-[10px] text-neutral-500 uppercase font-bold mb-2">AI Response</div>
+                                        <div className="text-xs text-neutral-300 whitespace-pre-wrap font-mono">{aiResponse}</div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+const App = () => {
+  const [engineeringPanelOpen, setEngineeringPanelOpen] = useState(false);
+
+  return (
+    <div className="relative w-full h-screen bg-neutral-900 flex flex-col">
+      <header className="absolute top-0 w-full p-4 z-10 pointer-events-none">
+        <div className="flex justify-between items-start">
+          <h1 className="text-2xl font-bold text-white tracking-tight drop-shadow-md">
+            Industrial<span className="text-blue-500">Sim</span>
+            <span className="text-neutral-500 font-light ml-2 text-sm">PLC Mode</span>
+          </h1>
+          <button
+            onClick={() => setEngineeringPanelOpen(!engineeringPanelOpen)}
+            className="pointer-events-auto bg-neutral-800 hover:bg-neutral-700 text-white px-3 py-2 rounded-lg shadow-lg flex items-center gap-2 transition-colors"
+          >
+            <span>🔧</span>
+            <span className="text-sm font-bold">Engineering</span>
+          </button>
+        </div>
+      </header>
+      <main className="flex-1 w-full h-full relative pb-[140px]">
+        <SimulationView />
+        <WideControlPanel />
+      </main>
+      <PLCEngineeringPanel isOpen={engineeringPanelOpen} onClose={() => setEngineeringPanelOpen(false)} />
+    </div>
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
+
+</script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>

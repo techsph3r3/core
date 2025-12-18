@@ -191,6 +191,10 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # Detect environment and show URLs
+# VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
+VNC_PASSWORD="core123"
+VNC_PARAMS="autoconnect=true&password=${VNC_PASSWORD}"
+
 if [ -n "$CODESPACE_NAME" ]; then
     BASE_URL="https://$CODESPACE_NAME-8080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
     NOVNC_URL="https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
@@ -198,7 +202,7 @@ if [ -n "$CODESPACE_NAME" ]; then
     echo -e "${CYAN}GitHub Codespace URLs:${NC}"
     echo ""
     echo -e "  ${YELLOW}Dashboard:${NC}     $BASE_URL/"
-    echo -e "  ${YELLOW}CORE VNC:${NC}      $BASE_URL/core-vnc/vnc_lite.html?path=core-vnc/websockify"
+    echo -e "  ${YELLOW}CORE VNC:${NC}      $BASE_URL/core-vnc/vnc_lite.html?${VNC_PARAMS}&path=core-vnc/websockify"
     echo -e "  ${YELLOW}Topology Gen:${NC}  $BASE_URL/topology-generator"
     echo ""
 
@@ -206,7 +210,7 @@ if [ -n "$CODESPACE_NAME" ]; then
     if docker exec core-novnc pgrep -f "websockify.*608[1-9]" > /dev/null 2>&1; then
         echo -e "  ${YELLOW}HMI VNC:${NC}"
         for port in $(docker exec core-novnc pgrep -af "websockify" 2>/dev/null | grep -oE '608[1-9]' | sort -u); do
-            echo "     Port $port: $BASE_URL/hmi-vnc/$port/vnc_lite.html?path=hmi-vnc/$port/websockify"
+            echo "     Port $port: $BASE_URL/hmi-vnc/$port/vnc_lite.html?${VNC_PARAMS}&path=hmi-vnc/$port/websockify"
         done
         echo ""
     fi
@@ -216,7 +220,7 @@ else
     echo -e "${CYAN}Local URLs:${NC}"
     echo ""
     echo -e "  ${YELLOW}Dashboard:${NC}     http://localhost:8080/"
-    echo -e "  ${YELLOW}CORE VNC:${NC}      http://localhost:8080/core-vnc/vnc_lite.html?path=core-vnc/websockify"
+    echo -e "  ${YELLOW}CORE VNC:${NC}      http://localhost:8080/core-vnc/vnc_lite.html?${VNC_PARAMS}&path=core-vnc/websockify"
     echo -e "  ${YELLOW}Topology Gen:${NC}  http://localhost:8080/topology-generator"
     echo ""
 
@@ -224,7 +228,7 @@ else
     if docker exec core-novnc pgrep -f "websockify.*608[1-9]" > /dev/null 2>&1; then
         echo -e "  ${YELLOW}HMI VNC:${NC}"
         for port in $(docker exec core-novnc pgrep -af "websockify" 2>/dev/null | grep -oE '608[1-9]' | sort -u); do
-            echo "     Port $port: http://localhost:8080/hmi-vnc/$port/vnc_lite.html?path=hmi-vnc/$port/websockify"
+            echo "     Port $port: http://localhost:8080/hmi-vnc/$port/vnc_lite.html?${VNC_PARAMS}&path=hmi-vnc/$port/websockify"
         done
         echo ""
     fi

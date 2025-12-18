@@ -1,0 +1,35 @@
+# Node-RED HMI for ICS/SCADA systems - CORE network compatible
+# Includes Modbus TCP client for PLC communication
+# Dashboard for simple HMI visualization
+
+FROM nodered/node-red:latest
+
+# Install networking tools for CORE compatibility
+USER root
+RUN apk add --no-cache \
+    iproute2 \
+    iputils \
+    net-tools \
+    curl \
+    tcpdump \
+    busybox-extras
+
+# Install Node-RED palettes for ICS/HMI
+USER node-red
+RUN npm install --save \
+    node-red-contrib-modbus \
+    node-red-dashboard \
+    node-red-contrib-ui-led \
+    node-red-contrib-ui-level \
+    node-red-contrib-buffer-parser \
+    node-red-contrib-ui-artless-gauge
+
+# Copy default flows for the sorting facility HMI
+COPY --chown=node-red:node-red nodered-hmi/flows.json /data/flows.json
+COPY --chown=node-red:node-red nodered-hmi/settings.js /data/settings.js
+
+# Node-RED exposes:
+# - Port 1880: Node-RED editor and dashboard UI
+EXPOSE 1880
+
+# Default entrypoint from base image starts Node-RED

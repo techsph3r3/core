@@ -1,0 +1,286 @@
+# ICS Sorting Facility - CORE Network Topology
+# A realistic Industrial Control System network for a 3-color package sorting facility
+#
+# Network Architecture:
+# - Corporate Zone (10.0.1.0/24): Engineering workstation, historian
+# - DMZ (10.0.2.0/24): Jump server, HMI web access
+# - Control Zone (10.0.0.0/24): PLC, HMI, SCADA server
+# - Field Zone (10.0.3.0/24): Sensors and actuators (simulated)
+#
+# Components:
+# - OpenPLC: Programmable Logic Controller with Modbus TCP server
+# - Node-RED: HMI Dashboard with Modbus client
+# - Digital Twin: 3D web-based simulation (external to CORE)
+# - Firewall: Zone separation and access control
+
+name: "ICS Sorting Facility"
+description: "3-Color Package Sorting System with OpenPLC, Node-RED HMI, and Digital Twin"
+version: "1.0"
+author: "CORE MCP"
+
+# Network zones
+networks:
+  corporate:
+    subnet: "10.0.1.0/24"
+    description: "Corporate/Enterprise Zone"
+  dmz:
+    subnet: "10.0.2.0/24"
+    description: "Demilitarized Zone"
+  control:
+    subnet: "10.0.0.0/24"
+    description: "Process Control Zone"
+  field:
+    subnet: "10.0.3.0/24"
+    description: "Field Device Zone"
+
+# Node definitions
+nodes:
+  # === Control Zone ===
+  plc:
+    type: docker
+    image: openplc-core:latest
+    ip: "10.0.0.10"
+    zone: control
+    services:
+      - name: "Modbus TCP"
+        port: 502
+        protocol: tcp
+      - name: "OpenPLC Web"
+        port: 8080
+        protocol: tcp
+    description: "OpenPLC Runtime - Sorting Controller"
+    modbus_map:
+      coils:
+        0: "CMD_START"
+        1: "CMD_STOP"
+        2: "CMD_FEED"
+        3: "CMD_RESET"
+      discrete_inputs:
+        0: "SYS_RUNNING"
+        1: "SENSOR_RED"
+        2: "SENSOR_WHITE"
+        3: "SENSOR_BLUE"
+        4: "DIVERTER_RED"
+        5: "DIVERTER_WHITE"
+        6: "DIVERTER_BLUE"
+        7: "CONVEYOR_RUN"
+        8: "ESTOP"
+        9: "FAULT"
+      holding_registers:
+        0: "COUNT_RED"
+        1: "COUNT_WHITE"
+        2: "COUNT_BLUE"
+        3: "COUNT_TOTAL"
+        4: "CONVEYOR_SPEED"
+        10: "CMD_SPEED"
+
+  hmi:
+    type: docker
+    image: nodered-hmi-core:latest
+    ip: "10.0.0.20"
+    zone: control
+    services:
+      - name: "Node-RED Editor"
+        port: 1880
+        protocol: tcp
+        path: "/admin"
+      - name: "HMI Dashboard"
+        port: 1880
+        protocol: tcp
+        path: "/ui"
+    description: "Node-RED HMI - Operator Interface"
+    connects_to:
+      - node: plc
+        protocol: modbus_tcp
+        port: 502
+
+  scada:
+    type: host
+    ip: "10.0.0.30"
+    zone: control
+    services:
+      - name: "SSH"
+        port: 22
+    description: "SCADA Server (Future: Ignition/ScadaBR)"
+
+  # === DMZ Zone ===
+  jumpserver:
+    type: host
+    ip: "10.0.2.10"
+    zone: dmz
+    services:
+      - name: "SSH"
+        port: 22
+      - name: "VNC"
+        port: 5901
+    description: "Secure Jump Server for remote access"
+
+  historian:
+    type: host
+    ip: "10.0.2.20"
+    zone: dmz
+    services:
+      - name: "HTTP"
+        port: 80
+      - name: "HTTPS"
+        port: 443
+    description: "Data Historian / Time-series Database"
+
+  # === Corporate Zone ===
+  engineering_ws:
+    type: docker
+    image: engineering-workstation:latest
+    ip: "10.0.1.10"
+    zone: corporate
+    services:
+      - name: "VNC"
+        port: 5901
+    description: "Engineering Workstation with PLC programming tools"
+
+  # === Field Zone (Simulated) ===
+  sensor_gateway:
+    type: host
+    ip: "10.0.3.10"
+    zone: field
+    description: "Field Sensor Gateway (Color Sensors)"
+
+  actuator_gateway:
+    type: host
+    ip: "10.0.3.20"
+    zone: field
+    description: "Field Actuator Gateway (Diverters, Conveyor)"
+
+  # === Network Infrastructure ===
+  firewall:
+    type: router
+    interfaces:
+      - ip: "10.0.0.1"
+        zone: control
+      - ip: "10.0.1.1"
+        zone: corporate
+      - ip: "10.0.2.1"
+        zone: dmz
+      - ip: "10.0.3.1"
+        zone: field
+    description: "Industrial Firewall / Zone Separator"
+    rules:
+      - name: "Allow Corporate to DMZ"
+        from: corporate
+        to: dmz
+        action: allow
+      - name: "Allow DMZ to Control (limited)"
+        from: dmz
+        to: control
+        action: allow
+        ports: [22, 443, 502]
+      - name: "Allow Control to Field"
+        from: control
+        to: field
+        action: allow
+      - name: "Block Field to Corporate"
+        from: field
+        to: corporate
+        action: deny
+
+  switch_control:
+    type: switch
+    ip: "10.0.0.254"
+    zone: control
+    description: "Control Zone Switch"
+    ports: 8
+
+  switch_corporate:
+    type: switch
+    ip: "10.0.1.254"
+    zone: corporate
+    description: "Corporate Zone Switch"
+    ports: 8
+
+# Connections between nodes
+links:
+  # Control Zone
+  - from: plc
+    to: switch_control
+  - from: hmi
+    to: switch_control
+  - from: scada
+    to: switch_control
+  - from: switch_control
+    to: firewall
+
+  # Corporate Zone
+  - from: engineering_ws
+    to: switch_corporate
+  - from: switch_corporate
+    to: firewall
+
+  # DMZ Zone
+  - from: jumpserver
+    to: firewall
+  - from: historian
+    to: firewall
+
+  # Field Zone
+  - from: sensor_gateway
+    to: firewall
+  - from: actuator_gateway
+    to: firewall
+
+# Protocol flows (for documentation/monitoring)
+flows:
+  - name: "HMI to PLC Control"
+    protocol: "Modbus TCP"
+    source: hmi
+    destination: plc
+    port: 502
+    description: "Operator commands and status polling"
+
+  - name: "Sensor Data Collection"
+    protocol: "Modbus RTU/TCP"
+    source: sensor_gateway
+    destination: plc
+    description: "Color sensor readings"
+
+  - name: "Actuator Control"
+    protocol: "Modbus RTU/TCP"
+    source: plc
+    destination: actuator_gateway
+    description: "Diverter and conveyor control signals"
+
+  - name: "Data Historization"
+    protocol: "OPC-UA / SQL"
+    source: scada
+    destination: historian
+    description: "Process data archival"
+
+# Digital Twin Integration
+digital_twin:
+  enabled: true
+  url: "/digital-twin"
+  modbus_bridge:
+    plc_ip: "10.0.0.10"
+    plc_port: 502
+    poll_interval_ms: 100
+  sync_addresses:
+    inputs:
+      - register: "DI0-DI9"
+        twin_var: "plcState.inputs"
+    outputs:
+      - register: "C0-C3"
+        twin_var: "plcState.outputs"
+    registers:
+      - register: "HR0-HR4"
+        twin_var: "plcState.counters"
+
+# Deployment instructions
+deployment:
+  prerequisites:
+    - "Build openplc-core image: docker build -t openplc-core -f Dockerfile.openplc-core ."
+    - "Build nodered-hmi-core image: docker build -t nodered-hmi-core -f Dockerfile.nodered-hmi-core ."
+    - "Build engineering-workstation image: docker build -t engineering-workstation -f Dockerfile.engineering-workstation ."
+
+  post_deploy:
+    - "Upload PLC program via OpenPLC web interface (10.0.0.10:8080)"
+    - "Configure Node-RED Modbus connection to PLC"
+    - "Access HMI dashboard at 10.0.0.20:1880/ui"
+    - "Access Digital Twin at web_ui/digital-twin tab"

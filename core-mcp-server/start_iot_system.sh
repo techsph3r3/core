@@ -92,19 +92,24 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # Detect environment and show URLs
+# VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
+VNC_PASSWORD="core123"
+
 if [ -n "$CODESPACE_NAME" ]; then
+    NOVNC_URL="https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
     echo -e "${YELLOW}GitHub Codespace URLs:${NC}"
     echo "  Micro:bit Page:  https://$CODESPACE_NAME-8080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN/microbit"
     echo "  Sensor Display:  https://$CODESPACE_NAME-8080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN/sensor-display"
-    echo "  noVNC Desktop:   https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
+    echo "  noVNC Desktop:   $NOVNC_URL"
     echo "  Injector Status: https://$CODESPACE_NAME-8089.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN/status"
     echo ""
     echo -e "${YELLOW}Note:${NC} Make sure ports 6080, 8080, 8089 are set to 'Public' in Codespace port settings"
 else
+    NOVNC_URL="http://localhost:6080/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
     echo -e "${YELLOW}Local URLs:${NC}"
     echo "  Micro:bit Page:  http://localhost:8080/microbit"
     echo "  Sensor Display:  http://localhost:8080/sensor-display"
-    echo "  noVNC Desktop:   http://localhost:6080"
+    echo "  noVNC Desktop:   $NOVNC_URL"
     echo "  Injector Status: http://localhost:8089/status"
 fi
 

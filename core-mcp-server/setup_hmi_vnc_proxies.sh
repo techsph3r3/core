@@ -113,6 +113,10 @@ echo -e "${GREEN}  VNC Proxy Setup Complete             ${NC}"
 echo -e "${GREEN}========================================${NC}"
 echo ""
 
+# VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
+VNC_PASSWORD="core123"
+VNC_PARAMS="autoconnect=true&password=${VNC_PASSWORD}"
+
 if [ -n "$CODESPACE_NAME" ]; then
     BASE_URL="https://$CODESPACE_NAME-8080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
 else
@@ -122,7 +126,7 @@ fi
 echo -e "${CYAN}Access HMI VNC through port 8080:${NC}"
 PORT=6081
 echo "$HMI_CONTAINERS" | while read CONTAINER; do
-    echo "  $CONTAINER: $BASE_URL/hmi-vnc/$PORT/vnc_lite.html?path=hmi-vnc/$PORT/websockify"
+    echo "  $CONTAINER: $BASE_URL/hmi-vnc/$PORT/vnc_lite.html?${VNC_PARAMS}&path=hmi-vnc/$PORT/websockify"
     PORT=$((PORT + 1))
 done
 echo ""

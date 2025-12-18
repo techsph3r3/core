@@ -2,6 +2,19 @@
 
 This guide covers how to start all services for the CORE Network Emulator + IoT Digital Twin platform.
 
+## For Claude Code Users
+
+**Just tell Claude:** `"Start the services using the startup manual"` or `"Start everything"`
+
+Claude will:
+1. Create/start the core-novnc container
+2. Install required tools (socat)
+3. Start VNC, CORE GUI, and Web Dashboard
+4. Clean up any stale sessions
+5. Provide access URLs
+
+---
+
 ## Prerequisites
 
 - Docker installed and running
@@ -9,25 +22,38 @@ This guide covers how to start all services for the CORE Network Emulator + IoT 
 
 ## Quick Start (TL;DR)
 
-Copy and paste this entire block to start everything:
+### If container doesn't exist (first time or after deletion):
 
 ```bash
-# 1. Start the core-novnc container
-docker start core-novnc
+cd /workspaces/core/dockerfiles
+docker-compose -f docker-compose.novnc.yml up -d
+sleep 5
+# Install socat (required for HMI VNC proxies)
+docker exec core-novnc apt-get update -qq && docker exec core-novnc apt-get install -y -qq socat
+```
 
-# 2. Clean up stale VNC lock files and restart VNC server
-docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
+### Start all services:
 
-# 3. Wait for display to be ready, then start CORE GUI
+```bash
+# 1. Start/ensure the core-novnc container is running
+docker start core-novnc 2>/dev/null || true
+
+# 2. Clean up stale sessions and VNC lock files
+docker exec core-novnc rm -rf /tmp/pycore.* /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null
+
+# 3. Restart VNC server with correct settings
+docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no"
+
+# 4. Wait for display, then start CORE GUI
 sleep 2
 docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &"
 
-# 4. Start the Web Dashboard
+# 5. Start the Web Dashboard
 cd /workspaces/core/core-mcp-server
 pkill -f web_ui.py 2>/dev/null
 nohup python3 web_ui.py --host 0.0.0.0 --port 8080 > /tmp/webui.log 2>&1 &
 
-# 5. Print access URLs
+# 6. Print access URLs
 sleep 2
 echo ""
 echo "=== Services Started ==="
@@ -41,11 +67,37 @@ fi
 echo "VNC Password: core123"
 ```
 
-Or use the one-liner:
+### One-liner (if container already exists):
 
 ```bash
-docker start core-novnc && docker exec core-novnc bash -c "vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no" && sleep 2 && docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &" && cd /workspaces/core/core-mcp-server && pkill -f web_ui.py 2>/dev/null; nohup python3 web_ui.py --host 0.0.0.0 --port 8080 > /tmp/webui.log 2>&1 &
+docker start core-novnc && docker exec core-novnc bash -c "rm -rf /tmp/pycore.*; vncserver -kill :1 2>/dev/null; rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null; sleep 1; vncserver :1 -geometry 1920x1080 -depth 24 -localhost no" && sleep 2 && docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/core-gui > /tmp/core-gui.log 2>&1 &" && cd /workspaces/core/core-mcp-server && pkill -f web_ui.py 2>/dev/null; nohup python3 web_ui.py --host 0.0.0.0 --port 8080 > /tmp/webui.log 2>&1 &
 ```
+
+---
+
+## Container Recovery
+
+If the container was deleted or is missing:
+
+```bash
+# Check if container exists
+docker ps -a | grep core-novnc
+
+# If missing, recreate from docker-compose
+cd /workspaces/core/dockerfiles
+docker-compose -f docker-compose.novnc.yml up -d
+
+# Wait for startup
+sleep 10
+
+# Install socat (needed for HMI VNC proxies)
+docker exec core-novnc apt-get update -qq && docker exec core-novnc apt-get install -y -qq socat
+
+# Verify ports are exposed (should include 6080-6085)
+docker port core-novnc
+```
+
+**Required ports:** 6080 (noVNC), 6081-6085 (HMI VNC), 5901 (VNC), 50051 (CORE gRPC)
 
 ## Service URLs
 
@@ -223,6 +275,81 @@ docker exec core-novnc bash -c "export DISPLAY=:1 && nohup /opt/core/venv/bin/co
 cd /workspaces/core/core-mcp-server
 pkill -f web_ui.py
 nohup python3 web_ui.py --host 0.0.0.0 --port 8080 > /tmp/webui.log 2>&1 &
+```
+
+### Problem: "RTNETLINK answers: File exists" when loading topology
+
+**Cause:** Stale network bridges from a previous CORE session weren't cleaned up.
+
+**Fix:**
+```bash
+# Clean up stale bridges
+docker exec core-novnc bash -c '
+for br in $(ip link show type bridge | grep -oP "b\.\d+\.\d+" | sort -u); do
+    ip link set $br down; ip link delete $br
+done
+'
+
+# Clean up stale veth pairs
+docker exec core-novnc bash -c '
+for veth in $(ip link show type veth | grep -oP "(veth|beth)\d+\.\d+\.\d+" | sort -u); do
+    ip link delete $veth 2>/dev/null
+done
+'
+
+# Clean up pycore directories
+docker exec core-novnc rm -rf /tmp/pycore.*
+```
+
+### Problem: Conveyor/PLC buttons don't work (Modbus timeout)
+
+**Cause:** The PLC bridge writes to OpenPLC via the eng-ws container. If network is broken, writes timeout.
+
+**Diagnose:**
+```bash
+# Test direct Modbus from eng-ws
+docker exec core-novnc docker exec eng-ws python3 -c "
+from pymodbus.client import ModbusTcpClient
+client = ModbusTcpClient('10.0.0.10', port=502)
+print('Connected:', client.connect())
+client.close()
+"
+```
+
+**Fix:** Usually means the CORE network interfaces need to be rebuilt - reload the topology.
+
+### Problem: HMI/eng-ws VNC shows "loading" forever
+
+**Cause 1:** socat not installed in container
+
+**Fix:**
+```bash
+docker exec core-novnc apt-get update -qq && docker exec core-novnc apt-get install -y -qq socat
+```
+
+**Cause 2:** Ports 6081-6085 not exposed from container
+
+**Check:**
+```bash
+docker port core-novnc | grep 608
+```
+
+**Fix:** Recreate container with docker-compose (ports are defined in docker-compose.novnc.yml)
+
+**Cause 3:** VNC proxy not set up for the HMI node
+
+**Fix:**
+```bash
+# Get the container PID
+CONTAINER=eng-ws  # or hmi, etc.
+PID=$(docker exec core-novnc docker inspect $CONTAINER --format '{{.State.Pid}}')
+
+# Create proxy script
+docker exec core-novnc bash -c "echo '#!/bin/bash
+exec nsenter -t $PID -n socat STDIO TCP:localhost:6080' > /tmp/ns_forward_6081.sh && chmod +x /tmp/ns_forward_6081.sh"
+
+# Start socat proxy
+docker exec -d core-novnc socat TCP-LISTEN:6081,fork,reuseaddr EXEC:/tmp/ns_forward_6081.sh
 ```
 
 ### Problem: Stale VNC lock files

@@ -1,0 +1,5 @@
+{
+  "name": "Industrial Digital Twin",
+  "description": "A browser-based 3D manufacturing simulation using Three.js and Cannon-es. Features a physics-driven conveyor belt, sensor logic, and pneumatic actuator sorting system.",
+  "requestFramePermissions": []
+}

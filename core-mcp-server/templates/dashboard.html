@@ -508,6 +508,20 @@
                 </span>
             </button>
 
+            <!-- Digital Twin Tab (3D Simulation) - Only shown when ICS Sorting Facility is deployed -->
+            <button v-if="showDigitalTwinTab"
+                    @click="activeTab = 'digital-twin'"
+                    :class="['tab-button', activeTab === 'digital-twin' ? 'active' : '']"
+                    :style="activeTab === 'digital-twin' ? '' : 'background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);'">
+                <span class="flex items-center text-white">
+                    <svg class="tab-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                              d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"/>
+                    </svg>
+                    3D Twin
+                </span>
+            </button>
+
             <!-- Divider before VNC tabs -->
             <div v-if="vncHosts.length > 0" class="tab-bar-divider"></div>
 
@@ -608,6 +622,11 @@
             <!-- Builder Tab -->
             <div v-show="activeTab === 'builder'" class="vnc-container">
                 <iframe src="/builder" class="builder-frame"></iframe>
+            </div>
+
+            <!-- Digital Twin Tab (3D Sorting Facility) -->
+            <div v-show="activeTab === 'digital-twin'" class="vnc-container relative">
+                <iframe src="/digital-twin" class="w-full h-full border-none" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"></iframe>
             </div>
 
             <!-- CORE GUI Tab with Optional Sidebar -->
@@ -2043,15 +2062,33 @@ basic.forever(function () {
                     // (old desktops won't be valid with new topology)
                     clearAllVncHosts();
 
+                    // Reset deployed template tracking (clear localStorage too)
+                    deployedTemplateId.value = null;
+                    localStorage.removeItem('deployedTemplateId');
+                    hmiConnected.value = false;
+                    plcConnected.value = false;
+
                     try {
                         const response = await fetch(`/api/templates/${templateId}/deploy`, { method: 'POST' });
                         const result = await response.json();
 
                         if (result.success) {
+                            // Track which template was deployed (persist to localStorage)
+                            deployedTemplateId.value = templateId;
+                            localStorage.setItem('deployedTemplateId', templateId);
+
+                            // Update HMI/PLC status for ICS templates
+                            if (templateId === 'ics-sorting-facility') {
+                                plcConnected.value = true;
+                                // Set up VNC access to engineering workstation for HMI browsing
+                                setupHmiAccess();
+                            }
+
                             deployStatus.value = { title: 'Success!', message: `${result.template_name} deployed to CORE` };
                             setTimeout(() => {
                                 deploying.value = false;
-                                activeTab.value = 'core';
+                                // For ICS sorting facility, go to digital twin tab; otherwise CORE
+                                activeTab.value = templateId === 'ics-sorting-facility' ? 'digital-twin' : 'core';
                             }, 1500);
                         } else {
                             deployStatus.value = { title: 'Failed', message: result.error || 'Unknown error' };
@@ -2073,19 +2110,129 @@ basic.forever(function () {
                 const isCodespaces = window.location.hostname.includes('github.dev');
                 const baseHost = window.location.hostname;
 
-                // CORE noVNC URL - now proxied through port 8080 via /core-vnc/
+                // CORE noVNC URL - proxied through port 8080 via /core-vnc/
                 const coreVncUrl = computed(() => {
-                    // All access through port 8080 - VNC configured with no authentication
+                    // VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
+                    const vncPassword = 'core123';
                     // reconnect=true enables auto-reconnect on disconnect
-                    // reconnect_delay=1000 waits 1 second before reconnecting
+                    // All traffic goes through port 8080 proxy - no need for direct port access
+                    const params = `autoconnect=true&scale=true&reconnect=true&reconnect_delay=1000&password=${vncPassword}`;
                     const wsPath = 'core-vnc/websockify';
-                    const params = 'autoconnect=true&scale=true&reconnect=true&reconnect_delay=1000';
                     if (isCodespaces) {
-                        // For Codespaces: use the /core-vnc/ proxy path through port 8080
+                        // Codespaces: proxy through port 8080 at /core-vnc/
                         return `https://${baseHost}/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
                     }
+                    // Local: also proxy through port 8080
                     return `http://localhost:8080/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
                 });
+
+                // HMI Dashboard URL (Node-RED) - proxied through port 8080
+                // The HMI runs inside CORE network, so we use /hmi-proxy/ route
+                const hmiUrl = ref('/hmi-placeholder.html');
+                const hmiEditorUrl = ref('');
+                const hmiConnected = ref(false);
+                const plcConnected = ref(false);
+
+                // Track which template is currently deployed (for conditional UI elements)
+                const deployedTemplateId = ref(null);
+
+                // Computed: Show digital twin tab only when ICS sorting facility is deployed
+                const showDigitalTwinTab = computed(() => deployedTemplateId.value === 'ics-sorting-facility');
+
+                // Detect deployed topology on page load by checking CORE nodes
+                async function detectDeployedTopology() {
+                    try {
+                        // Use /api/core-nodes to get ALL Docker nodes, not just VNC-capable ones
+                        const response = await fetch('/api/core-nodes');
+                        const data = await response.json();
+
+                        if (data.nodes && data.nodes.length > 0) {
+                            // Check for ICS sorting facility specific nodes
+                            const hasEngWs = data.nodes.some(n => n.name === 'eng-ws' && n.image?.includes('engineering-workstation'));
+                            const hasOpenplc = data.nodes.some(n => n.name === 'plc' || n.image?.includes('openplc'));
+                            const hasHmi = data.nodes.some(n => n.name === 'hmi' || n.image?.includes('nodered'));
+
+                            // If we find engineering workstation OR PLC + HMI, it's the ICS sorting facility
+                            if (hasEngWs || (hasOpenplc && hasHmi)) {
+                                console.log('Detected ICS Sorting Facility topology');
+                                deployedTemplateId.value = 'ics-sorting-facility';
+                                plcConnected.value = true;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to detect deployed topology:', e);
+                    }
+                }
+
+                // Set up HMI access after ICS deployment
+                // The HMI (Node-RED dashboard) is accessed by browsing from WITHIN the CORE network.
+                // So we VNC into the engineering workstation and browse to http://10.0.0.20:1880/ui
+                // The HMI tab shows VNC to a workstation that can access the Node-RED dashboard.
+                async function setupHmiAccess() {
+                    console.log('Setting up HMI access via VNC proxy...');
+                    try {
+                        // Wait for containers to start and VNC proxies to be set up
+                        await new Promise(resolve => setTimeout(resolve, 8000));
+
+                        // Call VNC setup endpoint to discover workstations with VNC
+                        const response = await fetch('/api/vnc/setup-all', { method: 'POST' });
+                        const result = await response.json();
+
+                        console.log('VNC setup result:', result);
+
+                        if (result.success && result.setup_results?.length > 0) {
+                            // Find engineering workstation or any HMI with VNC
+                            const vncNode = result.setup_results.find(r =>
+                                r.success && (r.container === 'eng-ws' || r.container.includes('hmi'))
+                            );
+
+                            if (vncNode) {
+                                console.log('Found VNC workstation:', vncNode);
+                                hmiUrl.value = vncNode.url;
+                                hmiEditorUrl.value = ''; // No separate editor URL for VNC
+                                hmiConnected.value = true;
+                            } else {
+                                // Fallback: use port 6081 which is typically the first HMI VNC proxy
+                                console.log('Using fallback VNC URL on port 6081');
+                                const wsPath = 'hmi-vnc/6081/websockify';
+                                const params = 'autoconnect=true&scale=true&reconnect=true';
+                                if (isCodespaces) {
+                                    hmiUrl.value = `https://${baseHost}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
+                                } else {
+                                    hmiUrl.value = `http://localhost:8080/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
+                                }
+                                hmiConnected.value = true;
+                            }
+                        } else {
+                            // Direct fallback to port 6081
+                            console.log('VNC setup returned no results, using fallback');
+                            const wsPath = 'hmi-vnc/6081/websockify';
+                            const params = 'autoconnect=true&scale=true&reconnect=true';
+                            if (isCodespaces) {
+                                hmiUrl.value = `https://${baseHost}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
+                            } else {
+                                hmiUrl.value = `http://localhost:8080/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
+                            }
+                            hmiConnected.value = true;
+                        }
+                    } catch (e) {
+                        console.error('Failed to setup HMI access:', e);
+                        // Use fallback URL
+                        const wsPath = 'hmi-vnc/6081/websockify';
+                        const params = 'autoconnect=true&scale=true&reconnect=true';
+                        if (isCodespaces) {
+                            hmiUrl.value = `https://${baseHost}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
+                        } else {
+                            hmiUrl.value = `http://localhost:8080/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
+                        }
+                        hmiConnected.value = true;
+                    }
+                }
+
+                // Update HMI URLs when a sorting facility topology is deployed
+                const updateHmiUrls = (topology) => {
+                    setupHmiAccess();
+                };
 
                 const newHost = ref({
                     name: '',
@@ -3431,6 +3578,17 @@ basic.forever(function () {
                             vnc_url: existingStatus[node.name]?.vnc_url || null,
                             proxy_port: existingStatus[node.name]?.proxy_port || null
                         }));
+
+                        // Also detect deployed topology to show Digital Twin tab
+                        // Note: VNC nodes endpoint only returns VNC-capable nodes, so check for eng-ws
+                        if (data.nodes && data.nodes.length > 0 && !deployedTemplateId.value) {
+                            const hasEngWs = data.nodes.some(n => n.name === 'eng-ws' && n.image?.includes('engineering-workstation'));
+                            if (hasEngWs) {
+                                console.log('Detected ICS Sorting Facility topology via VNC node scan');
+                                deployedTemplateId.value = 'ics-sorting-facility';
+                                plcConnected.value = true;
+                            }
+                        }
                     } catch (e) {
                         console.error('Failed to refresh CORE VNC nodes:', e);
                     } finally {
@@ -3585,6 +3743,19 @@ basic.forever(function () {
                     loadTemplates();
                     // Auto-scan for CORE VNC nodes on load
                     refreshCoreVncNodes();
+
+                    // Restore deployed template from localStorage first (survives page reload)
+                    const savedTemplateId = localStorage.getItem('deployedTemplateId');
+                    if (savedTemplateId) {
+                        console.log('Restored deployedTemplateId from localStorage:', savedTemplateId);
+                        deployedTemplateId.value = savedTemplateId;
+                        if (savedTemplateId === 'ics-sorting-facility') {
+                            plcConnected.value = true;
+                        }
+                    }
+
+                    // Also detect if ICS topology is already deployed (backup detection)
+                    detectDeployedTopology();
                     // Load micro:bit configuration
                     loadMicrobitConfig();
                     // Load lab state for AI help context
@@ -3626,6 +3797,14 @@ basic.forever(function () {
                     coreStatus,
                     coreStatusText,
                     coreVncUrl,
+                    // HMI & Digital Twin
+                    hmiUrl,
+                    hmiEditorUrl,
+                    hmiConnected,
+                    plcConnected,
+                    updateHmiUrls,
+                    deployedTemplateId,
+                    showDigitalTwinTab,
                     newHost,
                     addHost,
                     quickAddHost,

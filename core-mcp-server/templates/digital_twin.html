@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Industrial Digital Twin - 3D Sorting Facility</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #1a1a1a;
+        }
+        #twin-container {
+            width: 100%;
+            height: 100%;
+        }
+        #twin-container iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="twin-container">
+        <!-- The 3D digital twin will be loaded here via iframe -->
+        <iframe id="twin-frame" src="/static/digital-twin/index.html" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"></iframe>
+    </div>
+
+    <script>
+        // PLC I/O bridge connection for 3D Digital Twin
+        // Uses /ws/plc-io endpoint which connects to actual OpenPLC Modbus
+
+        // Use wss:// for https, ws:// for http
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const WS_URL = wsProtocol + '//' + window.location.host + '/ws/plc-io';
+        let ws = null;
+        let reconnectTimeout = null;
+
+        // Current PLC state - updated via WebSocket
+        let plcState = {
+            outputs: {
+                conveyor_run: false,
+                diverter_red: false,
+                diverter_white: false,
+                diverter_blue: false,
+                run_light: false,
+                ready_light: false
+            },
+            registers: {
+                conveyor_speed: 50,
+                count_red: 0,
+                count_white: 0,
+                count_blue: 0,
+                count_total: 0
+            }
+        };
+
+        function updateStatus(status, text) {
+            const bridgeStatus = document.getElementById('bridge-status');
+            if (bridgeStatus) {
+                bridgeStatus.textContent = text;
+                bridgeStatus.style.color = status === 'connected' ? '#10b981' :
+                                           status === 'connecting' ? '#eab308' : '#ef4444';
+            }
+        }
+
+        function connectPLCBridge() {
+            updateStatus('connecting', 'Connecting...');
+
+            try {
+                ws = new WebSocket(WS_URL);
+
+                ws.onopen = () => {
+                    updateStatus('connected', 'Connected');
+                    console.log('Connected to PLC I/O bridge');
+
+                    // Request initial state
+                    ws.send(JSON.stringify({ type: 'get_state' }));
+                };
+
+                ws.onmessage = (event) => {
+                    try {
+                        const data = JSON.parse(event.data);
+                        handlePLCMessage(data);
+                    } catch (e) {
+                        console.warn('Invalid message:', event.data);
+                    }
+                };
+
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('disconnected', 'Error');
+                };
+
+                ws.onclose = () => {
+                    updateStatus('disconnected', 'Offline');
+                    console.log('PLC connection closed, reconnecting...');
+
+                    if (!reconnectTimeout) {
+                        reconnectTimeout = setTimeout(() => {
+                            reconnectTimeout = null;
+                            connectPLCBridge();
+                        }, 3000);
+                    }
+                };
+            } catch (e) {
+                console.error('Failed to connect:', e);
+                updateStatus('disconnected', 'Failed');
+            }
+        }
+
+        function handlePLCMessage(data) {
+            // Update local state from PLC
+            if (data.type === 'plc_state' && data.data) {
+                if (data.data.outputs) {
+                    plcState.outputs = { ...plcState.outputs, ...data.data.outputs };
+                }
+                if (data.data.registers) {
+                    plcState.registers = { ...plcState.registers, ...data.data.registers };
+                }
+
+                // Dispatch conveyor-state event to the iframe
+                const twinFrame = document.getElementById('twin-frame');
+                if (twinFrame && twinFrame.contentWindow) {
+                    // Dispatch custom event for conveyor state
+                    const event = new CustomEvent('conveyor-state', {
+                        detail: {
+                            running: plcState.outputs.conveyor_run,
+                            speed: plcState.registers.conveyor_speed || 50
+                        }
+                    });
+                    twinFrame.contentWindow.dispatchEvent(event);
+                }
+            }
+        }
+
+        // Send sensor reading to PLC
+        function reportSensor(sensorName, value) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'sensor',
+                    name: sensorName,
+                    value: value
+                }));
+            }
+        }
+
+        // Expose sortingControl API to the iframe
+        function setupIframeBridge() {
+            const twinFrame = document.getElementById('twin-frame');
+            if (!twinFrame) return;
+
+            // Wait for iframe to load
+            twinFrame.onload = () => {
+                try {
+                    // Create sortingControl API in iframe's window
+                    twinFrame.contentWindow.sortingControl = {
+                        isConveyorRunning: () => plcState.outputs.conveyor_run,
+                        getConveyorSpeed: () => plcState.registers.conveyor_speed || 50,
+                        isDiverterActive: (color) => {
+                            const key = 'diverter_' + color;
+                            return plcState.outputs[key] || false;
+                        },
+                        getCounters: () => ({
+                            red: plcState.registers.count_red || 0,
+                            white: plcState.registers.count_white || 0,
+                            blue: plcState.registers.count_blue || 0,
+                            total: plcState.registers.count_total || 0
+                        }),
+                        reportSensor: (name, value) => {
+                            reportSensor(name, value);
+                        }
+                    };
+                    console.log('sortingControl API injected into iframe');
+                } catch (e) {
+                    console.error('Could not inject sortingControl:', e);
+                }
+            };
+        }
+
+        // Listen for messages from the 3D twin (for sensor reports)
+        window.addEventListener('message', (event) => {
+            if (event.data) {
+                if (event.data.type === 'sensor_report') {
+                    reportSensor(event.data.name, event.data.value);
+                } else if (event.data.type === 'plc_command') {
+                    // Send command like start/stop
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(JSON.stringify({
+                            type: 'sensor',
+                            name: event.data.button,
+                            value: event.data.value
+                        }));
+                    }
+                }
+            }
+        });
+
+        // Start connection when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            setupIframeBridge();
+            setTimeout(connectPLCBridge, 500);
+        });
+
+        // Also try immediately if DOM is ready
+        if (document.readyState === 'complete') {
+            setupIframeBridge();
+            setTimeout(connectPLCBridge, 300);
+        }
+    </script>
+</body>
+</html>

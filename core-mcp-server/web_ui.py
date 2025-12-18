@@ -13,7 +13,7 @@ try:
 except ImportError:
     GEVENT_AVAILABLE = False
 
-from flask import Flask, render_template, request, jsonify, send_file, Response
+from flask import Flask, render_template, request, jsonify, send_file, Response, send_from_directory
 from flask_cors import CORS
 import os
 import sys
@@ -44,6 +44,15 @@ try:
 except ImportError:
     MQTT_AVAILABLE = False
     print("Warning: paho-mqtt not installed - MQTT features disabled. Install with: pip install paho-mqtt")
+
+# PLC I/O Bridge for Digital Twin integration
+try:
+    from plc_io_bridge import start_bridge, stop_bridge, get_bridge, PLCIOBridge
+    PLC_BRIDGE_AVAILABLE = True
+except ImportError as e:
+    PLC_BRIDGE_AVAILABLE = False
+    print(f"Warning: PLC I/O bridge not available ({e})")
+    start_bridge = stop_bridge = get_bridge = None
 
 # Add the core_mcp module to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -464,6 +473,26 @@ threading.Thread(target=init_mqtt_client, daemon=True).start()
 def index():
     """Redirect to dashboard"""
     return render_template('dashboard.html')
+
+@app.route('/hmi-placeholder.html')
+def hmi_placeholder():
+    """HMI placeholder page when no topology is deployed"""
+    return render_template('hmi_placeholder.html')
+
+@app.route('/digital-twin')
+def digital_twin():
+    """Digital Twin 3D visualization page (old version)"""
+    return render_template('digital_twin.html')
+
+@app.route('/digital-twin-v2')
+def digital_twin_v2():
+    """Digital Twin 3D visualization page with proper twinControl API integration"""
+    return send_from_directory('static/digital-twin-v2', 'wrapper.html')
+
+@app.route('/plc-editor')
+def plc_editor():
+    """PLC Logic Editor - Interactive ST code editor with AI assistance"""
+    return render_template('plc_editor.html')
 
 @app.route('/generator')
 def generator():
@@ -1158,6 +1187,95 @@ QUICK_START_TEMPLATES = {
    - See PUBLISH packets with phone sensor data
 ''',
     },
+
+    # -------------------------------------------------------------------------
+    # ICS/SCADA - Industrial Control Systems with Digital Twin
+    # -------------------------------------------------------------------------
+    'ics-sorting-facility': {
+        'id': 'ics-sorting-facility',
+        'name': 'ICS Sorting Facility',
+        'category': 'OT',
+        'icon': 'factory',
+        'description': '3-Color Package Sorting with OpenPLC, Node-RED HMI & 3D Digital Twin',
+        'difficulty': 'intermediate',
+        'auto_ip': False,
+        'networks': {
+            'switch-ctrl': {'subnet': '10.0.0.0/24', 'gateway': '10.0.0.1', 'name': 'Control-Zone'},
+            'switch-dmz': {'subnet': '10.0.2.0/24', 'gateway': '10.0.2.1', 'name': 'DMZ'},
+        },
+        'nodes': [
+            # Control Zone (10.0.0.0/24) - All ICS devices on same network for direct communication
+            {'name': 'plc', 'type': 'docker', 'image': 'openplc-core:latest', 'ip': '10.0.0.10',
+             'x': 200, 'y': 350},
+            {'name': 'hmi', 'type': 'docker', 'image': 'nodered-hmi-core:latest', 'ip': '10.0.0.20',
+             'x': 400, 'y': 350},
+            {'name': 'eng-ws', 'type': 'docker', 'image': 'engineering-workstation:latest', 'ip': '10.0.0.30',
+             'x': 600, 'y': 350},
+            {'name': 'scada', 'type': 'host', 'ip': '10.0.0.40', 'x': 400, 'y': 450, 'services': ['DefaultRoute']},
+            {'name': 'switch-ctrl', 'type': 'switch', 'x': 400, 'y': 250},
+
+            # DMZ Zone (10.0.2.0/24) - Hosts only (can use DefaultRoute)
+            {'name': 'historian', 'type': 'host', 'ip': '10.0.2.20', 'x': 150, 'y': 100, 'services': ['DefaultRoute']},
+            {'name': 'jumpserver', 'type': 'host', 'ip': '10.0.2.10', 'x': 250, 'y': 100, 'services': ['DefaultRoute']},
+            {'name': 'switch-dmz', 'type': 'switch', 'x': 200, 'y': 180},
+
+            # Network Infrastructure - Firewall connects zones
+            {'name': 'firewall', 'type': 'router', 'x': 400, 'y': 150, 'services': ['IPForward']},
+        ],
+        'links': [
+            # Control Zone - all Docker nodes on same switch (Layer 2, no routing needed)
+            {'from': 'switch-ctrl', 'to': 'plc', 'ip2': '10.0.0.10'},
+            {'from': 'switch-ctrl', 'to': 'hmi', 'ip2': '10.0.0.20'},
+            {'from': 'switch-ctrl', 'to': 'eng-ws', 'ip2': '10.0.0.30'},
+            {'from': 'switch-ctrl', 'to': 'scada', 'ip2': '10.0.0.40'},
+            # Firewall to Control Zone switch
+            {'from': 'firewall', 'to': 'switch-ctrl', 'ip1': '10.0.0.1'},
+            # DMZ - hosts can reach other zones via firewall
+            {'from': 'switch-dmz', 'to': 'historian', 'ip2': '10.0.2.20'},
+            {'from': 'switch-dmz', 'to': 'jumpserver', 'ip2': '10.0.2.10'},
+            # Firewall to DMZ switch
+            {'from': 'firewall', 'to': 'switch-dmz', 'ip1': '10.0.2.1'},
+        ],
+        'features': ['OpenPLC', 'Node-RED', 'Modbus TCP', '3D Digital Twin', 'Zone Segmentation'],
+        'digital_twin': {
+            'enabled': True,
+            'tab': 'digital-twin',
+            'plc_ip': '10.0.0.10',
+            'plc_port': 502,
+        },
+        # Startup script for OpenPLC initialization
+        'init_script': 'init_openplc.py',
+        'instructions': '''
+# ICS Sorting Facility - Quick Start
+
+## Network Architecture
+- **Control Zone (10.0.0.0/24)**: PLC (10.0.0.10), HMI (10.0.0.20), Eng-WS (10.0.0.30), SCADA (10.0.0.40)
+- **DMZ (10.0.2.0/24)**: Historian (10.0.2.20), Jump Server (10.0.2.10)
+
+## Access Points
+1. **3D Digital Twin**: Click "3D Twin" tab to see the sorting simulation
+2. **HMI Dashboard**: Click "HMI" tab (or http://10.0.0.20:1880/ui)
+3. **OpenPLC Web**: http://10.0.0.10:8080 (openplc/openplc)
+4. **Node-RED Editor**: http://10.0.0.20:1880/admin
+
+## Protocols in Use
+- **Modbus TCP (Port 502)**: HMI polls PLC for sensor/counter data
+- **HTTP**: Web interfaces for PLC and HMI configuration
+
+## How It Works
+1. The 3D Twin simulates packages on a conveyor belt
+2. Color sensors detect RED, WHITE, or BLUE packages
+3. PLC logic activates diverters to sort packages
+4. HMI displays real-time status via Modbus polling
+5. Capture Modbus traffic in Wireshark for analysis
+
+## Educational Objectives
+- Understand ICS network segmentation
+- Learn Modbus TCP protocol
+- Practice HMI/PLC interaction
+- Explore digital twin concepts
+''',
+    },
 }
 
 
@@ -1304,6 +1422,54 @@ def deploy_template(template_id):
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
+        # Start PLC I/O bridge for ICS sorting facility (connects 3D twin to OpenPLC)
+        bridge_status = None
+        startup_hooks_status = {}
+        if template_id == 'ics-sorting-facility' and PLC_BRIDGE_AVAILABLE:
+            try:
+                # Get PLC IP from template's digital_twin config
+                plc_ip = template.get('digital_twin', {}).get('plc_ip', '10.0.0.10')
+                plc_port = template.get('digital_twin', {}).get('plc_port', 502)
+
+                # Start the bridge and run init script after a delay
+                def start_bridge_and_init():
+                    import time
+                    import subprocess as sp
+
+                    # Wait for containers to start
+                    time.sleep(10)
+
+                    # Start the PLC I/O bridge
+                    start_bridge(plc_ip=plc_ip, plc_port=plc_port)
+                    print(f"PLC I/O Bridge started (PLC: {plc_ip}:{plc_port})")
+
+                    # Run initialization script for OpenPLC
+                    init_script = template.get('init_script')
+                    if init_script:
+                        script_path = os.path.join('/workspaces/core/core-mcp-server', init_script)
+                        if os.path.exists(script_path):
+                            print(f"Running init script: {init_script}")
+                            try:
+                                result = sp.run(
+                                    f'python3 {script_path}',
+                                    shell=True,
+                                    capture_output=True,
+                                    text=True,
+                                    timeout=180
+                                )
+                                print(result.stdout)
+                                if result.stderr:
+                                    print(f"Init script stderr: {result.stderr[:500]}")
+                            except Exception as e:
+                                print(f"Init script error: {e}")
+
+                threading.Thread(target=start_bridge_and_init, daemon=True).start()
+                bridge_status = 'starting'
+                print(f"PLC I/O Bridge and init script scheduled")
+            except Exception as e:
+                bridge_status = f'error: {e}'
+                print(f"Failed to start PLC I/O bridge: {e}")
+
         return jsonify({
             'success': True,
             'template_id': template_id,
@@ -1312,7 +1478,8 @@ def deploy_template(template_id):
             'links': len(template['links']),
             'message': f"Template '{template['name']}' deployed to CORE",
             'output': result.stdout,
-            'cleanup': cleanup_info
+            'cleanup': cleanup_info,
+            'plc_bridge': bridge_status
         })
 
     except Exception as e:
@@ -1324,7 +1491,612 @@ def clear_topology():
     """Clear current topology"""
     global current_generator
     current_generator = TopologyGenerator()
+
+    # Stop PLC I/O bridge if running
+    if PLC_BRIDGE_AVAILABLE and stop_bridge:
+        try:
+            stop_bridge()
+        except Exception as e:
+            print(f"Error stopping PLC bridge: {e}")
+
     return jsonify({'success': True})
+
+
+@app.route('/api/plc-bridge/status', methods=['GET'])
+def get_plc_bridge_status():
+    """Get PLC I/O bridge status and current state"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({
+            'available': False,
+            'error': 'PLC I/O bridge module not available'
+        })
+
+    bridge = get_bridge()
+    if not bridge:
+        return jsonify({
+            'available': True,
+            'running': False,
+            'message': 'Bridge not running. Deploy ICS sorting facility to start.'
+        })
+
+    return jsonify({
+        'available': True,
+        'running': bridge.running,
+        'state': bridge.get_state(),
+        'io_map': bridge.IO_MAP,
+        'websocket_url': '/ws/plc-io'
+    })
+
+
+@app.route('/api/plc-bridge/start', methods=['POST'])
+def start_plc_bridge():
+    """Manually start the PLC I/O bridge"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC I/O bridge module not available'}), 503
+
+    data = request.get_json() or {}
+    plc_ip = data.get('plc_ip', '10.0.0.10')
+    plc_port = data.get('plc_port', 502)
+
+    try:
+        bridge = start_bridge(plc_ip=plc_ip, plc_port=plc_port)
+        return jsonify({
+            'success': True,
+            'message': f'Bridge started for PLC at {plc_ip}:{plc_port}',
+            'running': bridge.running if bridge else False,
+            'connected': bridge.state.connected if bridge else False
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/plc-bridge/stop', methods=['POST'])
+def stop_plc_bridge():
+    """Stop the PLC I/O bridge"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC I/O bridge module not available'}), 503
+
+    try:
+        stop_bridge()
+        return jsonify({'success': True, 'message': 'Bridge stopped'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# ===== PLC API for Digital Twin v2 =====
+
+@app.route('/api/plc/state', methods=['GET'])
+def get_plc_state():
+    """Get current PLC state for digital twin polling"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC bridge not available'}), 503
+
+    bridge = get_bridge()
+    if not bridge or not bridge.running:
+        return jsonify({'error': 'PLC bridge not running'}), 503
+
+    state = bridge.get_state()
+    # Map bridge state to expected format
+    return jsonify({
+        'conveyor_run': state.get('outputs', {}).get('conveyor_run', False),
+        'conveyor_speed': state.get('registers', {}).get('conveyor_speed', 50),
+        'diverter_red': state.get('outputs', {}).get('diverter_red', False),
+        'diverter_white': state.get('outputs', {}).get('diverter_white', False),
+        'diverter_blue': state.get('outputs', {}).get('diverter_blue', False),
+        'count_red': state.get('registers', {}).get('count_red', 0),
+        'count_white': state.get('registers', {}).get('count_white', 0),
+        'count_blue': state.get('registers', {}).get('count_blue', 0),
+        'count_total': state.get('registers', {}).get('count_total', 0),
+        'alarm': state.get('outputs', {}).get('alarm', False),
+        'run_light': state.get('outputs', {}).get('run_light', False),
+        'fault_light': state.get('outputs', {}).get('fault_light', False),
+        'ready_light': state.get('outputs', {}).get('ready_light', False)
+    })
+
+
+@app.route('/api/plc/command', methods=['POST'])
+def send_plc_command():
+    """Send command to PLC (start/stop/reset)"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC bridge not available'}), 503
+
+    bridge = get_bridge()
+    if not bridge or not bridge.running:
+        return jsonify({'error': 'PLC bridge not running'}), 503
+
+    data = request.get_json() or {}
+    command = data.get('command', '')
+
+    # Map commands to sensor inputs that trigger PLC logic
+    # The PLC program uses edge detection on these inputs
+    import time
+
+    # Pulse duration must be longer than bridge poll interval (~100ms)
+    # to ensure the input is seen by the poll loop before being cleared
+    pulse_duration = 0.3  # 300ms
+
+    if command == 'start':
+        # Pulse start_button
+        bridge.set_input('start_button', True)
+        # Force immediate write if bridge supports it
+        if hasattr(bridge, '_write_plc_inputs_via_core'):
+            bridge._write_plc_inputs_via_core()
+        time.sleep(pulse_duration)
+        bridge.set_input('start_button', False)
+        if hasattr(bridge, '_write_plc_inputs_via_core'):
+            bridge._write_plc_inputs_via_core()
+        return jsonify({'success': True, 'command': 'start'})
+
+    elif command == 'stop':
+        # Pulse stop_button
+        bridge.set_input('stop_button', True)
+        if hasattr(bridge, '_write_plc_inputs_via_core'):
+            bridge._write_plc_inputs_via_core()
+        time.sleep(pulse_duration)
+        bridge.set_input('stop_button', False)
+        if hasattr(bridge, '_write_plc_inputs_via_core'):
+            bridge._write_plc_inputs_via_core()
+        return jsonify({'success': True, 'command': 'stop'})
+
+    elif command == 'reset':
+        # Pulse reset_button
+        bridge.set_input('reset_button', True)
+        if hasattr(bridge, '_write_plc_inputs_via_core'):
+            bridge._write_plc_inputs_via_core()
+        time.sleep(pulse_duration)
+        bridge.set_input('reset_button', False)
+        if hasattr(bridge, '_write_plc_inputs_via_core'):
+            bridge._write_plc_inputs_via_core()
+        return jsonify({'success': True, 'command': 'reset'})
+
+    elif command == 'estop':
+        # E-stop stays latched until reset
+        bridge.set_input('estop', True)
+        return jsonify({'success': True, 'command': 'estop'})
+
+    elif command == 'estop_release':
+        bridge.set_input('estop', False)
+        return jsonify({'success': True, 'command': 'estop_release'})
+
+    else:
+        return jsonify({'error': f'Unknown command: {command}'}), 400
+
+
+@app.route('/api/plc/sensor', methods=['POST'])
+def report_plc_sensor():
+    """Report sensor state from digital twin to PLC"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC bridge not available'}), 503
+
+    bridge = get_bridge()
+    if not bridge or not bridge.running:
+        return jsonify({'error': 'PLC bridge not running'}), 503
+
+    data = request.get_json() or {}
+    sensor = data.get('sensor', '')
+    value = data.get('value', False)
+
+    # Map sensor names to bridge input names
+    sensor_map = {
+        'sensor_red': 'sensor_red',
+        'sensor_white': 'sensor_white',
+        'sensor_blue': 'sensor_blue',
+        'package_present': 'package_present'
+    }
+
+    if sensor in sensor_map:
+        bridge.set_input(sensor_map[sensor], bool(value))
+        return jsonify({'success': True, 'sensor': sensor, 'value': value})
+    else:
+        return jsonify({'error': f'Unknown sensor: {sensor}'}), 400
+
+
+# ============================================
+# PLC ENGINEERING PANEL API ENDPOINTS
+# ============================================
+
+@app.route('/api/plc/st-code', methods=['GET'])
+def get_plc_st_code():
+    """Get the current ST code from the PLC program file"""
+    st_file_path = os.path.join(os.path.dirname(__file__), 'plc_programs', 'sorting_twin.st')
+    try:
+        with open(st_file_path, 'r') as f:
+            code = f.read()
+        return jsonify({'success': True, 'code': code})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plc/upload-st', methods=['POST'])
+def upload_plc_st_code():
+    """Upload and compile new ST code to the PLC"""
+    import subprocess
+
+    data = request.get_json() or {}
+    code = data.get('code', '')
+
+    if not code:
+        return jsonify({'success': False, 'error': 'No code provided'}), 400
+
+    # Save the code locally first
+    st_file_path = os.path.join(os.path.dirname(__file__), 'plc_programs', 'sorting_twin.st')
+    try:
+        with open(st_file_path, 'w') as f:
+            f.write(code)
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'Failed to save code: {e}'}), 500
+
+    # Upload to OpenPLC container
+    try:
+        # Copy file to PLC container
+        subprocess.run([
+            'docker', 'cp', st_file_path,
+            'plc:/workdir/webserver/st_files/sorting_twin.st'
+        ], check=True, timeout=10)
+
+        # Login to OpenPLC
+        login_cmd = 'docker exec plc curl -s -X POST http://localhost:8080/login -d "username=openplc&password=openplc" -c /tmp/cookies.txt'
+        subprocess.run(login_cmd, shell=True, check=True, timeout=10)
+
+        # Stop PLC
+        subprocess.run('docker exec plc curl -s -b /tmp/cookies.txt http://localhost:8080/stop_plc',
+                      shell=True, timeout=10)
+
+        # Compile program
+        subprocess.run('docker exec plc curl -s -b /tmp/cookies.txt "http://localhost:8080/compile-program?file=sorting_twin.st"',
+                      shell=True, timeout=30)
+
+        # Wait for compilation
+        time.sleep(5)
+
+        # Start PLC
+        subprocess.run('docker exec plc curl -s -b /tmp/cookies.txt http://localhost:8080/start_plc',
+                      shell=True, timeout=10)
+
+        return jsonify({'success': True, 'message': 'Code uploaded and compiled'})
+
+    except subprocess.CalledProcessError as e:
+        return jsonify({'success': False, 'error': f'Upload failed: {e}'}), 500
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Upload timed out'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plc/values', methods=['GET'])
+def get_plc_values():
+    """Get current PLC I/O values for monitoring"""
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC bridge not available'}), 503
+
+    bridge = get_bridge()
+    if not bridge or not bridge.running:
+        return jsonify({'error': 'PLC bridge not running'}), 503
+
+    state = bridge.state
+    forced_outputs = bridge.get_forced_outputs()
+
+    return jsonify({
+        'outputs': state.outputs,
+        'inputs': state.inputs,
+        'registers': state.registers,
+        'forced_outputs': forced_outputs,
+        'connected': state.connected
+    })
+
+
+@app.route('/api/plc/force', methods=['POST'])
+def force_plc_value():
+    """
+    Force a PLC I/O value (for debugging/testing).
+
+    For OUTPUTS (QX coils like conveyor_run, diverter_red):
+    - Directly writes to PLC output coils via Modbus
+    - Continues writing forced value each scan cycle to override PLC logic
+    - Use force=False to release and return control to PLC
+
+    For INPUTS (sensors, buttons):
+    - Sets the input value in the bridge state
+    - Use force=False to release
+
+    Request body:
+    {
+        "name": "conveyor_run",  // Output or input name
+        "value": true,           // Value to force (for force=true)
+        "force": true            // true=force ON/OFF, false=release
+    }
+    """
+    if not PLC_BRIDGE_AVAILABLE:
+        return jsonify({'error': 'PLC bridge not available'}), 503
+
+    bridge = get_bridge()
+    if not bridge or not bridge.running:
+        return jsonify({'error': 'PLC bridge not running'}), 503
+
+    data = request.get_json() or {}
+    name = data.get('name', '')
+    value = data.get('value', False)
+    force = data.get('force', True)
+
+    if not name:
+        return jsonify({'error': 'No variable name provided'}), 400
+
+    # Check if this is an output or input
+    is_output = name in bridge.IO_MAP.get('outputs', {})
+    is_input = name in bridge.IO_MAP.get('inputs', {})
+
+    if not is_output and not is_input:
+        return jsonify({'error': f'Unknown variable: {name}'}), 400
+
+    success = False
+
+    if is_output:
+        # Force/release output coil
+        if force:
+            success = bridge.force_output(name, bool(value))
+        else:
+            success = bridge.release_force(name)
+    else:
+        # Force/release input
+        if force:
+            bridge.set_input(name, bool(value))
+            success = True
+        else:
+            # Release input by setting to False
+            bridge.set_input(name, False)
+            success = True
+
+    # Get current forced outputs for response
+    forced_outputs = bridge.get_forced_outputs()
+
+    return jsonify({
+        'success': success,
+        'name': name,
+        'value': value if force else None,
+        'forced': force,
+        'is_output': is_output,
+        'forced_outputs': forced_outputs
+    })
+
+
+@app.route('/api/ai/analyze-plc', methods=['POST'])
+def analyze_plc_with_ai():
+    """Use AI to analyze PLC code and provide insights"""
+    if not OPENAI_API_KEY:
+        return jsonify({'error': 'OpenAI API key not configured'}), 503
+
+    data = request.get_json() or {}
+    prompt = data.get('prompt', '')
+    code = data.get('code', '')
+    values = data.get('values', {})
+
+    if not prompt:
+        return jsonify({'error': 'No prompt provided'}), 400
+
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+        system_prompt = """You are an expert IEC 61131-3 Structured Text PLC programmer and industrial control systems security analyst.
+You specialize in:
+- OpenPLC runtime and its implementation details
+- Industrial sorting systems and conveyor control
+- Timing analysis and race conditions in PLC programs
+- CWE (Common Weakness Enumeration) vulnerabilities in industrial systems
+- Best practices for reliable PLC code
+
+When analyzing code, consider:
+1. Logic correctness and timing issues
+2. Edge detection and debouncing
+3. Safety interlocks and fault handling
+4. Modbus register mappings
+5. Security vulnerabilities (unauthorized access, DoS, injection)
+
+Provide specific, actionable recommendations."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"""Please analyze this PLC Structured Text code:
+
+```structured-text
+{code[:10000]}  # Limit code length
+```
+
+Current PLC values: {json.dumps(values)[:2000]}
+
+User question/request: {prompt}
+
+Provide detailed analysis and specific recommendations."""}
+        ]
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=2000,
+            temperature=0.3
+        )
+
+        ai_response = response.choices[0].message.content
+        return jsonify({'success': True, 'response': ai_response})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ============================================================================
+# PLC Editor API Endpoints
+# ============================================================================
+
+@app.route('/api/plc/code', methods=['GET'])
+def get_plc_code():
+    """Get the current PLC Structured Text code"""
+    try:
+        st_file = os.path.join(os.path.dirname(__file__), 'plc_programs', 'sorting_twin.st')
+        if os.path.exists(st_file):
+            with open(st_file, 'r') as f:
+                code = f.read()
+            return jsonify({'success': True, 'code': code, 'file': 'sorting_twin.st'})
+        else:
+            return jsonify({'success': False, 'error': 'ST file not found'}), 404
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plc/code', methods=['POST'])
+def save_plc_code():
+    """Save the PLC Structured Text code"""
+    try:
+        data = request.get_json() or {}
+        code = data.get('code', '')
+
+        if not code:
+            return jsonify({'success': False, 'error': 'No code provided'}), 400
+
+        st_file = os.path.join(os.path.dirname(__file__), 'plc_programs', 'sorting_twin.st')
+
+        # Create backup before saving
+        if os.path.exists(st_file):
+            backup_file = st_file + '.backup'
+            import shutil
+            shutil.copy2(st_file, backup_file)
+
+        with open(st_file, 'w') as f:
+            f.write(code)
+
+        return jsonify({'success': True, 'message': 'Code saved successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plc/compile', methods=['POST'])
+def compile_plc_code():
+    """Compile and deploy the PLC code to OpenPLC"""
+    import subprocess
+
+    try:
+        # Run the init_openplc.py script to compile and deploy
+        script_dir = os.path.dirname(__file__)
+        init_script = os.path.join(script_dir, 'init_openplc.py')
+
+        if not os.path.exists(init_script):
+            return jsonify({'success': False, 'error': 'init_openplc.py not found'}), 500
+
+        # Run the initialization script
+        result = subprocess.run(
+            ['python3', init_script],
+            cwd=script_dir,
+            capture_output=True,
+            text=True,
+            timeout=120
+        )
+
+        # Check for success indicators in output
+        output = result.stdout + result.stderr
+        if 'Compilation successful' in output or 'Conveyor is RUNNING' in output:
+            return jsonify({
+                'success': True,
+                'message': 'Compilation and deployment successful',
+                'output': output[-2000:]  # Last 2000 chars of output
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'error': 'Compilation may have failed',
+                'output': output[-2000:]
+            }), 500
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'success': False, 'error': 'Compilation timed out'}), 500
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/plc/status', methods=['GET'])
+def get_plc_status():
+    """Check PLC connection status"""
+    import subprocess
+
+    try:
+        # Check if we can reach the PLC Modbus port
+        cmd = "docker exec core-novnc docker exec plc netstat -tlnp 2>/dev/null | grep 502"
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+
+        connected = '502' in result.stdout
+        return jsonify({'connected': connected})
+    except:
+        return jsonify({'connected': False})
+
+
+@app.route('/api/plc/ai-review', methods=['POST'])
+def plc_ai_review():
+    """AI-powered PLC code review and educational assistance"""
+    if not OPENAI_API_KEY:
+        return jsonify({'success': False, 'error': 'OpenAI API key not configured. Set OPENAI_API_KEY environment variable.'}), 503
+
+    data = request.get_json() or {}
+    question = data.get('question', '')
+    code = data.get('code', '')
+
+    if not question:
+        return jsonify({'success': False, 'error': 'No question provided'}), 400
+
+    try:
+        client = openai.OpenAI(api_key=OPENAI_API_KEY)
+
+        system_prompt = """You are an expert ICS (Industrial Control Systems) educator and IEC 61131-3 Structured Text programmer.
+You are helping students learn about PLC programming in a safe lab environment.
+
+Your responsibilities:
+1. **Educational Focus**: Explain concepts clearly for students learning PLC programming
+2. **Security Awareness**: Always highlight potential security risks and vulnerabilities in code
+3. **Safety Emphasis**: Stress the importance of safety systems in industrial environments
+4. **Practical Guidance**: Provide specific, actionable advice for code improvements
+
+When reviewing code, analyze for:
+- **Logic correctness**: Timing, edge detection, state machines
+- **Safety issues**: E-stop handling, interlocks, fault conditions
+- **Security vulnerabilities**: Unauthorized access points, force mode abuse, input validation
+- **Best practices**: Commenting, variable naming, modular design
+- **Common PLC pitfalls**: Division by zero, integer overflow, race conditions
+
+Context about this specific system:
+- This is a sorting facility with conveyor, color sensors, and pneumatic diverters
+- OpenPLC runtime with Modbus TCP communication
+- 3D digital twin simulation for visualization
+- Educational lab for ICS security training
+
+Format your responses with:
+- Clear headers and bullet points
+- Code examples when helpful
+- Security risk ratings (Critical/High/Medium/Low) where applicable
+- Links to relevant ICS security standards (NIST, IEC 62443) when appropriate
+
+Always be encouraging while maintaining technical accuracy. Help students understand both the "what" and "why" of PLC programming."""
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"""Here is the current PLC Structured Text code:
+
+```structured-text
+{code[:15000]}
+```
+
+Student question: {question}
+
+Please provide a helpful, educational response that addresses their question while highlighting any relevant security or safety considerations."""}
+        ]
+
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=messages,
+            max_tokens=2500,
+            temperature=0.4
+        )
+
+        ai_response = response.choices[0].message.content
+        return jsonify({'success': True, 'response': ai_response})
+
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 @app.route('/api/docker/cleanup', methods=['POST'])
@@ -2854,13 +3626,15 @@ chmod +x {wrapper_script}' '''
         time.sleep(0.5)
 
         # Start websockify on the external port - this handles WebSocket protocol and serves noVNC files
-        websockify_cmd = f'''docker exec core-novnc bash -c 'nohup python3 -m websockify --web /opt/noVNC {proxy_port} localhost:{internal_port} > /tmp/websockify_{proxy_port}.log 2>&1 &' '''
+        # Use the noVNC bundled novnc_proxy script since websockify module isn't installed
+        websockify_cmd = f'''docker exec core-novnc bash -c 'cd /opt/noVNC && nohup ./utils/novnc_proxy --listen {proxy_port} --vnc localhost:{internal_port} > /tmp/websockify_{proxy_port}.log 2>&1 &' '''
         subprocess.run(websockify_cmd, shell=True, capture_output=True, timeout=5)
         time.sleep(1)
 
         # Verify the proxy chain is running
+        # Match either websockify or novnc_proxy since we use the bundled script
         verify_proxy = f'''docker exec core-novnc bash -c '
-            pgrep -f "websockify.*{proxy_port}" > /dev/null && pgrep -f "socat.*{internal_port}" > /dev/null && echo OK || echo FAILED
+            (pgrep -f "websockify.*{proxy_port}" > /dev/null || pgrep -f "novnc_proxy.*{proxy_port}" > /dev/null) && pgrep -f "socat.*{internal_port}" > /dev/null && echo OK || echo FAILED
         ' '''
         verify_result = subprocess.run(verify_proxy, shell=True, capture_output=True, text=True, timeout=5)
 
@@ -3088,6 +3862,88 @@ def setup_all_vnc_proxies():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@app.route('/api/core-nodes', methods=['GET'])
+def get_core_all_nodes():
+    """
+    Get ALL Docker nodes from the running CORE session (not just VNC-capable).
+    Used for topology detection (e.g., detecting ICS sorting facility).
+    """
+    import subprocess
+
+    nodes = []
+
+    try:
+        # Query CORE for running session nodes
+        script_content = '''
+import json
+from core.api.grpc import client
+from core.api.grpc.wrappers import NodeType
+
+try:
+    core = client.CoreGrpcClient()
+    core.connect()
+    sessions = core.get_sessions()
+    nodes = []
+
+    for session_info in sessions:
+        state_val = session_info.state.value if hasattr(session_info.state, 'value') else session_info.state
+        if state_val == 4:  # RUNTIME state
+            session = core.get_session(session_info.id)
+
+            # Build a map of node_id -> IP from links
+            node_ip_map = {}
+            for link in session.links:
+                if link.iface2 and link.iface2.ip4:
+                    node_ip_map[link.node2_id] = link.iface2.ip4.split("/")[0]
+                if link.iface1 and link.iface1.ip4:
+                    node_ip_map[link.node1_id] = link.iface1.ip4.split("/")[0]
+
+            # Get all Docker nodes
+            for node_id, node in session.nodes.items():
+                node_type_val = node.type.value if hasattr(node.type, 'value') else node.type
+                if node_type_val == 15:  # DOCKER type
+                    node_info = {
+                        "id": node.id,
+                        "name": node.name,
+                        "image": node.image if node.image else "",
+                        "session_id": session_info.id,
+                        "position": {"x": node.position.x, "y": node.position.y}
+                    }
+                    if node_id in node_ip_map:
+                        node_info["ip"] = node_ip_map[node_id]
+                    nodes.append(node_info)
+
+    print(json.dumps(nodes))
+    core.close()
+except Exception as e:
+    import traceback
+    print(json.dumps({"error": str(e), "trace": traceback.format_exc()}))
+'''
+        script_path = '/tmp/query_all_nodes.py'
+        with open(script_path, 'w') as f:
+            f.write(script_content)
+
+        subprocess.run(f'docker cp {script_path} core-novnc:/tmp/query_all_nodes.py',
+                      shell=True, capture_output=True, timeout=10)
+
+        query_cmd = 'docker exec core-novnc /opt/core/venv/bin/python3 /tmp/query_all_nodes.py'
+        result = subprocess.run(query_cmd, shell=True, capture_output=True, text=True, timeout=20)
+
+        if result.returncode == 0 and result.stdout.strip():
+            try:
+                all_nodes = json.loads(result.stdout.strip())
+                if isinstance(all_nodes, dict) and 'error' in all_nodes:
+                    return jsonify({'nodes': [], 'error': all_nodes['error']})
+                return jsonify({'nodes': all_nodes})
+            except json.JSONDecodeError:
+                pass
+
+        return jsonify({'nodes': nodes})
+
+    except Exception as e:
+        return jsonify({'nodes': [], 'error': str(e)})
+
+
 @app.route('/api/core-vnc-nodes', methods=['GET'])
 def get_core_vnc_nodes():
     """
@@ -3215,6 +4071,8 @@ def core_vnc_proxy(path):
     This allows the CORE GUI VNC to work through port 8080 only.
 
     NOTE: WebSocket requests to /websockify are handled by the VNCWebSocketMiddleware.
+
+    SPECIAL: vnc_lite.html is served from our static folder with password auto-fill fix.
     """
     import requests as http_requests
 
@@ -3225,6 +4083,13 @@ def core_vnc_proxy(path):
     # Default to vnc.html if no path specified
     if not path or path == '':
         path = 'vnc.html'
+
+    # Serve our custom vnc_lite.html with password auto-fill fix
+    # This prevents the password prompt when credentials are required
+    if path == 'vnc_lite.html':
+        static_path = os.path.join(os.path.dirname(__file__), 'static', 'vnc_lite.html')
+        if os.path.exists(static_path):
+            return send_file(static_path, mimetype='text/html')
 
     # Proxy to the websockify server inside core-novnc (port 6080)
     target_url = f'http://localhost:6080/{path}'
@@ -3270,6 +4135,8 @@ def hmi_vnc_proxy(port, path):
     The two-layer proxy chain (websockify:608X -> socat:1608X -> HMI) must already be running.
 
     NOTE: WebSocket requests to /websockify are handled by the flask-sock WebSocket route.
+
+    SPECIAL: vnc_lite.html is served from our static folder with password auto-fill fix.
     """
     import requests as http_requests
 
@@ -3283,6 +4150,13 @@ def hmi_vnc_proxy(port, path):
         # This shouldn't happen if flask-sock is properly configured,
         # but just in case, return an appropriate error
         return jsonify({'error': 'WebSocket upgrade required. Use WebSocket connection.'}), 426
+
+    # Serve our custom vnc_lite.html with password auto-fill fix
+    # This prevents the password prompt when credentials are required
+    if path == 'vnc_lite.html':
+        static_path = os.path.join(os.path.dirname(__file__), 'static', 'vnc_lite.html')
+        if os.path.exists(static_path):
+            return send_file(static_path, mimetype='text/html')
 
     # Build target URL
     target_url = f'http://localhost:{port}/{path}'
@@ -3310,6 +4184,302 @@ def hmi_vnc_proxy(port, path):
         return jsonify({
             'error': f'VNC proxy on port {port} not running. Start it via /api/start-host-vnc first.'
         }), 503
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# -----------------------------------------------------------------------------
+# HMI HTTP Proxy (for Node-RED and other web-based HMIs inside CORE network)
+# -----------------------------------------------------------------------------
+# This proxies HTTP requests to containers running inside the CORE network
+# Browser -> :8080/hmi-http/<container>/<port>/<path> -> core-novnc -> CORE container
+
+# Store active HMI HTTP proxy endpoints
+HMI_HTTP_PROXIES = {}  # container_name -> {'ip': '10.0.0.20', 'port': 1880}
+
+
+@app.route('/api/hmi-http/register', methods=['POST'])
+def register_hmi_http():
+    """
+    Register an HMI container for HTTP proxying.
+
+    POST body:
+    {
+        "container_name": "hmi",
+        "ip": "10.0.0.20",
+        "port": 1880,
+        "path_prefix": "/ui"  # optional, for Node-RED dashboard
+    }
+    """
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
+    container_name = data.get('container_name')
+    ip = data.get('ip')
+    port = data.get('port', 1880)
+
+    if not container_name or not ip:
+        return jsonify({'error': 'container_name and ip are required'}), 400
+
+    HMI_HTTP_PROXIES[container_name] = {
+        'ip': ip,
+        'port': port,
+        'path_prefix': data.get('path_prefix', '')
+    }
+
+    # Build the proxy URL for the client
+    codespace_name = os.environ.get('CODESPACE_NAME')
+    if codespace_name:
+        base_url = f"https://{codespace_name}-8080.app.github.dev"
+    else:
+        base_url = "http://localhost:8080"
+
+    proxy_url = f"{base_url}/hmi-http/{container_name}{data.get('path_prefix', '')}"
+
+    return jsonify({
+        'success': True,
+        'container_name': container_name,
+        'proxy_url': proxy_url,
+        'internal_ip': ip,
+        'port': port
+    })
+
+
+@app.route('/api/hmi-http/list', methods=['GET'])
+def list_hmi_http():
+    """List all registered HMI HTTP proxies."""
+    codespace_name = os.environ.get('CODESPACE_NAME')
+    if codespace_name:
+        base_url = f"https://{codespace_name}-8080.app.github.dev"
+    else:
+        base_url = "http://localhost:8080"
+
+    proxies = []
+    for name, config in HMI_HTTP_PROXIES.items():
+        proxies.append({
+            'container_name': name,
+            'ip': config['ip'],
+            'port': config['port'],
+            'proxy_url': f"{base_url}/hmi-http/{name}{config.get('path_prefix', '')}"
+        })
+
+    return jsonify({'proxies': proxies})
+
+
+@app.route('/hmi-http/<container>/', defaults={'path': ''})
+@app.route('/hmi-http/<container>/<path:path>')
+def hmi_http_proxy(container, path):
+    """
+    Reverse proxy for HMI HTTP connections inside CORE network.
+
+    Proxies HTTP requests from /hmi-http/<container>/<path> to the container's HTTP server.
+    CORE containers run in network namespaces, so we use nsenter to access them.
+
+    This allows accessing Node-RED dashboards, web HMIs, etc. from the browser.
+    """
+    import subprocess
+
+    # Check if container is registered
+    if container not in HMI_HTTP_PROXIES:
+        # Try to register using default IP from template or fallback
+        if container == 'hmi':
+            HMI_HTTP_PROXIES[container] = {'ip': '10.0.0.20', 'port': 1880, 'path_prefix': '/ui'}
+        else:
+            return jsonify({
+                'error': f'Container {container} not found or not registered',
+                'hint': 'Use POST /api/hmi-http/register to register the container'
+            }), 404
+
+    config = HMI_HTTP_PROXIES[container]
+    target_port = config['port']
+
+    # For CORE containers, we need to use nsenter to access their network namespace
+    # First, get the container's PID
+    try:
+        pid_result = subprocess.run(
+            f"docker exec core-novnc docker inspect {container} --format '{{{{.State.Pid}}}}'",
+            shell=True, capture_output=True, text=True, timeout=5
+        )
+        if pid_result.returncode != 0 or not pid_result.stdout.strip():
+            return jsonify({'error': f'Container {container} not running'}), 503
+
+        container_pid = pid_result.stdout.strip()
+    except Exception as e:
+        return jsonify({'error': f'Failed to get container PID: {e}'}), 500
+
+    # Build the target URL - use localhost since we'll be inside the container's namespace
+    target_url = f"http://localhost:{target_port}/{path}"
+    if request.query_string:
+        target_url += f"?{request.query_string.decode()}"
+
+    # Determine HTTP method and handle request body
+    method = request.method.upper()
+
+    try:
+        # Build curl command using nsenter to access container's network namespace
+        curl_opts = ['-s', '-S', '-L']  # silent, show errors, follow redirects
+        curl_opts.append(f'-X {method}')
+
+        # Add essential headers only (avoid shell escaping issues)
+        content_type_header = request.headers.get('Content-Type', '')
+        if content_type_header:
+            curl_opts.append(f"-H 'Content-Type: {content_type_header}'")
+
+        # Add request body for POST/PUT
+        body_data = ''
+        if method in ['POST', 'PUT', 'PATCH'] and request.data:
+            # Escape the body data for shell
+            body_escaped = request.data.decode('utf-8', errors='replace').replace("'", "'\\''")
+            body_data = f"-d '{body_escaped}'"
+
+        # Use nsenter to enter container's network namespace and run curl
+        curl_cmd = f"docker exec core-novnc nsenter -t {container_pid} -n curl {' '.join(curl_opts)} {body_data} '{target_url}'"
+
+        result = subprocess.run(
+            curl_cmd,
+            shell=True,
+            capture_output=True,
+            timeout=30
+        )
+
+        if result.returncode != 0:
+            return jsonify({
+                'error': f'Failed to reach {target_url}',
+                'details': result.stderr.decode('utf-8', errors='replace')
+            }), 502
+
+        # Return the response
+        content = result.stdout
+        content_type = 'text/html'
+
+        # Detect content type from response
+        if content.startswith(b'{') or content.startswith(b'['):
+            content_type = 'application/json'
+        elif b'<!DOCTYPE html' in content[:100] or b'<html' in content[:100]:
+            content_type = 'text/html'
+        elif path.endswith('.js'):
+            content_type = 'application/javascript'
+        elif path.endswith('.css'):
+            content_type = 'text/css'
+        elif path.endswith('.png'):
+            content_type = 'image/png'
+        elif path.endswith('.svg'):
+            content_type = 'image/svg+xml'
+        elif path.endswith('.ico'):
+            content_type = 'image/x-icon'
+
+        return Response(content, content_type=content_type)
+
+    except subprocess.TimeoutExpired:
+        return jsonify({'error': f'Request to {target_url} timed out'}), 504
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/hmi-http/discover', methods=['POST'])
+def discover_hmi_containers():
+    """
+    Discover and register HMI containers from the current CORE session.
+
+    Looks for containers with patterns like 'hmi', 'nodered', 'node-red', etc.
+    and registers them for HTTP proxying.
+
+    CORE containers use network namespaces (not Docker networks), so we get IPs from:
+    1. The last deployed template definition
+    2. Fallback to known default IPs for common templates
+    """
+    global last_deployed_template
+    import subprocess
+
+    discovered = []
+
+    # Build lookup of node IPs from the deployed template
+    template_node_ips = {}
+    if last_deployed_template and 'nodes' in last_deployed_template:
+        for node in last_deployed_template['nodes']:
+            if node.get('ip'):
+                template_node_ips[node['name']] = node['ip']
+
+    try:
+        # Get running containers inside core-novnc
+        result = subprocess.run(
+            "docker exec core-novnc docker ps --format '{{.Names}}\\t{{.Image}}'",
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+
+        if result.returncode != 0:
+            return jsonify({'error': 'Failed to list containers'}), 500
+
+        # Patterns for HTTP-based HMI containers
+        http_patterns = ['nodered', 'node-red', 'hmi', 'dashboard', 'scada', 'web']
+        http_images = ['nodered-hmi-core', 'node-red', 'nodered']
+
+        for line in result.stdout.strip().split('\n'):
+            if not line or '\t' not in line:
+                continue
+            parts = line.split('\t')
+            container_name = parts[0]
+            image_name = parts[1] if len(parts) > 1 else ''
+
+            # Skip core infrastructure containers
+            if container_name in ['core-novnc', 'core-daemon']:
+                continue
+
+            # Check if it matches HTTP HMI patterns
+            name_match = any(pattern in container_name.lower() for pattern in http_patterns)
+            image_match = any(img in image_name.lower() for img in http_images)
+
+            if name_match or image_match:
+                # Get IP from template definition or use default
+                ip = template_node_ips.get(container_name)
+
+                # Fallback IPs for known container patterns
+                if not ip:
+                    if container_name == 'hmi' or 'nodered' in image_name.lower():
+                        ip = '10.0.0.20'  # Default HMI IP
+                    elif 'scada' in container_name.lower():
+                        ip = '10.0.0.30'
+
+                if not ip:
+                    continue  # Skip if we can't determine IP
+
+                # Determine default port based on image
+                port = 1880  # Default for Node-RED
+                path_prefix = '/ui'  # Node-RED dashboard
+
+                if 'scada' in image_name.lower():
+                    port = 8080
+                    path_prefix = ''
+
+                # Register the proxy
+                HMI_HTTP_PROXIES[container_name] = {
+                    'ip': ip,
+                    'port': port,
+                    'path_prefix': path_prefix
+                }
+
+                # Build proxy URL
+                codespace_name = os.environ.get('CODESPACE_NAME')
+                if codespace_name:
+                    base_url = f"https://{codespace_name}-8080.app.github.dev"
+                else:
+                    base_url = "http://localhost:8080"
+
+                discovered.append({
+                    'container_name': container_name,
+                    'image': image_name,
+                    'ip': ip,
+                    'port': port,
+                    'proxy_url': f"{base_url}/hmi-http/{container_name}{path_prefix}"
+                })
+
+        return jsonify({
+            'success': True,
+            'discovered': len(discovered),
+            'proxies': discovered
+        })
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -5180,10 +6350,13 @@ def get_all_pending_controls():
 
 class VNCWebSocketMiddleware:
     """
-    WSGI middleware that intercepts VNC WebSocket requests before Flask handles them.
+    WSGI middleware that intercepts WebSocket requests before Flask handles them.
 
-    This middleware checks if the request is a WebSocket upgrade to /hmi-vnc/<port>/websockify
-    and handles it directly using gevent-websocket, bypassing Flask's routing.
+    This middleware handles:
+    1. VNC proxy WebSocket requests to /hmi-vnc/<port>/websockify
+    2. CORE desktop VNC at /core-vnc/websockify
+    3. PLC I/O bridge WebSocket at /ws/plc-io for digital twin integration
+
     All other requests are passed through to the Flask application.
     """
 
@@ -5200,6 +6373,26 @@ class VNCWebSocketMiddleware:
         # Check if this is a WebSocket request to our VNC proxy endpoints
         hmi_match = re.match(r'^/hmi-vnc/(\d+)/websockify$', path)
         core_match = (path == '/core-vnc/websockify')
+        plc_io_match = (path == '/ws/plc-io')
+
+        # Handle PLC I/O bridge WebSocket for 3D digital twin
+        if plc_io_match and ws:
+            print(f"PLC I/O middleware: handling digital twin WebSocket", flush=True)
+            try:
+                bridge = get_bridge() if PLC_BRIDGE_AVAILABLE else None
+                if not bridge and PLC_BRIDGE_AVAILABLE and start_bridge:
+                    # Auto-start bridge in simulation mode for digital twin
+                    print(f"PLC I/O middleware: auto-starting bridge in simulation mode", flush=True)
+                    bridge = start_bridge()
+                if bridge:
+                    bridge.handle_websocket(ws)
+                else:
+                    # Send error message if bridge not running
+                    ws.send('{"type": "error", "message": "PLC I/O bridge not available."}')
+                    ws.close()
+            except Exception as e:
+                print(f"PLC I/O middleware error: {e}", flush=True)
+            return []
 
         if hmi_match and ws:
             # Extract port and handle WebSocket proxy for HMI VNC
