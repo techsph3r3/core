@@ -55,7 +55,8 @@ except ImportError as e:
     start_bridge = stop_bridge = get_bridge = None
 
 # Add the core_mcp module to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
 
 from core_mcp.topology_generator import TopologyGenerator, NodeConfig, LinkConfig
 from core_mcp.appliance_registry import (
@@ -1397,11 +1398,14 @@ def deploy_template(template_id):
         subprocess.run(f"docker cp {local_path} core-novnc:{container_path}",
                       shell=True, capture_output=True)
 
-        # Copy load script
-        subprocess.run(
-            "docker cp /workspaces/core/core-mcp-server/load_topology.py core-novnc:/tmp/",
-            shell=True, capture_output=True
-        )
+        # Clean up VNC proxy chains before deploying new topology
+        # This frees up ports 6081-6083 for new HMI connections
+        vnc_cleanup_cmd = '''docker exec core-novnc bash -c '
+            pkill -9 socat 2>/dev/null || true
+            pkill -9 -f "websockify.* 608[1-9]" 2>/dev/null || true
+            rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
+        ' '''
+        subprocess.run(vnc_cleanup_cmd, shell=True, capture_output=True, timeout=10)
 
         # Clean up any existing Docker containers with the same names
         # This prevents "container name already in use" errors
@@ -1416,11 +1420,49 @@ def deploy_template(template_id):
                 print(f"Pre-deploy cleanup: removed {len(cleanup_info['removed'])} existing containers: {cleanup_info['removed']}")
 
         # Load in CORE with auto-start
+        # Note: load_topology.py is pre-installed at /opt/core/load_topology.py in the container
         load_cmd = f"""docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py --start {container_path}
+            ./venv/bin/python3 /opt/core/load_topology.py --start {container_path}
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
+
+        # Recover VNC stack if it was killed during deployment
+        # The load_topology.py cleanup can sometimes kill VNC processes
+        vnc_recovery_cmd = '''docker exec core-novnc bash -c '
+            # Check if Xtigervnc is running
+            if ! pgrep -x Xtigervnc > /dev/null 2>&1; then
+                echo "Recovering VNC server..."
+                # Clean up stale locks
+                rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+                # Start Xtigervnc
+                Xtigervnc :1 -localhost=0 -desktop "CORE" -rfbport 5901 -PasswordFile /root/.vnc/passwd -SecurityTypes VncAuth,TLSVnc -geometry 1920x1080 -depth 24 &
+                sleep 2
+            fi
+
+            # Check if websockify is connecting to correct port (5901, not 5900)
+            if ! pgrep -f "websockify.*5901" > /dev/null 2>&1; then
+                echo "Recovering websockify..."
+                pkill -9 websockify 2>/dev/null || true
+                sleep 1
+                nohup websockify --web=/opt/noVNC 6080 localhost:5901 > /tmp/websockify.log 2>&1 &
+                sleep 1
+            fi
+
+            # Check if fluxbox is running
+            if ! pgrep -x fluxbox > /dev/null 2>&1; then
+                DISPLAY=:1 fluxbox &
+                sleep 1
+            fi
+
+            # Check if core-gui is running
+            if ! pgrep -f core-gui > /dev/null 2>&1; then
+                DISPLAY=:1 core-gui &
+            fi
+
+            echo "VNC recovery complete"
+        ' '''
+        subprocess.run(vnc_recovery_cmd, shell=True, capture_output=True, timeout=15)
 
         # Start PLC I/O bridge for ICS sorting facility (connects 3D twin to OpenPLC)
         bridge_status = None
@@ -1446,7 +1488,7 @@ def deploy_template(template_id):
                     # Run initialization script for OpenPLC
                     init_script = template.get('init_script')
                     if init_script:
-                        script_path = os.path.join('/workspaces/core/core-mcp-server', init_script)
+                        script_path = os.path.join(SCRIPT_DIR, init_script)
                         if os.path.exists(script_path):
                             print(f"Running init script: {init_script}")
                             try:
@@ -2403,16 +2445,11 @@ def add_host_to_topology():
         subprocess.run(f"docker cp {local_path} core-novnc:{container_path}",
                       shell=True, capture_output=True)
 
-        # Copy load script
-        subprocess.run(
-            "docker cp /workspaces/core/core-mcp-server/load_topology.py core-novnc:/tmp/",
-            shell=True, capture_output=True
-        )
-
         # Load in CORE with auto-start
+        # Note: load_topology.py is pre-installed at /opt/core/load_topology.py in the container
         load_cmd = f"""docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py --start {container_path}
+            ./venv/bin/python3 /opt/core/load_topology.py --start {container_path}
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
@@ -2700,13 +2737,9 @@ def ai_add_to_topology():
 
         subprocess.run(f"docker cp {local_path} core-novnc:{container_path}",
                       shell=True, capture_output=True)
-        subprocess.run(
-            "docker cp /workspaces/core/core-mcp-server/load_topology.py core-novnc:/tmp/",
-            shell=True, capture_output=True
-        )
         load_cmd = f"""docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py --start {container_path}
+            ./venv/bin/python3 /opt/core/load_topology.py --start {container_path}
         '"""
         subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
@@ -2795,28 +2828,15 @@ def copy_to_core():
             copy_scripts_cmd = f"docker cp {local_scripts_path} core-novnc:{scripts_path}"
             subprocess.run(copy_scripts_cmd, shell=True, capture_output=True, text=True)
 
-            # Also copy the start_and_deploy script
-            subprocess.run(
-                "docker cp /workspaces/core/core-mcp-server/start_and_deploy.py core-novnc:/tmp/",
-                shell=True,
-                capture_output=True
-            )
-
         # Auto-open in CORE GUI if requested
         session_id = None
         if auto_open:
-            # Copy the load script to container if not exists
-            subprocess.run(
-                "docker cp /workspaces/core/core-mcp-server/load_topology.py core-novnc:/tmp/",
-                shell=True,
-                capture_output=True
-            )
-
             # Load topology using CORE Python API
             # Always use --start to auto-start the session (no need to press play button)
+            # Note: load_topology.py is pre-installed at /opt/core/load_topology.py in the container
             load_cmd = f"""docker exec core-novnc bash -c '
                 cd /opt/core &&
-                ./venv/bin/python3 /tmp/load_topology.py --start {container_path} > /tmp/load_topology.log 2>&1
+                ./venv/bin/python3 /opt/core/load_topology.py --start {container_path} > /tmp/load_topology.log 2>&1
             '"""
             result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True)
 
@@ -2936,8 +2956,9 @@ if sessions:
             )
 
         # Copy the deploy script
+        start_deploy_script = os.path.join(SCRIPT_DIR, 'start_and_deploy.py')
         subprocess.run(
-            "docker cp /workspaces/core/core-mcp-server/start_and_deploy.py core-novnc:/tmp/",
+            f"docker cp {start_deploy_script} core-novnc:/tmp/",
             shell=True,
             capture_output=True
         )
@@ -3649,12 +3670,15 @@ chmod +x {wrapper_script}' '''
 
         # Build the access URL - use the port 8080 reverse proxy
         # This proxies VNC through /hmi-vnc/<port>/ to avoid needing direct port access
+        # Use request.host_url to work for both local and remote access
         codespace_name = os.environ.get('CODESPACE_NAME', '')
         ws_path = f"hmi-vnc/{proxy_port}/websockify"
         if codespace_name:
             vnc_url = f"https://{codespace_name}-8080.app.github.dev/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
         else:
-            vnc_url = f"http://localhost:8080/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
+            # Use request host for remote access support
+            base_url = request.host_url.rstrip('/')
+            vnc_url = f"{base_url}/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
 
         return jsonify({
             'success': True,
@@ -3693,23 +3717,20 @@ def cleanup_vnc_proxies_api():
         # Layer 1: websockify on external ports (6081-6083)
         # Layer 2: socat on internal ports (16081-16083)
         cleanup_cmd = '''docker exec core-novnc bash -c '
-            # Count existing websockify proxies (HMI proxies on 608X ports)
-            ws_count=$(pgrep -c -f "websockify.*608[1-9]" 2>/dev/null || echo 0)
+            # Count existing websockify proxies (HMI proxies on 608X ports, NOT 6080)
+            ws_count=$(pgrep -c -f "websockify.* 608[1-9]" 2>/dev/null || echo 0)
 
-            # Count existing socat proxies (internal ports 160XX)
-            socat_count=$(pgrep -c -f "socat.*TCP-LISTEN:160" 2>/dev/null || echo 0)
+            # Count existing socat proxies (ALL socat are VNC proxies in this container)
+            socat_count=$(pgrep -c socat 2>/dev/null || echo 0)
+
+            # Count wrapper scripts before cleanup
+            scripts=$(ls /tmp/ns_forward_*.sh 2>/dev/null | wc -l || echo 0)
+
+            # Kill ALL socat processes (they are only used for VNC proxying)
+            pkill -9 socat 2>/dev/null || true
 
             # Kill websockify HMI proxies (ports 6081-6089, but NOT 6080 which is main VNC)
-            pkill -f "websockify.*608[1-9]" 2>/dev/null || true
-
-            # Kill socat internal proxies (ports 160XX)
-            pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
-
-            # Also kill any old-style socat proxies on 608X directly
-            pkill -f "socat.*TCP-LISTEN:608" 2>/dev/null || true
-
-            # Count wrapper scripts
-            scripts=$(ls /tmp/ns_forward_*.sh 2>/dev/null | wc -l || echo 0)
+            pkill -9 -f "websockify.* 608[1-9]" 2>/dev/null || true
 
             # Remove ALL wrapper scripts
             rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
@@ -4662,8 +4683,9 @@ def vnc_desktop(node_name):
         # In Codespaces, use the 8080 port with proxy path
         vnc_url = f"https://{codespace_name}-8080.app.github.dev/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
     else:
-        # Local dev can use direct port or proxy
-        vnc_url = f"http://localhost:8080/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
+        # Use request host for remote access support
+        base_url = request.host_url.rstrip('/')
+        vnc_url = f"{base_url}/hmi-vnc/{proxy_port}/vnc_lite.html?scale=true&path={ws_path}"
 
     return render_template('vnc_desktop.html',
                           node_name=node_name,
@@ -5772,17 +5794,11 @@ def load_builder_in_core():
             capture_output=True
         )
 
-        # Copy load script
-        subprocess.run(
-            "docker cp /workspaces/core/core-mcp-server/load_topology.py core-novnc:/tmp/",
-            shell=True,
-            capture_output=True
-        )
-
         # Load the topology with auto-start
+        # Note: load_topology.py is pre-installed at /opt/core/load_topology.py in the container
         load_cmd = """docker exec core-novnc bash -c '
             cd /opt/core &&
-            ./venv/bin/python3 /tmp/load_topology.py --start /root/topologies/builder_topology.xml
+            ./venv/bin/python3 /opt/core/load_topology.py --start /root/topologies/builder_topology.xml
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=60)
 
@@ -6369,6 +6385,10 @@ class VNCWebSocketMiddleware:
 
         path = environ.get('PATH_INFO', '')
         ws = environ.get('wsgi.websocket')
+
+        # Debug: Log all requests to VNC/websocket paths
+        if 'websock' in path.lower() or 'vnc' in path.lower() or 'ws/' in path:
+            print(f"VNC middleware: path={path}, ws={ws is not None}", flush=True)
 
         # Check if this is a WebSocket request to our VNC proxy endpoints
         hmi_match = re.match(r'^/hmi-vnc/(\d+)/websockify$', path)

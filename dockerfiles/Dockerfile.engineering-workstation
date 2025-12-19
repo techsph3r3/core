@@ -133,9 +133,33 @@ echo "Starting Engineering Workstation Desktop..."
 echo "Network Configuration:"
 ip addr show | grep -E "inet |eth"
 echo ""
-echo "Starting supervisord in background..."
-nohup /usr/bin/supervisord -c /etc/supervisor/conf.d/desktop.conf > /var/log/supervisor/supervisord.log 2>&1 &
-echo "Desktop services started (PID: $!)"
+
+# Kill any existing processes to ensure clean start
+pkill -9 Xvfb 2>/dev/null || true
+pkill -9 fluxbox 2>/dev/null || true
+pkill -9 x11vnc 2>/dev/null || true
+pkill -9 websockify 2>/dev/null || true
+pkill -9 supervisord 2>/dev/null || true
+sleep 1
+
+# Clean up stale lock files
+rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
+
+echo "Starting supervisord..."
+/usr/bin/supervisord -c /etc/supervisor/conf.d/desktop.conf &
+SUPERVISOR_PID=$!
+echo "Desktop services started (PID: $SUPERVISOR_PID)"
+
+# Wait for services to be ready
+sleep 3
+
+# Verify x11vnc is running, if not start it manually with loop
+if ! pgrep -f "x11vnc" > /dev/null; then
+    echo "x11vnc not running, starting manually..."
+    nohup /bin/bash -c 'while true; do x11vnc -display :1 -forever -shared -rfbport 5900 -nopw -loop; sleep 2; done' > /tmp/x11vnc.log 2>&1 &
+fi
+
+echo "Desktop ready!"
 STARTSCRIPT
 
 # Create entrypoint wrapper that starts desktop then runs CMD
@@ -160,4 +184,4 @@ EXPOSE 5900 6080
 
 # Use ENTRYPOINT to ensure desktop starts, then run whatever CMD is passed
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-CMD ["/usr/local/bin/start-desktop.sh"]
+CMD ["tail", "-f", "/dev/null"]

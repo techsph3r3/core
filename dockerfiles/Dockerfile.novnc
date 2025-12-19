@@ -172,6 +172,8 @@ RUN apt-get update -y && \
     autocutsel \
     xclip \
     xsel \
+    # socat for VNC proxy bridging to container network namespaces
+    socat \
     git && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/*
@@ -276,8 +278,15 @@ RUN curl -fsSL https://pkgs.tailscale.com/stable/ubuntu/jammy.noarmor.gpg | tee 
     rm -rf /var/lib/apt/lists/*
 
 
-# expose VNC and noVNC ports
-EXPOSE 5901 6080
+# Copy load_topology.py for CORE topology loading
+COPY core-mcp-server/load_topology.py /opt/core/load_topology.py
+RUN chmod +x /opt/core/load_topology.py
+
+# Create topologies directory
+RUN mkdir -p /root/topologies
+
+# expose VNC and noVNC ports, plus HMI VNC proxy ports
+EXPOSE 5901 6080 6081 6082 6083
 
 # set environment variables
 ENV DISPLAY=:1 \

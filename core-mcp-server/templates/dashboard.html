@@ -2110,6 +2110,14 @@ basic.forever(function () {
                 const isCodespaces = window.location.hostname.includes('github.dev');
                 const baseHost = window.location.hostname;
 
+                // Helper to build base URL that works for both local and remote access
+                const getBaseUrl = () => {
+                    const protocol = window.location.protocol;
+                    const port = window.location.port || (protocol === 'https:' ? '443' : '80');
+                    const hostWithPort = port === '80' || port === '443' ? baseHost : `${baseHost}:${port}`;
+                    return `${protocol}//${hostWithPort}`;
+                };
+
                 // CORE noVNC URL - proxied through port 8080 via /core-vnc/
                 const coreVncUrl = computed(() => {
                     // VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
@@ -2118,12 +2126,8 @@ basic.forever(function () {
                     // All traffic goes through port 8080 proxy - no need for direct port access
                     const params = `autoconnect=true&scale=true&reconnect=true&reconnect_delay=1000&password=${vncPassword}`;
                     const wsPath = 'core-vnc/websockify';
-                    if (isCodespaces) {
-                        // Codespaces: proxy through port 8080 at /core-vnc/
-                        return `https://${baseHost}/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
-                    }
-                    // Local: also proxy through port 8080
-                    return `http://localhost:8080/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
+                    // Use current hostname (works for both localhost and remote access)
+                    return `${getBaseUrl()}/core-vnc/vnc_lite.html?${params}&path=${wsPath}`;
                 });
 
                 // HMI Dashboard URL (Node-RED) - proxied through port 8080
@@ -2196,11 +2200,7 @@ basic.forever(function () {
                                 console.log('Using fallback VNC URL on port 6081');
                                 const wsPath = 'hmi-vnc/6081/websockify';
                                 const params = 'autoconnect=true&scale=true&reconnect=true';
-                                if (isCodespaces) {
-                                    hmiUrl.value = `https://${baseHost}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
-                                } else {
-                                    hmiUrl.value = `http://localhost:8080/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
-                                }
+                                hmiUrl.value = `${getBaseUrl()}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
                                 hmiConnected.value = true;
                             }
                         } else {
@@ -2208,11 +2208,7 @@ basic.forever(function () {
                             console.log('VNC setup returned no results, using fallback');
                             const wsPath = 'hmi-vnc/6081/websockify';
                             const params = 'autoconnect=true&scale=true&reconnect=true';
-                            if (isCodespaces) {
-                                hmiUrl.value = `https://${baseHost}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
-                            } else {
-                                hmiUrl.value = `http://localhost:8080/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
-                            }
+                            hmiUrl.value = `${getBaseUrl()}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
                             hmiConnected.value = true;
                         }
                     } catch (e) {
@@ -2220,11 +2216,7 @@ basic.forever(function () {
                         // Use fallback URL
                         const wsPath = 'hmi-vnc/6081/websockify';
                         const params = 'autoconnect=true&scale=true&reconnect=true';
-                        if (isCodespaces) {
-                            hmiUrl.value = `https://${baseHost}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
-                        } else {
-                            hmiUrl.value = `http://localhost:8080/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
-                        }
+                        hmiUrl.value = `${getBaseUrl()}/hmi-vnc/6081/vnc_lite.html?${params}&path=${wsPath}`;
                         hmiConnected.value = true;
                     }
                 }
@@ -3602,12 +3594,8 @@ basic.forever(function () {
                     // All VNC traffic goes through port 8080 proxy now
                     const wsPath = `hmi-vnc/${proxyPort}/websockify`;
                     const params = 'autoconnect=true&scale=true&reconnect=true&reconnect_delay=1000';
-                    if (isCodespaces) {
-                        // Codespaces: use port 8080 proxy path through current hostname
-                        return `https://${baseHost}/hmi-vnc/${proxyPort}/vnc_lite.html?${params}&path=${wsPath}`;
-                    } else {
-                        return `http://localhost:8080/hmi-vnc/${proxyPort}/vnc_lite.html?${params}&path=${wsPath}`;
-                    }
+                    // Use current hostname (works for both localhost and remote access)
+                    return `${getBaseUrl()}/hmi-vnc/${proxyPort}/vnc_lite.html?${params}&path=${wsPath}`;
                 }
 
                 // Start VNC desktop on a CORE node
@@ -3681,7 +3669,7 @@ basic.forever(function () {
                 // Open VNC as a tab in the dashboard (not a new window)
                 // The "Open Desktop" button now adds the node as a tab with sidebar
                 function openNodeVnc(node) {
-                    if (!node.vnc_url) return;
+                    if (!node.proxy_port) return;
 
                     // Check if this node is already in vncHosts
                     const existingHost = vncHosts.value.find(h => h.coreNode === node.name);
@@ -3691,11 +3679,14 @@ basic.forever(function () {
                         return;
                     }
 
+                    // Build VNC URL using current host (not localhost) for remote access
+                    const vncUrl = buildVncUrl(node.proxy_port);
+
                     // Add as a new VNC host tab
                     const newVncHost = {
                         id: Date.now(),
                         name: node.name,
-                        url: node.vnc_url,
+                        url: vncUrl,
                         type: node.type || 'workstation',
                         status: 'connected',
                         coreNode: node.name,
