@@ -481,12 +481,35 @@ def start_session_and_setup_vnc(session_id):
         return False
 
 
+def wait_for_session_runtime(core, session_id, timeout=60):
+    """Wait for session to reach RUNTIME state."""
+    from core.api.grpc.wrappers import SessionState
+    import time
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            session = core.get_session(session_id)
+            if session.state == SessionState.RUNTIME:
+                return True
+        except:
+            pass
+        time.sleep(1)
+    return False
+
+
 def load_and_start(xml_file_path):
     """
-    Complete workflow: Load topology and start session using core-gui --start.
+    Complete workflow: Load topology and start session.
 
-    This is the preferred method for automated deployment.
-    Uses the proven blackbox approach: kill old GUI, launch with --start flag.
+    Combines the proven blackbox approach (core-gui --start) with proper
+    session state handling from start_and_deploy.py:
+    1. core-cleanup (blackbox)
+    2. pkill wish8.5 / core-gui (blackbox)
+    3. core-daemon restart (blackbox)
+    4. core-gui --start <file> (blackbox)
+    5. Wait for RUNTIME state (start_and_deploy)
+    6. Set up VNC proxies and MQTT after session is running
     """
     import subprocess
     import os
@@ -497,22 +520,32 @@ def load_and_start(xml_file_path):
         print(f"❌ File not found: {xml_file_path}")
         return False
 
-    print("🔄 Preparing to load topology...")
-
-    # Perform full cleanup first (VNC proxies, Docker containers, pycore dirs)
-    full_cleanup()
+    print("🔄 Preparing to load topology (blackbox method)...")
 
     # Set DISPLAY for GUI
     env = os.environ.copy()
     env['DISPLAY'] = ':1'
 
-    # Kill existing core-gui (blackbox approach - clean slate)
+    # Step 1: core-cleanup (blackbox line 12)
+    print("   Running core-cleanup...")
+    subprocess.run("core-cleanup", shell=True, capture_output=True, timeout=30)
+
+    # Step 2: Kill existing core-gui / wish8.5 (blackbox line 13)
     print("   Closing existing CORE GUI...")
-    subprocess.run("pkill -9 core-gui", shell=True, env=env, capture_output=True)
+    subprocess.run("pkill wish8.5", shell=True, capture_output=True)
+    subprocess.run("pkill -9 core-gui", shell=True, capture_output=True)
     time.sleep(1)
 
-    # Launch core-gui with --start flag to load AND start topology
-    # This is the proven blackbox method that handles everything
+    # Step 3: Restart core-daemon (blackbox line 14)
+    print("   Restarting core-daemon...")
+    subprocess.run("systemctl restart core-daemon 2>/dev/null || /etc/init.d/core-daemon restart 2>/dev/null || true",
+                   shell=True, capture_output=True, timeout=30)
+    time.sleep(2)  # Give daemon time to start
+
+    # Perform our additional cleanup (VNC proxies, Docker containers, pycore dirs)
+    full_cleanup()
+
+    # Step 4: Launch core-gui with --start flag (blackbox line 37)
     print(f"🚀 Launching CORE GUI with --start {xml_file_path}...")
     subprocess.Popen(
         ["core-gui", "--start", str(xml_path)],
@@ -522,43 +555,65 @@ def load_and_start(xml_file_path):
         start_new_session=True
     )
 
-    # Wait for GUI to appear and session to start
-    print("   ⏳ Waiting for topology to load and start...")
-    time.sleep(5)
+    # Step 5: Wait for session to reach RUNTIME state (from start_and_deploy.py)
+    print("   ⏳ Waiting for session to reach RUNTIME state...")
+    time.sleep(3)  # Initial wait for GUI to start loading
 
-    # Maximize the window
-    try:
-        subprocess.run(
-            ["wmctrl", "-r", "CORE", "-b", "add,maximized_vert,maximized_horz"],
-            env=env, timeout=2, capture_output=True
-        )
-    except:
-        pass
-
-    print(f"✅ Topology loaded and started!")
-    print(f"   🎯 Check your noVNC browser tab - topology is running!")
-
-    # Get session ID for VNC proxy setup
     try:
         core = client.CoreGrpcClient()
         core.connect()
-        sessions = core.get_sessions()
-        if sessions:
-            session_id = sessions[-1].id
+
+        # Find the session
+        session_id = None
+        for _ in range(10):  # Try for up to 10 seconds to find session
+            sessions = core.get_sessions()
+            if sessions:
+                session_id = sessions[-1].id
+                break
+            time.sleep(1)
+
+        if session_id:
             print(f"   Session ID: {session_id}")
 
-            # Wait a bit more for containers to initialize
-            time.sleep(3)
+            # Wait for RUNTIME state (timeout 60s)
+            if wait_for_session_runtime(core, session_id, timeout=60):
+                print(f"✅ Session {session_id} is now RUNTIME!")
 
-            # Set up VNC proxies for HMI nodes
-            setup_vnc_proxies_for_hmi_nodes(session_id)
+                # Extra time for Docker containers to fully initialize
+                print("   Waiting for containers to initialize...")
+                time.sleep(5)
 
-            # Configure MQTT injector
-            configure_mqtt_injector()
+                # Maximize the GUI window
+                try:
+                    subprocess.run(
+                        ["wmctrl", "-r", "CORE", "-b", "add,maximized_vert,maximized_horz"],
+                        env=env, timeout=2, capture_output=True
+                    )
+                except:
+                    pass
+
+                # Set up VNC proxies for HMI nodes
+                setup_vnc_proxies_for_hmi_nodes(session_id)
+
+                # Configure MQTT injector
+                configure_mqtt_injector()
+
+                print(f"✅ Topology loaded and running!")
+                print(f"   🎯 Check your noVNC browser tab!")
+                return True
+            else:
+                print("   ⚠ Timeout waiting for RUNTIME state")
+                print("   Session may still be starting - check the GUI")
+                return True  # Still return True, session exists
+        else:
+            print("   ⚠ Could not find session")
+            return False
+
     except Exception as e:
-        print(f"   Warning: Could not set up VNC proxies: {e}")
-
-    return True
+        print(f"   Warning: Error during session setup: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 if __name__ == '__main__':
