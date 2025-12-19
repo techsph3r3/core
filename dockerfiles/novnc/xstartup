@@ -16,11 +16,6 @@ autocutsel -fork -s CLIPBOARD &
 autocutsel -fork -s PRIMARY &
 
 # Start window manager
-fluxbox &
-
-# Give window manager time to start
-sleep 2
-
 # Start Tailscaled daemon
 mkdir -p /var/lib/tailscale /var/run/tailscale
 tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock > /var/log/tailscaled.log 2>&1 &
@@ -28,5 +23,9 @@ tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailsca
 # Wait for tailscaled to be ready
 sleep 2
 
-# Start CORE GUI and keep it running
-exec /opt/core/venv/bin/core-gui
+# Start CORE GUI in background (so existing sessions don't die when we pkill it)
+/opt/core/venv/bin/core-gui &
+
+# Keep the VNC session alive by making the Window Manager the session leader
+# when fluxbox exits, the session ends.
+exec fluxbox

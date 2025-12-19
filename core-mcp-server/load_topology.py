@@ -127,65 +127,33 @@ def cleanup_docker_containers():
     """
     Stop and remove CORE-managed Docker containers from previous sessions.
 
-    This runs INSIDE core-novnc (Docker-in-Docker) to clean up CORE node containers.
-    NOTE: This function runs inside the core-novnc container, so 'docker' commands
-    operate on the inner Docker daemon (Docker-in-Docker), not the host.
+    IMPORTANT: This script runs INSIDE core-novnc, but the Docker socket
+    (/var/run/docker.sock) is mounted from the HOST. This means 'docker' commands
+    operate on the HOST Docker daemon, not a Docker-in-Docker setup!
+
+    CORE creates its Docker node containers INSIDE core-novnc's namespace,
+    so we cannot clean them up via the host Docker. The CORE gRPC session
+    cleanup (via core.delete_session) handles this properly.
+
+    This function is now a no-op since container cleanup is handled by CORE itself.
     """
     import subprocess
 
-    print("   [DEBUG] cleanup_docker_containers() starting...")
+    print("   [DEBUG] cleanup_docker_containers() - SKIPPING")
+    print("   [DEBUG] Docker socket is mounted from host, not Docker-in-Docker")
+    print("   [DEBUG] CORE session cleanup handles container removal via gRPC")
 
-    # Protected containers - never remove these (these are on the HOST, not inside core-novnc)
-    protected = {'core-novnc', 'core-daemon', 'hmi', 'plc', 'eng-ws'}
-
+    # Log what containers exist on the HOST for debugging
     try:
-        # Get list of ALL containers inside core-novnc (Docker-in-Docker)
-        # This command runs locally, which when inside core-novnc, lists CORE node containers
         result = subprocess.run(
             ['docker', 'ps', '-a', '--format', '{{.Names}}'],
             capture_output=True, text=True, timeout=10
         )
-
-        print(f"   [DEBUG] docker ps returned: {result.stdout.strip()}")
-
-        if result.returncode != 0:
-            print(f"   [DEBUG] docker ps failed: {result.stderr}")
-            return
-
-        containers = result.stdout.strip().split('\n')
-        stopped_count = 0
-
-        for container in containers:
-            if not container:
-                continue
-
-            # Skip protected containers
-            if container in protected:
-                print(f"   [DEBUG] Skipping protected container: {container}")
-                continue
-
-            # Remove ALL non-protected containers (they're all CORE-managed)
-            try:
-                print(f"   [DEBUG] Removing container: {container}")
-                rm_result = subprocess.run(['docker', 'rm', '-f', container],
-                               capture_output=True, text=True, timeout=15)
-                if rm_result.returncode == 0:
-                    print(f"   🛑 Removed container: {container}")
-                    stopped_count += 1
-                else:
-                    print(f"   [DEBUG] Failed to remove {container}: {rm_result.stderr}")
-            except Exception as e:
-                print(f"   [ERROR] Could not remove {container}: {e}")
-
-        if stopped_count > 0:
-            print(f"   ✓ Cleaned up {stopped_count} Docker containers")
-        else:
-            print("   ✓ No stale containers to clean up")
-
+        print(f"   [DEBUG] HOST containers: {result.stdout.strip()}")
     except Exception as e:
-        import traceback
-        print(f"   [ERROR] Docker cleanup failed: {e}")
-        traceback.print_exc()
+        print(f"   [DEBUG] Could not list containers: {e}")
+
+    print("   ✓ Docker cleanup skipped (handled by CORE gRPC)")
 
 
 def cleanup_core_interfaces():
@@ -250,101 +218,26 @@ def full_cleanup():
     print("🧹 Full cleanup complete!")
 
 
-def setup_vnc_proxies_for_hmi_nodes(session_id):
+def setup_vnc_proxies_for_hmi_nodes(session_id=None):
     """
     Set up VNC socat proxies for all HMI/workstation nodes after session starts.
 
-    This must be called AFTER the session is running (containers exist).
-    Queries containers INSIDE core-novnc (Docker-in-Docker architecture).
+    NOTE: This function is now a no-op. VNC proxy setup is handled by the web UI
+    via /api/start-host-vnc endpoint, which has proper access to query CORE containers.
+
+    This script runs INSIDE core-novnc, but the Docker socket is mounted from the HOST.
+    CORE Docker nodes are created in core-novnc's namespace and are not visible via
+    the host Docker socket. The web UI handles this correctly.
+
+    Args:
+        session_id: Session ID (unused, kept for backward compatibility)
     """
-    import subprocess
-    import urllib.request
-    import json
-    import time
+    _ = session_id  # Explicitly mark as unused
 
-    print("📺 Setting up VNC proxies for HMI nodes...")
-
-    # First, clean up any stale VNC proxies from previous sessions
-    cleanup_vnc_proxies()
-
-    # Give a moment for cleanup to complete
-    time.sleep(1)
-
-    try:
-        # Get list of running containers INSIDE core-novnc (Docker-in-Docker)
-        result = subprocess.run(
-            '''docker exec core-novnc docker ps --format '{{.Names}}\\t{{.Image}}' ''',
-            shell=True, capture_output=True, text=True, timeout=10
-        )
-
-        if result.returncode != 0:
-            print("   Warning: Could not list containers for VNC setup")
-            return
-
-        hmi_containers = []
-        vnc_patterns = ['hmi', 'workstation', 'desktop', 'kali', 'engineering']
-        vnc_images = ['hmi-workstation', 'kali-novnc-core', 'engineering-workstation']
-
-        for line in result.stdout.strip().split('\n'):
-            if not line or '\t' not in line:
-                continue
-            parts = line.split('\t')
-            container_name = parts[0]
-            image_name = parts[1] if len(parts) > 1 else ''
-
-            # Skip core containers
-            if container_name in ['core-novnc', 'core-daemon']:
-                continue
-
-            # Check if it's a VNC-capable container by name or image
-            name_match = any(pattern in container_name.lower() for pattern in vnc_patterns)
-            image_match = any(img in image_name.lower() for img in vnc_images)
-
-            if name_match or image_match:
-                hmi_containers.append(container_name)
-
-        if not hmi_containers:
-            print("   No HMI/workstation nodes found in running topology")
-            return
-
-        print(f"   Found {len(hmi_containers)} VNC-capable nodes: {', '.join(hmi_containers)}")
-
-        # Set up VNC proxy for each HMI container via the web UI API
-        successful = 0
-        for container in hmi_containers:
-            try:
-                data = json.dumps({
-                    "node_name": container
-                }).encode('utf-8')
-
-                req = urllib.request.Request(
-                    'http://localhost:8080/api/start-host-vnc',
-                    data=data,
-                    headers={'Content-Type': 'application/json'},
-                    method='POST'
-                )
-
-                with urllib.request.urlopen(req, timeout=15) as response:
-                    result = json.loads(response.read().decode())
-                    if result.get('success'):
-                        port = result.get('proxy_port')
-                        vnc_url = result.get('vnc_url', '')
-                        print(f"   ✓ VNC proxy for {container} on port {port}")
-                        if vnc_url:
-                            print(f"     URL: {vnc_url}")
-                        successful += 1
-                    else:
-                        print(f"   ⚠ VNC setup for {container} failed: {result.get('error')}")
-            except Exception as e:
-                print(f"   ⚠ Could not set up VNC for {container}: {e}")
-
-        if successful > 0:
-            print(f"📺 VNC proxies ready: {successful}/{len(hmi_containers)} nodes")
-        else:
-            print("   ⚠ No VNC proxies were set up successfully")
-
-    except Exception as e:
-        print(f"   Warning: VNC proxy setup failed: {e}")
+    print("📺 VNC proxy setup...")
+    print("   [DEBUG] Delegated to web UI API (/api/start-host-vnc)")
+    print("   [DEBUG] (CORE Docker nodes are in core-novnc namespace, not host Docker)")
+    print("   ✓ VNC proxy setup will be handled by web UI")
 
 
 def load_topology(xml_file_path):
@@ -639,15 +532,70 @@ def load_and_start(xml_file_path):
     )
     print(f"[DEBUG] VNC processes after core-gui kill:\n{vnc_check.stdout}")
 
-    # Step 5: Launch core-gui with --start flag
-    print(f"   Step 5: Launching CORE GUI with --start {xml_file_path}...")
-    subprocess.Popen(
-        ["core-gui", "--start", str(xml_path)],
+    # Step 5: Load XML and Start Session via gRPC
+    print(f"   Step 5: Loading XML and starting session via gRPC...")
+    try:
+        core = client.CoreGrpcClient()
+        core.connect()
+        
+        # Parse session_id from response
+        # open_xml(xml_path, start=True) returns (session_id, result) or result object
+        # WARNING: result might just be boolean True in some versions
+        response = core.open_xml(xml_path, start=True)
+        
+        session_id = None
+        
+        # Handle tuple response
+        if isinstance(response, tuple):
+            if isinstance(response[0], int):
+                session_id = response[0]
+                
+        # Handle object response
+        elif hasattr(response, 'session_id'):
+            session_id = response.session_id
+            
+        # Fallback: Start=True sometimes returns just True or an object without ID
+        # If we didn't get a valid INT id, fetch the latest session from daemon
+        # NOTE: isinstance(True, int) is True in Python! Must check type or exclude bool explicitly.
+        if session_id is None or isinstance(session_id, bool) or not isinstance(session_id, int):
+            print(f"   [DEBUG] Invalid Session ID from response ({session_id}), querying daemon...")
+            sessions = core.get_sessions()
+            if sessions:
+                # Get the session with the highest ID (most likely the new one)
+                sessions.sort(key=lambda x: x.id)
+                session_id = sessions[-1].id
+                
+        print(f"   ✅ Session created with ID: {session_id}")
+        
+    except Exception as e:
+        print(f"   ❌ Failed to load XML via gRPC: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    # Step 6: Launch core-gui attached to the session
+    print(f"   Step 6: Launching CORE GUI for session {session_id}...")
+    
+    # Open log file for GUI output
+    gui_log = open('/var/log/core-gui.log', 'a')
+    gui_log.write(f"\n--- Launching CORE GUI for session {session_id} ---\n")
+    
+    proc = subprocess.Popen(
+        ["core-gui", "-s", str(session_id)],
         env=env,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stdout=gui_log,
+        stderr=gui_log,
         start_new_session=True
     )
+    
+    # Give it a moment and check if it died
+    time.sleep(1)
+    if proc.poll() is not None:
+        print(f"   ❌ CORE GUI failed to start! Return code: {proc.returncode}")
+        print("   Checking logs...")
+        subprocess.run("tail -n 10 /var/log/core-gui.log", shell=True)
+    else:
+        print(f"   CORE GUI started with PID {proc.pid}")
 
     # Step 5: Wait for session to reach RUNTIME state (from start_and_deploy.py)
     print("   ⏳ Waiting for session to reach RUNTIME state...")
@@ -673,18 +621,26 @@ def load_and_start(xml_file_path):
             if wait_for_session_runtime(core, session_id, timeout=60):
                 print(f"✅ Session {session_id} is now RUNTIME!")
 
-                # Extra time for Docker containers to fully initialize
-                print("   Waiting for containers to initialize...")
-                time.sleep(5)
-
                 # Maximize the GUI window
-                try:
-                    subprocess.run(
-                        ["wmctrl", "-r", "CORE", "-b", "add,maximized_vert,maximized_horz"],
-                        env=env, timeout=2, capture_output=True
-                    )
-                except:
-                    pass
+                print("   Running window maximization loop...")
+                for _ in range(5):
+                    try:
+                        # Check if window exists
+                        result = subprocess.run(
+                            ["wmctrl", "-l"], 
+                            env=env, capture_output=True, text=True
+                        )
+                        if "CORE" in result.stdout:
+                            # Maximize it
+                            subprocess.run(
+                                ["wmctrl", "-r", "CORE", "-b", "add,maximized_vert,maximized_horz"],
+                                env=env, timeout=2, capture_output=True
+                            )
+                            print("   ✅ Window maximized.")
+                            break
+                    except Exception as e:
+                        print(f"   [WARN] Maximization failed: {e}")
+                    time.sleep(1)
 
                 # Set up VNC proxies for HMI nodes
                 setup_vnc_proxies_for_hmi_nodes(session_id)

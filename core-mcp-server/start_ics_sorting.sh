@@ -33,7 +33,7 @@ OPENPLC_USER="openplc"
 OPENPLC_PASS="openplc"
 HMI_IP="10.0.0.20"
 HMI_PORT="1880"
-ST_PROGRAM="plc_programs/sorting_twin.st"
+ST_PROGRAM="plc_programs/sorting_merged.st"
 NODERED_FLOWS="../dockerfiles/nodered-hmi/flows.json"
 
 echo -e "${GREEN}================================================${NC}"

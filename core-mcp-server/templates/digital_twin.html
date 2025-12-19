@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,16 +11,20 @@
             padding: 0;
             box-sizing: border-box;
         }
-        html, body {
+
+        html,
+        body {
             width: 100%;
             height: 100%;
             overflow: hidden;
             background: #1a1a1a;
         }
+
         #twin-container {
             width: 100%;
             height: 100%;
         }
+
         #twin-container iframe {
             width: 100%;
             height: 100%;
@@ -27,13 +32,222 @@
         }
     </style>
 </head>
+
 <body>
     <div id="twin-container">
         <!-- The 3D digital twin will be loaded here via iframe -->
-        <iframe id="twin-frame" src="/static/digital-twin/index.html" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"></iframe>
+        <iframe id="twin-frame" src="/static/digital-twin/index.html"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope"></iframe>
+    </div>
+
+    <!-- Force Control Panel -->
+    <div id="control-panel"
+        style="position: absolute; top: 20px; right: 20px; width: 300px; background: rgba(0,0,0,0.85); color: #fff; padding: 15px; border-radius: 8px; font-family: 'Segoe UI', sans-serif; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1); transition: transform 0.3s ease;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0; font-size: 16px; color: #3b82f6;">Force Controls (CWE-284)</h3>
+            <button onclick="togglePanel()"
+                style="background: none; border: none; color: #9ca3af; cursor: pointer;">_</button>
+        </div>
+
+        <!-- Connection Status -->
+        <div style="margin-bottom: 15px; font-size: 12px; display: flex; justify-content: space-between;">
+            <span>PLC Bridge: <span id="bridge-status" style="color: #ef4444;">Disconnected</span></span>
+            <button onclick="connectPLCBridge()"
+                style="background: #374151; color: #fff; border: none; padding: 2px 6px; border-radius: 4px; font-size: 10px; cursor: pointer;">Reconnect</button>
+        </div>
+
+        <div class="force-group">
+            <div class="force-item"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                <span style="font-size: 13px;">Conveyor Motor</span>
+                <select onchange="sendForce('force_conveyor', this.value)" id="force_conveyor"
+                    style="background: #1f2937; color: #fff; border: 1px solid #374151; border-radius: 4px; font-size: 12px; padding: 2px;">
+                    <option value="0">Normal</option>
+                    <option value="1">Force ON</option>
+                    <option value="2">Force OFF</option>
+                </select>
+            </div>
+
+            <div class="force-item"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                <span style="font-size: 13px;">Alarm Siren</span>
+                <select onchange="sendForce('force_alarm', this.value)" id="force_alarm"
+                    style="background: #1f2937; color: #fff; border: 1px solid #374151; border-radius: 4px; font-size: 12px; padding: 2px;">
+                    <option value="0">Normal</option>
+                    <option value="1">Force ON</option>
+                    <option value="2">Force OFF</option>
+                </select>
+            </div>
+
+            <div
+                style="margin: 10px 0; font-size: 12px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.5px;">
+                Diverters</div>
+
+            <div class="force-item"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                <span style="font-size: 13px; color: #f87171;">Red Diverter</span>
+                <select onchange="sendForce('force_diverter_red', this.value)" id="force_diverter_red"
+                    style="background: #1f2937; color: #fff; border: 1px solid #374151; border-radius: 4px; font-size: 12px; padding: 2px;">
+                    <option value="0">Normal</option>
+                    <option value="1">Force ON</option>
+                    <option value="2">Force OFF</option>
+                </select>
+            </div>
+
+            <div class="force-item"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                <span style="font-size: 13px; color: #e5e7eb;">White Diverter</span>
+                <select onchange="sendForce('force_diverter_white', this.value)" id="force_diverter_white"
+                    style="background: #1f2937; color: #fff; border: 1px solid #374151; border-radius: 4px; font-size: 12px; padding: 2px;">
+                    <option value="0">Normal</option>
+                    <option value="1">Force ON</option>
+                    <option value="2">Force OFF</option>
+                </select>
+            </div>
+
+            <div class="force-item"
+                style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 5px; background: rgba(255,255,255,0.05); border-radius: 4px;">
+                <span style="font-size: 13px; color: #60a5fa;">Blue Diverter</span>
+                <select onchange="sendForce('force_diverter_blue', this.value)" id="force_diverter_blue"
+                    style="background: #1f2937; color: #fff; border: 1px solid #374151; border-radius: 4px; font-size: 12px; padding: 2px;">
+                    <option value="0">Normal</option>
+                    <option value="1">Force ON</option>
+                    <option value="2">Force OFF</option>
+                </select>
+            </div>
+        </div>
+
+        <div
+            style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1); text-align: center;">
+            <button onclick="toggleEditor()"
+                style="background: #3b82f6; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%; margin-bottom: 8px;">Open
+                ST Code Editor</button>
+            <button onclick="clearAllForces()"
+                style="background: #ef4444; color: white; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-size: 12px; width: 100%;">Clear
+                All Forces</button>
+        </div>
+    </div>
+
+    <!-- Code Editor Overlay -->
+    <div id="editor-overlay"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 1000; flex-direction: column;">
+        <div
+            style="height: 50px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;">
+            <div style="color: #fff; font-family: 'Segoe UI', sans-serif; font-weight: bold;">PLC Logic Editor
+                (sorting_merged.st)</div>
+            <div>
+                <button onclick="saveAndCompile()" id="btn-compile"
+                    style="background: #22c55e; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 10px;">Save
+                    & Compile</button>
+                <button onclick="toggleEditor()"
+                    style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px;">Close</button>
+            </div>
+        </div>
+        <div style="display: flex; flex: 1; overflow: hidden;">
+            <div style="flex: 2; display: flex; flex-direction: column; border-right: 1px solid #334155;">
+                <textarea id="code-area"
+                    style="flex: 1; background: #0f172a; color: #e2e8f0; border: none; padding: 20px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; resize: none; outline: none; line-height: 1.5;"
+                    spellcheck="false"></textarea>
+                <div id="compile-status"
+                    style="height: 100px; background: #020617; border-top: 1px solid #334155; padding: 10px; color: #94a3b8; font-family: monospace; font-size: 12px; overflow-y: auto;">
+                    Ready to compile.
+                </div>
+            </div>
+            <!-- AI Assistant Placehoder -->
+            <div style="flex: 1; background: #1e293b; display: flex; flex-direction: column;">
+                <div style="padding: 15px; border-bottom: 1px solid #334155; color: #fff; font-weight: bold;">AI
+                    Assistant</div>
+                <div id="chat-history"
+                    style="flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px;">
+                    <div style="background: #334155; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">
+                        Hello! I can help you debug your ST code or suggest optimization.
+                    </div>
+                </div>
+                <div style="padding: 15px; border-top: 1px solid #334155;">
+                    <input type="text" placeholder="Ask about this code..."
+                        style="width: 100%; background: #0f172a; border: 1px solid #334155; padding: 10px; color: #fff; border-radius: 4px; outline: none;"
+                        onkeypress="if(event.key==='Enter') sendChat(this)">
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
+        // Editor Logic
+        async function toggleEditor() {
+            const overlay = document.getElementById('editor-overlay');
+            if (overlay.style.display === 'none') {
+                overlay.style.display = 'flex';
+                await loadCode();
+            } else {
+                overlay.style.display = 'none';
+            }
+        }
+
+        async function loadCode() {
+            try {
+                const res = await fetch('/api/plc/program');
+                const data = await res.json();
+                if (data.success) {
+                    document.getElementById('code-area').value = data.code;
+                } else {
+                    document.getElementById('code-area').value = "// Error loading code: " + data.error;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function saveAndCompile() {
+            const code = document.getElementById('code-area').value;
+            const statusDiv = document.getElementById('compile-status');
+            const btn = document.getElementById('btn-compile');
+
+            btn.disabled = true;
+            btn.textContent = "Compiling...";
+            statusDiv.textContent = "Saving and Compiling... this may take 30 seconds...";
+            statusDiv.style.color = "#eab308";
+
+            try {
+                // 1. Save
+                await fetch('/api/plc/program', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: code })
+                });
+
+                // 2. Compile
+                const res = await fetch('/api/plc/compile', { method: 'POST' });
+                const data = await res.json();
+
+                if (data.success) {
+                    statusDiv.innerHTML = `<span style="color: #22c55e">SUCCESS:</span>\n` + data.output;
+                } else {
+                    statusDiv.innerHTML = `<span style="color: #ef4444">FAILED:</span>\n` + data.output;
+                }
+            } catch (e) {
+                statusDiv.textContent = "Error: " + e;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Save & Compile";
+            }
+        }
+
+        function sendChat(input) {
+            const history = document.getElementById('chat-history');
+            const msg = input.value;
+            if (!msg) return;
+
+            // Add user message
+            history.innerHTML += `<div style="background: #3b82f6; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px; align-self: flex-end;">${msg}</div>`;
+            input.value = '';
+
+            // Mock AI Response (for now)
+            setTimeout(() => {
+                history.innerHTML += `<div style="background: #334155; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">I see you're working on the sorting logic. To implement "Speed Sorting", try reducing the timer values!</div>`;
+                history.scrollTop = history.scrollHeight;
+            }, 1000);
+        }
         // PLC I/O bridge connection for 3D Digital Twin
         // Uses /ws/plc-io endpoint which connects to actual OpenPLC Modbus
 
@@ -42,6 +256,57 @@
         const WS_URL = wsProtocol + '//' + window.location.host + '/ws/plc-io';
         let ws = null;
         let reconnectTimeout = null;
+
+        // Panel toggle
+        let panelVisible = true;
+        function togglePanel() {
+            const panel = document.getElementById('control-panel');
+            if (panelVisible) {
+                panel.style.transform = 'translateX(calc(100% - 40px))';
+            } else {
+                panel.style.transform = 'none';
+            }
+            panelVisible = !panelVisible;
+        }
+
+        // Send a force command
+        function sendForce(name, value) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({
+                    type: 'force',
+                    name: name,
+                    value: parseInt(value)
+                }));
+                console.log(`Sent force: ${name} = ${value}`);
+            } else {
+                alert("Not connected to PLC Bridge");
+            }
+        }
+
+        // Clear all forces
+        function clearAllForces() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'clear_forces' }));
+            }
+        }
+
+        // Update dropdowns from received state
+        function updateForceUI(forces) {
+            for (const [name, value] of Object.entries(forces)) {
+                const select = document.getElementById(name);
+                if (select) {
+                    select.value = value;
+                    // Visual feedback for non-normal state
+                    if (value !== 0) {
+                        select.style.borderColor = '#ef4444';
+                        select.style.background = '#450a0a';
+                    } else {
+                        select.style.borderColor = '#374151';
+                        select.style.background = '#1f2937';
+                    }
+                }
+            }
+        }
 
         // Current PLC state - updated via WebSocket
         let plcState = {
@@ -59,7 +324,8 @@
                 count_white: 0,
                 count_blue: 0,
                 count_total: 0
-            }
+            },
+            forces: {}
         };
 
         function updateStatus(status, text) {
@@ -67,7 +333,7 @@
             if (bridgeStatus) {
                 bridgeStatus.textContent = text;
                 bridgeStatus.style.color = status === 'connected' ? '#10b981' :
-                                           status === 'connecting' ? '#eab308' : '#ef4444';
+                    status === 'connecting' ? '#eab308' : '#ef4444';
             }
         }
 
@@ -125,6 +391,10 @@
                 if (data.data.registers) {
                     plcState.registers = { ...plcState.registers, ...data.data.registers };
                 }
+                if (data.data.forces) {
+                    plcState.forces = { ...plcState.forces, ...data.data.forces };
+                    updateForceUI(plcState.forces);
+                }
 
                 // Dispatch conveyor-state event to the iframe
                 const twinFrame = document.getElementById('twin-frame');
@@ -138,6 +408,13 @@
                     });
                     twinFrame.contentWindow.dispatchEvent(event);
                 }
+            } else if (data.type === 'forces_cleared') {
+                // Reset all dropdowns
+                document.querySelectorAll('#control-panel select').forEach(s => {
+                    s.value = 0;
+                    s.style.borderColor = '#374151';
+                    s.style.background = '#1f2937';
+                });
             }
         }
 
@@ -216,4 +493,5 @@
         }
     </script>
 </body>
+
 </html>

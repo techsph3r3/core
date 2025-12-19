@@ -1618,6 +1618,134 @@ def send_plc_command():
 
     # Map commands to sensor inputs that trigger PLC logic
     # The PLC program uses edge detection on these inputs
+    input_map = {
+        'start': 'hmi_start',
+        'stop': 'hmi_stop',
+        'reset': 'hmi_reset'
+    }
+    
+    # Also support direct button mapping
+    if command in ['start_button', 'stop_button', 'reset_button']:
+        bridge.set_input(command, True)
+        return jsonify({'success': True, 'message': f'Button {command} pressed'})
+
+    plc_input = input_map.get(command)
+    if plc_input:
+        # Write to register instead of boolean input if needed
+        # But for HMI commands, we usually toggle a bit
+        # Logic depends on bridge implementation
+        pass
+        
+    return jsonify({'success': True, 'message': 'Command received'})
+
+
+# ===== ST Code Editor API =====
+
+ST_FILE_PATH = os.path.join(SCRIPT_DIR, 'plc_programs', 'sorting_merged.st')
+
+@app.route('/api/plc/program', methods=['GET'])
+def get_plc_program():
+    """Get the current ST program code"""
+    try:
+        if os.path.exists(ST_FILE_PATH):
+            with open(ST_FILE_PATH, 'r') as f:
+                content = f.read()
+            return jsonify({'success': True, 'code': content})
+        else:
+            return jsonify({'success': False, 'error': 'Program file not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/plc/program', methods=['POST'])
+def save_plc_program():
+    """Save updates to the ST program code"""
+    data = request.get_json() or {}
+    code = data.get('code')
+    
+    if not code:
+        return jsonify({'error': 'No code provided'}), 400
+        
+    try:
+        # Save to file
+        with open(ST_FILE_PATH, 'w') as f:
+            f.write(code)
+            
+        return jsonify({'success': True, 'message': 'File saved successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/plc/compile', methods=['POST'])
+def compile_plc_program():
+    """Upload and compile the current ST program to OpenPLC"""
+    # 1. Copy ST file to container
+    # 2. Run upload script
+    
+    container = "core-novnc"
+    plc_ip = "10.0.0.10"
+    plc_port = "8080"
+    
+    try:
+        # Copy merged ST file to container
+        cmd_cp = f"docker cp {ST_FILE_PATH} {container}:/tmp/sorting_merged.st"
+        subprocess.run(cmd_cp, shell=True, check=True)
+        
+        # Ensure upload script exists (create it if missing)
+        # We rely on the script created by start_ics_sorting.sh, but let's be robust
+        upload_script = """
+import sys, requests, time, os
+try:
+    OPENPLC_URL = sys.argv[1]
+    ST_FILE = sys.argv[2]
+    # Login
+    s = requests.Session()
+    s.post(f"{OPENPLC_URL}/login", data={"username":"openplc","password":"openplc"})
+    # Upload
+    with open(ST_FILE, 'rb') as f:
+        print("Uploading...")
+        r = s.post(f"{OPENPLC_URL}/upload-program-action", 
+                   files={'file': ('sorting.st', f, 'text/plain')},
+                   data={'program_name':'Sorting','program_descr':'Updated via API','program_file':'sorting.st'})
+        if r.status_code != 200: exit(1)
+    # Compile
+    print("Compiling...")
+    s.get(f"{OPENPLC_URL}/compile-program?file=sorting.st")
+    for i in range(20):
+        time.sleep(2)
+        logs = s.get(f"{OPENPLC_URL}/compilation-logs").text
+        if "successfully" in logs:
+             print("Compilation Success!")
+             break
+        if "error" in logs.lower():
+             print("Compilation Failed!")
+             print(logs[-500:])
+             exit(1)
+    # Start
+    s.get(f"{OPENPLC_URL}/start_plc")
+except Exception as e:
+    print(e)
+    exit(1)
+"""
+        # Write temporary script locally then copy
+        local_script = "/tmp/quick_upload.py"
+        with open(local_script, 'w') as f:
+            f.write(upload_script.strip())
+            
+        subprocess.run(f"docker cp {local_script} {container}:/tmp/quick_upload.py", shell=True)
+        
+        # Execute inside container
+        # Note: Container must have 'requests' installed (start script checks this)
+        cmd_exec = f"docker exec {container} python3 /tmp/quick_upload.py http://{plc_ip}:{plc_port} /tmp/sorting_merged.st"
+        result = subprocess.run(cmd_exec, shell=True, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            return jsonify({'success': True, 'message': 'Compiled and Started', 'output': result.stdout})
+        else:
+            return jsonify({'success': False, 'message': 'Compilation Failed', 'output': result.stdout + result.stderr})
+            
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
     import time
 
     # Pulse duration must be longer than bridge poll interval (~100ms)
