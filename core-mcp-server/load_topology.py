@@ -65,62 +65,57 @@ def cleanup_vnc_proxies():
     When a session ends, the PIDs they point to no longer exist, causing hangs.
 
     IMPORTANT: Only cleans up HMI proxies (6081+), NOT main VNC on 6080.
+    NOTE: This runs INSIDE core-novnc container, so we run commands directly (no docker exec).
     """
     import subprocess
 
     print("   [DEBUG] cleanup_vnc_proxies() starting...")
+    print("   [DEBUG] Running directly inside container (no docker exec)")
 
     try:
-        # Run cleanup inside core-novnc container where proxy processes live
-        cleanup_cmd = '''docker exec core-novnc bash -c '
-            echo "[DEBUG] Before cleanup:"
-            echo "[DEBUG] websockify processes:"
-            ps aux | grep websockify | grep -v grep || echo "  (none)"
-            echo "[DEBUG] socat processes:"
-            ps aux | grep socat | grep -v grep || echo "  (none)"
+        # Show before state
+        print("   [DEBUG] Before cleanup - websockify processes:")
+        result = subprocess.run("ps aux | grep websockify | grep -v grep", shell=True, capture_output=True, text=True)
+        print(f"   {result.stdout.strip() or '(none)'}")
 
-            # Kill websockify HMI proxies (ports 6081-6089, NOT 6080 which is main VNC)
-            echo "[DEBUG] Killing websockify on 608[1-9]..."
-            pkill -f "websockify.*608[1-9]" 2>/dev/null || true
+        print("   [DEBUG] Before cleanup - socat processes:")
+        result = subprocess.run("ps aux | grep socat | grep -v grep", shell=True, capture_output=True, text=True)
+        print(f"   {result.stdout.strip() or '(none)'}")
 
-            # Kill socat internal proxies (ports 160XX)
-            echo "[DEBUG] Killing socat on 160XX..."
-            pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
+        print("   [DEBUG] Before cleanup - listening ports:")
+        result = subprocess.run("ss -tlnp | grep -E '590|608'", shell=True, capture_output=True, text=True)
+        print(f"   {result.stdout.strip() or '(none)'}")
 
-            # Kill old-style socat proxies on 6081-6089 directly (legacy cleanup)
-            echo "[DEBUG] Killing socat on 608[1-9]..."
-            pkill -f "socat.*TCP-LISTEN:608[1-9]" 2>/dev/null || true
+        # Kill websockify HMI proxies (ports 6081-6089, NOT 6080 which is main VNC)
+        # Use very specific pattern: must have space before port number to avoid partial matches
+        print("   [DEBUG] Killing websockify on ports 6081-6089 (NOT 6080)...")
+        subprocess.run("pkill -f 'websockify.* 608[1-9]' 2>/dev/null", shell=True, capture_output=True, timeout=5)
 
-            # Remove ALL wrapper scripts
-            rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
+        # Kill socat internal proxies (ports 160XX)
+        print("   [DEBUG] Killing socat on ports 160XX...")
+        subprocess.run("pkill -f 'socat.*TCP-LISTEN:160' 2>/dev/null", shell=True, capture_output=True, timeout=5)
 
-            # Clean up log files
-            rm -f /tmp/socat_*.log 2>/dev/null || true
-            rm -f /tmp/websockify_*.log 2>/dev/null || true
+        # Kill socat proxies on 6081-6089 directly
+        print("   [DEBUG] Killing socat on ports 6081-6089...")
+        subprocess.run("pkill -f 'socat.*TCP-LISTEN:608[1-9]' 2>/dev/null", shell=True, capture_output=True, timeout=5)
 
-            echo "[DEBUG] After cleanup:"
-            echo "[DEBUG] websockify processes:"
-            ps aux | grep websockify | grep -v grep || echo "  (none)"
-            echo "[DEBUG] Listening ports:"
-            ss -tlnp | grep -E "590|608" || echo "  (none)"
+        # Remove wrapper scripts
+        subprocess.run("rm -f /tmp/ns_forward_*.sh 2>/dev/null", shell=True, capture_output=True, timeout=5)
 
-            echo "VNC proxy chains cleaned"
-        ' '''
+        # Clean up log files
+        subprocess.run("rm -f /tmp/socat_*.log 2>/dev/null", shell=True, capture_output=True, timeout=5)
+        subprocess.run("rm -f /tmp/websockify_*.log 2>/dev/null", shell=True, capture_output=True, timeout=5)
 
-        result = subprocess.run(cleanup_cmd, shell=True, capture_output=True, text=True, timeout=15)
-        print(f"   [DEBUG] cleanup output:\n{result.stdout}")
-        if result.stderr:
-            print(f"   [DEBUG] cleanup stderr: {result.stderr}")
+        # Show after state
+        print("   [DEBUG] After cleanup - websockify processes:")
+        result = subprocess.run("ps aux | grep websockify | grep -v grep", shell=True, capture_output=True, text=True)
+        print(f"   {result.stdout.strip() or '(none)'}")
 
-        if 'cleaned' in result.stdout:
-            print("   ✓ Cleaned up VNC proxy chains inside core-novnc")
-        else:
-            print("   [DEBUG] Running local fallback cleanup...")
-            # Fallback: try local cleanup (for when running inside container)
-            subprocess.run("pkill -f 'websockify.*608[1-9]' 2>/dev/null", shell=True, capture_output=True, timeout=5)
-            subprocess.run("pkill -f 'socat.*TCP-LISTEN:160' 2>/dev/null", shell=True, capture_output=True, timeout=5)
-            subprocess.run("rm -f /tmp/ns_forward_*.sh 2>/dev/null", shell=True, capture_output=True, timeout=5)
-            print("   ✓ Cleaned up VNC proxy chains (local fallback)")
+        print("   [DEBUG] After cleanup - listening ports:")
+        result = subprocess.run("ss -tlnp | grep -E '590|608'", shell=True, capture_output=True, text=True)
+        print(f"   {result.stdout.strip() or '(none)'}")
+
+        print("   ✓ VNC proxy cleanup completed")
 
     except Exception as e:
         import traceback
