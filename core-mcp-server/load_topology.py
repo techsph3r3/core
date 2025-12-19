@@ -386,21 +386,23 @@ def load_topology(xml_file_path):
         env = os.environ.copy()
         env['DISPLAY'] = ':1'
 
-        # Kill any existing core-gui processes
-        subprocess.run("pkill -9 core-gui 2>/dev/null", shell=True, env=env)
+        # Check if core-gui is already running
+        gui_check = subprocess.run("pgrep -x core-gui", shell=True, capture_output=True)
+        gui_running = gui_check.returncode == 0
 
-        # Small delay to ensure clean shutdown
-        import time
-        time.sleep(0.5)
-
-        # Launch core-gui with session ID to auto-open it
-        subprocess.Popen(
-            ["core-gui", "-s", str(session_id)],
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
+        if gui_running:
+            # GUI is running - it will auto-refresh when session changes
+            # Don't kill it as that disrupts the VNC display
+            print("   CORE GUI already running - will auto-connect to new session")
+        else:
+            # No GUI running - launch it with session ID
+            subprocess.Popen(
+                ["core-gui", "-s", str(session_id)],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
 
         # Wait a moment for window to appear
         time.sleep(1.5)
@@ -457,38 +459,9 @@ def start_session_and_setup_vnc(session_id):
             print("   ⏳ Waiting for containers to initialize...")
             time.sleep(5)
 
-            # Refresh CORE GUI to show runtime state
-            # The GUI was opened in edit mode, need to reopen it to join running session
-            print("   🔄 Refreshing CORE GUI to show runtime session...")
-            import subprocess
-            import os
-            env = os.environ.copy()
-            env['DISPLAY'] = ':1'
-
-            # Kill existing GUI
-            subprocess.run("pkill -9 core-gui 2>/dev/null", shell=True, env=env)
-            time.sleep(0.5)
-
-            # Re-launch GUI with --session to join the running session
-            subprocess.Popen(
-                ["core-gui", "--session", str(session_id)],
-                env=env,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                start_new_session=True
-            )
-            time.sleep(1.5)
-
-            # Maximize window
-            try:
-                subprocess.run(
-                    ["wmctrl", "-r", "CORE", "-b", "add,maximized_vert,maximized_horz"],
-                    env=env, timeout=2, capture_output=True
-                )
-            except:
-                pass
-
-            print("   ✅ CORE GUI connected to running session!")
+            # The CORE GUI should auto-refresh when session state changes
+            # Don't kill/restart it as that disrupts the VNC display
+            print("   ✅ Session started - CORE GUI will auto-refresh")
 
             # Set up VNC proxies for HMI nodes
             setup_vnc_proxies_for_hmi_nodes(session_id)

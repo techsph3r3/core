@@ -1427,42 +1427,9 @@ def deploy_template(template_id):
         '"""
         result = subprocess.run(load_cmd, shell=True, capture_output=True, text=True, timeout=30)
 
-        # Recover VNC stack if it was killed during deployment
-        # The load_topology.py cleanup can sometimes kill VNC processes
-        vnc_recovery_cmd = '''docker exec core-novnc bash -c '
-            # Check if Xtigervnc is running
-            if ! pgrep -x Xtigervnc > /dev/null 2>&1; then
-                echo "Recovering VNC server..."
-                # Clean up stale locks
-                rm -f /tmp/.X1-lock /tmp/.X11-unix/X1 2>/dev/null || true
-                # Start Xtigervnc
-                Xtigervnc :1 -localhost=0 -desktop "CORE" -rfbport 5901 -PasswordFile /root/.vnc/passwd -SecurityTypes VncAuth,TLSVnc -geometry 1920x1080 -depth 24 &
-                sleep 2
-            fi
-
-            # Check if websockify is connecting to correct port (5901, not 5900)
-            if ! pgrep -f "websockify.*5901" > /dev/null 2>&1; then
-                echo "Recovering websockify..."
-                pkill -9 websockify 2>/dev/null || true
-                sleep 1
-                nohup websockify --web=/opt/noVNC 6080 localhost:5901 > /tmp/websockify.log 2>&1 &
-                sleep 1
-            fi
-
-            # Check if fluxbox is running
-            if ! pgrep -x fluxbox > /dev/null 2>&1; then
-                DISPLAY=:1 fluxbox &
-                sleep 1
-            fi
-
-            # Check if core-gui is running
-            if ! pgrep -f core-gui > /dev/null 2>&1; then
-                DISPLAY=:1 core-gui &
-            fi
-
-            echo "VNC recovery complete"
-        ' '''
-        subprocess.run(vnc_recovery_cmd, shell=True, capture_output=True, timeout=15)
+        # Note: VNC stack should NOT need recovery here. The load_topology.py script
+        # handles core-gui restart cleanly. If VNC dies, restart the container instead
+        # of trying to recover piecemeal (which causes port conflicts).
 
         # Start PLC I/O bridge for ICS sorting facility (connects 3D twin to OpenPLC)
         bridge_status = None
