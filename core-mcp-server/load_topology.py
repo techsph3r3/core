@@ -483,18 +483,82 @@ def start_session_and_setup_vnc(session_id):
 
 def load_and_start(xml_file_path):
     """
-    Complete workflow: Load topology, start session, set up VNC proxies.
+    Complete workflow: Load topology and start session using core-gui --start.
 
     This is the preferred method for automated deployment.
+    Uses the proven blackbox approach: kill old GUI, launch with --start flag.
     """
-    # Load the topology
-    session_id = load_topology(xml_file_path)
+    import subprocess
+    import os
+    import time
 
-    if not session_id:
+    xml_path = Path(xml_file_path)
+    if not xml_path.exists():
+        print(f"❌ File not found: {xml_file_path}")
         return False
 
-    # Start the session and set up VNC
-    return start_session_and_setup_vnc(session_id)
+    print("🔄 Preparing to load topology...")
+
+    # Perform full cleanup first (VNC proxies, Docker containers, pycore dirs)
+    full_cleanup()
+
+    # Set DISPLAY for GUI
+    env = os.environ.copy()
+    env['DISPLAY'] = ':1'
+
+    # Kill existing core-gui (blackbox approach - clean slate)
+    print("   Closing existing CORE GUI...")
+    subprocess.run("pkill -9 core-gui", shell=True, env=env, capture_output=True)
+    time.sleep(1)
+
+    # Launch core-gui with --start flag to load AND start topology
+    # This is the proven blackbox method that handles everything
+    print(f"🚀 Launching CORE GUI with --start {xml_file_path}...")
+    subprocess.Popen(
+        ["core-gui", "--start", str(xml_path)],
+        env=env,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True
+    )
+
+    # Wait for GUI to appear and session to start
+    print("   ⏳ Waiting for topology to load and start...")
+    time.sleep(5)
+
+    # Maximize the window
+    try:
+        subprocess.run(
+            ["wmctrl", "-r", "CORE", "-b", "add,maximized_vert,maximized_horz"],
+            env=env, timeout=2, capture_output=True
+        )
+    except:
+        pass
+
+    print(f"✅ Topology loaded and started!")
+    print(f"   🎯 Check your noVNC browser tab - topology is running!")
+
+    # Get session ID for VNC proxy setup
+    try:
+        core = client.CoreGrpcClient()
+        core.connect()
+        sessions = core.get_sessions()
+        if sessions:
+            session_id = sessions[-1].id
+            print(f"   Session ID: {session_id}")
+
+            # Wait a bit more for containers to initialize
+            time.sleep(3)
+
+            # Set up VNC proxies for HMI nodes
+            setup_vnc_proxies_for_hmi_nodes(session_id)
+
+            # Configure MQTT injector
+            configure_mqtt_injector()
+    except Exception as e:
+        print(f"   Warning: Could not set up VNC proxies: {e}")
+
+    return True
 
 
 if __name__ == '__main__':
