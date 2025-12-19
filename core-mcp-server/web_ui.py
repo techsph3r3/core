@@ -475,6 +475,12 @@ def index():
     """Redirect to dashboard"""
     return render_template('dashboard.html')
 
+@app.route('/core-vnc/<path:path>')
+def serve_core_vnc(path):
+    """Serve VNC static files (noVNC)"""
+    # Serve from local directory where we copied the files
+    return send_from_directory(os.path.join(SCRIPT_DIR, 'noVNC'), path)
+
 @app.route('/hmi-placeholder.html')
 def hmi_placeholder():
     """HMI placeholder page when no topology is deployed"""
