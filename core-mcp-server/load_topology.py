@@ -64,21 +64,31 @@ def cleanup_vnc_proxies():
     These proxies use nsenter to bridge into CORE container network namespaces.
     When a session ends, the PIDs they point to no longer exist, causing hangs.
 
-    IMPORTANT: This runs INSIDE core-novnc container where the proxies live.
+    IMPORTANT: Only cleans up HMI proxies (6081+), NOT main VNC on 6080.
     """
     import subprocess
+
+    print("   [DEBUG] cleanup_vnc_proxies() starting...")
 
     try:
         # Run cleanup inside core-novnc container where proxy processes live
         cleanup_cmd = '''docker exec core-novnc bash -c '
+            echo "[DEBUG] Before cleanup:"
+            echo "[DEBUG] websockify processes:"
+            ps aux | grep websockify | grep -v grep || echo "  (none)"
+            echo "[DEBUG] socat processes:"
+            ps aux | grep socat | grep -v grep || echo "  (none)"
+
             # Kill websockify HMI proxies (ports 6081-6089, NOT 6080 which is main VNC)
+            echo "[DEBUG] Killing websockify on 608[1-9]..."
             pkill -f "websockify.*608[1-9]" 2>/dev/null || true
 
             # Kill socat internal proxies (ports 160XX)
+            echo "[DEBUG] Killing socat on 160XX..."
             pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
 
             # Kill old-style socat proxies on 6081-6089 directly (legacy cleanup)
-            # Note: 608[1-9] pattern ensures we don't kill anything on 6080
+            echo "[DEBUG] Killing socat on 608[1-9]..."
             pkill -f "socat.*TCP-LISTEN:608[1-9]" 2>/dev/null || true
 
             # Remove ALL wrapper scripts
@@ -88,22 +98,34 @@ def cleanup_vnc_proxies():
             rm -f /tmp/socat_*.log 2>/dev/null || true
             rm -f /tmp/websockify_*.log 2>/dev/null || true
 
+            echo "[DEBUG] After cleanup:"
+            echo "[DEBUG] websockify processes:"
+            ps aux | grep websockify | grep -v grep || echo "  (none)"
+            echo "[DEBUG] Listening ports:"
+            ss -tlnp | grep -E "590|608" || echo "  (none)"
+
             echo "VNC proxy chains cleaned"
         ' '''
 
-        result = subprocess.run(cleanup_cmd, shell=True, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cleanup_cmd, shell=True, capture_output=True, text=True, timeout=15)
+        print(f"   [DEBUG] cleanup output:\n{result.stdout}")
+        if result.stderr:
+            print(f"   [DEBUG] cleanup stderr: {result.stderr}")
 
         if 'cleaned' in result.stdout:
             print("   ✓ Cleaned up VNC proxy chains inside core-novnc")
         else:
+            print("   [DEBUG] Running local fallback cleanup...")
             # Fallback: try local cleanup (for when running inside container)
             subprocess.run("pkill -f 'websockify.*608[1-9]' 2>/dev/null", shell=True, capture_output=True, timeout=5)
             subprocess.run("pkill -f 'socat.*TCP-LISTEN:160' 2>/dev/null", shell=True, capture_output=True, timeout=5)
             subprocess.run("rm -f /tmp/ns_forward_*.sh 2>/dev/null", shell=True, capture_output=True, timeout=5)
-            print("   ✓ Cleaned up VNC proxy chains (local)")
+            print("   ✓ Cleaned up VNC proxy chains (local fallback)")
 
     except Exception as e:
-        print(f"   Warning: VNC proxy cleanup failed: {e}")
+        import traceback
+        print(f"   [ERROR] VNC proxy cleanup failed: {e}")
+        traceback.print_exc()
 
 
 def cleanup_docker_containers():
@@ -111,21 +133,28 @@ def cleanup_docker_containers():
     Stop and remove CORE-managed Docker containers from previous sessions.
 
     This runs INSIDE core-novnc (Docker-in-Docker) to clean up CORE node containers.
+    NOTE: This function runs inside the core-novnc container, so 'docker' commands
+    operate on the inner Docker daemon (Docker-in-Docker), not the host.
     """
     import subprocess
 
-    # Protected containers - never remove these
-    protected = {'core-novnc', 'core-daemon'}
+    print("   [DEBUG] cleanup_docker_containers() starting...")
+
+    # Protected containers - never remove these (these are on the HOST, not inside core-novnc)
+    protected = {'core-novnc', 'core-daemon', 'hmi', 'plc', 'eng-ws'}
 
     try:
         # Get list of ALL containers inside core-novnc (Docker-in-Docker)
+        # This command runs locally, which when inside core-novnc, lists CORE node containers
         result = subprocess.run(
             ['docker', 'ps', '-a', '--format', '{{.Names}}'],
             capture_output=True, text=True, timeout=10
         )
 
+        print(f"   [DEBUG] docker ps returned: {result.stdout.strip()}")
+
         if result.returncode != 0:
-            print("   Warning: Could not list Docker containers")
+            print(f"   [DEBUG] docker ps failed: {result.stderr}")
             return
 
         containers = result.stdout.strip().split('\n')
@@ -137,16 +166,21 @@ def cleanup_docker_containers():
 
             # Skip protected containers
             if container in protected:
+                print(f"   [DEBUG] Skipping protected container: {container}")
                 continue
 
             # Remove ALL non-protected containers (they're all CORE-managed)
             try:
-                print(f"   🛑 Removing container: {container}")
-                subprocess.run(['docker', 'rm', '-f', container],
-                               capture_output=True, timeout=15)
-                stopped_count += 1
+                print(f"   [DEBUG] Removing container: {container}")
+                rm_result = subprocess.run(['docker', 'rm', '-f', container],
+                               capture_output=True, text=True, timeout=15)
+                if rm_result.returncode == 0:
+                    print(f"   🛑 Removed container: {container}")
+                    stopped_count += 1
+                else:
+                    print(f"   [DEBUG] Failed to remove {container}: {rm_result.stderr}")
             except Exception as e:
-                print(f"   Warning: Could not remove {container}: {e}")
+                print(f"   [ERROR] Could not remove {container}: {e}")
 
         if stopped_count > 0:
             print(f"   ✓ Cleaned up {stopped_count} Docker containers")
@@ -154,7 +188,9 @@ def cleanup_docker_containers():
             print("   ✓ No stale containers to clean up")
 
     except Exception as e:
-        print(f"   Warning: Docker cleanup failed: {e}")
+        import traceback
+        print(f"   [ERROR] Docker cleanup failed: {e}")
+        traceback.print_exc()
 
 
 def cleanup_core_interfaces():
@@ -516,6 +552,11 @@ def load_and_start(xml_file_path):
     import os
     import time
 
+    print("=" * 60)
+    print("[DEBUG] load_and_start() called")
+    print(f"[DEBUG] xml_file_path: {xml_file_path}")
+    print("=" * 60)
+
     xml_path = Path(xml_file_path)
     if not xml_path.exists():
         print(f"❌ File not found: {xml_file_path}")
@@ -523,44 +564,88 @@ def load_and_start(xml_file_path):
 
     print("🔄 Preparing to load topology...")
 
+    # Check VNC state before we do anything
+    print("[DEBUG] Checking VNC state before cleanup...")
+    vnc_check = subprocess.run(
+        "ps aux | grep -E 'Xtigervnc|websockify.*6080' | grep -v grep",
+        shell=True, capture_output=True, text=True
+    )
+    print(f"[DEBUG] VNC processes before:\n{vnc_check.stdout}")
+
     # Set DISPLAY for GUI
     env = os.environ.copy()
     env['DISPLAY'] = ':1'
 
     # Step 1: Delete existing CORE sessions via gRPC (NOT daemon restart)
     # This preserves VNC while cleaning up CORE sessions
-    print("   Cleaning up existing CORE sessions...")
+    print("   Step 1: Cleaning up existing CORE sessions via gRPC...")
     try:
         core = client.CoreGrpcClient()
         core.connect()
         sessions = core.get_sessions()
+        print(f"   [DEBUG] Found {len(sessions)} existing sessions")
         for session in sessions:
             try:
-                print(f"   Deleting session {session.id}")
+                print(f"   [DEBUG] Deleting session {session.id}")
                 core.delete_session(session.id)
             except Exception as e:
-                print(f"   Warning: Could not delete session {session.id}: {e}")
+                print(f"   [ERROR] Could not delete session {session.id}: {e}")
         if sessions:
-            time.sleep(2)  # Give CORE time to clean up
+            print("   [DEBUG] Waiting 2s for CORE cleanup...")
+            time.sleep(2)
     except Exception as e:
-        print(f"   Warning: Could not clean sessions: {e}")
+        import traceback
+        print(f"   [ERROR] Could not clean sessions: {e}")
+        traceback.print_exc()
+
+    # Check VNC state after session cleanup
+    print("[DEBUG] Checking VNC state after session cleanup...")
+    vnc_check = subprocess.run(
+        "ps aux | grep -E 'Xtigervnc|websockify.*6080' | grep -v grep",
+        shell=True, capture_output=True, text=True
+    )
+    print(f"[DEBUG] VNC processes after session cleanup:\n{vnc_check.stdout}")
 
     # Step 2: Clean up HMI VNC proxies (6081+) but NOT main VNC (6080)
-    print("   Cleaning up HMI VNC proxies...")
+    print("   Step 2: Cleaning up HMI VNC proxies...")
     cleanup_vnc_proxies()
 
+    # Check VNC state after VNC proxy cleanup
+    print("[DEBUG] Checking VNC state after VNC proxy cleanup...")
+    vnc_check = subprocess.run(
+        "ps aux | grep -E 'Xtigervnc|websockify.*6080' | grep -v grep",
+        shell=True, capture_output=True, text=True
+    )
+    print(f"[DEBUG] VNC processes after VNC proxy cleanup:\n{vnc_check.stdout}")
+
     # Step 3: Clean up Docker containers and pycore dirs
-    print("   Cleaning up Docker containers...")
+    print("   Step 3: Cleaning up Docker containers...")
     cleanup_docker_containers()
     cleanup_pycore_dirs()
 
+    # Check VNC state after Docker cleanup
+    print("[DEBUG] Checking VNC state after Docker cleanup...")
+    vnc_check = subprocess.run(
+        "ps aux | grep -E 'Xtigervnc|websockify.*6080' | grep -v grep",
+        shell=True, capture_output=True, text=True
+    )
+    print(f"[DEBUG] VNC processes after Docker cleanup:\n{vnc_check.stdout}")
+
     # Step 4: Kill existing core-gui only (NOT VNC processes)
-    print("   Closing existing CORE GUI...")
+    print("   Step 4: Closing existing CORE GUI...")
     subprocess.run("pkill -9 core-gui", shell=True, capture_output=True)
     time.sleep(1)
 
+    # Check VNC state after core-gui kill
+    print("[DEBUG] Checking VNC state after core-gui kill...")
+    vnc_check = subprocess.run(
+        "ps aux | grep -E 'Xtigervnc|websockify.*6080' | grep -v grep",
+        shell=True, capture_output=True, text=True
+    )
+    print(f"[DEBUG] VNC processes after core-gui kill:\n{vnc_check.stdout}")
+
     # Step 5: Launch core-gui with --start flag
-    print(f"🚀 Launching CORE GUI with --start {xml_file_path}...")
+    print(f"   Step 5: Launching CORE GUI with --start {xml_file_path}...")
     subprocess.Popen(
         ["core-gui", "--start", str(xml_path)],
         env=env,
