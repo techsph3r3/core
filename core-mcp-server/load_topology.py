@@ -77,8 +77,9 @@ def cleanup_vnc_proxies():
             # Kill socat internal proxies (ports 160XX)
             pkill -f "socat.*TCP-LISTEN:160" 2>/dev/null || true
 
-            # Kill old-style socat proxies on 608X directly (legacy cleanup)
-            pkill -f "socat.*TCP-LISTEN:608" 2>/dev/null || true
+            # Kill old-style socat proxies on 6081-6089 directly (legacy cleanup)
+            # Note: 608[1-9] pattern ensures we don't kill anything on 6080
+            pkill -f "socat.*TCP-LISTEN:608[1-9]" 2>/dev/null || true
 
             # Remove ALL wrapper scripts
             rm -f /tmp/ns_forward_*.sh 2>/dev/null || true
@@ -502,14 +503,14 @@ def load_and_start(xml_file_path):
     """
     Complete workflow: Load topology and start session.
 
-    Combines the proven blackbox approach (core-gui --start) with proper
-    session state handling from start_and_deploy.py:
-    1. core-cleanup (blackbox)
-    2. pkill wish8.5 / core-gui (blackbox)
-    3. core-daemon restart (blackbox)
-    4. core-gui --start <file> (blackbox)
-    5. Wait for RUNTIME state (start_and_deploy)
-    6. Set up VNC proxies and MQTT after session is running
+    IMPORTANT: The main noVNC session (port 6080 → Xtigervnc 5901) must stay
+    connected throughout. Only clean up:
+    - CORE sessions (via gRPC API)
+    - HMI VNC proxies (socat/websockify on ports 6081+)
+    - Docker containers inside CORE
+    - core-gui process
+
+    DO NOT restart core-daemon or run core-cleanup as these can kill VNC.
     """
     import subprocess
     import os
@@ -520,32 +521,45 @@ def load_and_start(xml_file_path):
         print(f"❌ File not found: {xml_file_path}")
         return False
 
-    print("🔄 Preparing to load topology (blackbox method)...")
+    print("🔄 Preparing to load topology...")
 
     # Set DISPLAY for GUI
     env = os.environ.copy()
     env['DISPLAY'] = ':1'
 
-    # Step 1: core-cleanup (blackbox line 12)
-    print("   Running core-cleanup...")
-    subprocess.run("core-cleanup", shell=True, capture_output=True, timeout=30)
+    # Step 1: Delete existing CORE sessions via gRPC (NOT daemon restart)
+    # This preserves VNC while cleaning up CORE sessions
+    print("   Cleaning up existing CORE sessions...")
+    try:
+        core = client.CoreGrpcClient()
+        core.connect()
+        sessions = core.get_sessions()
+        for session in sessions:
+            try:
+                print(f"   Deleting session {session.id}")
+                core.delete_session(session.id)
+            except Exception as e:
+                print(f"   Warning: Could not delete session {session.id}: {e}")
+        if sessions:
+            time.sleep(2)  # Give CORE time to clean up
+    except Exception as e:
+        print(f"   Warning: Could not clean sessions: {e}")
 
-    # Step 2: Kill existing core-gui / wish8.5 (blackbox line 13)
+    # Step 2: Clean up HMI VNC proxies (6081+) but NOT main VNC (6080)
+    print("   Cleaning up HMI VNC proxies...")
+    cleanup_vnc_proxies()
+
+    # Step 3: Clean up Docker containers and pycore dirs
+    print("   Cleaning up Docker containers...")
+    cleanup_docker_containers()
+    cleanup_pycore_dirs()
+
+    # Step 4: Kill existing core-gui only (NOT VNC processes)
     print("   Closing existing CORE GUI...")
-    subprocess.run("pkill wish8.5", shell=True, capture_output=True)
     subprocess.run("pkill -9 core-gui", shell=True, capture_output=True)
     time.sleep(1)
 
-    # Step 3: Restart core-daemon (blackbox line 14)
-    print("   Restarting core-daemon...")
-    subprocess.run("systemctl restart core-daemon 2>/dev/null || /etc/init.d/core-daemon restart 2>/dev/null || true",
-                   shell=True, capture_output=True, timeout=30)
-    time.sleep(2)  # Give daemon time to start
-
-    # Perform our additional cleanup (VNC proxies, Docker containers, pycore dirs)
-    full_cleanup()
-
-    # Step 4: Launch core-gui with --start flag (blackbox line 37)
+    # Step 5: Launch core-gui with --start flag
     print(f"🚀 Launching CORE GUI with --start {xml_file_path}...")
     subprocess.Popen(
         ["core-gui", "--start", str(xml_path)],
