@@ -66,3 +66,4 @@ __pycache__
 
 # ignore core player files
 *.core
+core-mcp-server/web_ui.log
