@@ -6130,6 +6130,8 @@ def receive_sensor_data(sensor_id):
     if not data:
         return jsonify({'error': 'No data provided'}), 400
 
+    print(f"[RECV] Sensor data from {sensor_id}: {list(data.keys())}")
+
     # Auto-register sensor if not exists
     if sensor_id not in sensor_data_store['sensors']:
         sensor_data_store['sensors'][sensor_id] = {
@@ -6237,6 +6239,10 @@ def stream_sensor_readings():
                 pass
                 
             if has_data:
+                # DEBUG: Log occasionally
+                if int(time.time()) % 5 == 0:
+                    print(f"[SSE] Streaming data for phones: {list(phones.keys())}")
+                    
                 data = {
                     'phones': phones,
                     'timestamp': current_time,
@@ -6244,7 +6250,6 @@ def stream_sensor_readings():
                 }
                 yield f"data: {json.dumps(data)}\n\n"
             else:
-                # Keep-alive heartbeat
                 yield ": keepalive\n\n"
                 
             # Sleep 50ms (20Hz) - fast but not busy-wait
