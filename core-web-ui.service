@@ -1,0 +1,16 @@
+[Unit]
+Description=CORE Web UI (Makau)
+After=network.target
+
+[Service]
+Type=simple
+User=meluallen
+WorkingDirectory=/home/meluallen/makau_core/core-mcp-server
+ExecStart=/usr/bin/python3 web_ui.py --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=OPENAI_API_KEY=PLACEHOLDER_SET_ON_SERVER
+
+[Install]
+WantedBy=multi-user.target

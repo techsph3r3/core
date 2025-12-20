@@ -50,15 +50,17 @@ pkill -f "phone_mqtt_injector.py" 2>/dev/null || true
 sleep 1
 echo -e "  ✓ Cleaned up old processes"
 
-# Step 4: Start Phone Web UI
-echo -e "${YELLOW}[4/4] Starting Phone Web UI (port 8081)...${NC}"
-nohup python3 phone_web_ui.py --host 0.0.0.0 --port 8081 --auto-configure-injector > /tmp/phone_webui.log 2>&1 &
+# Step 4: Start Phone Web UI Service
+echo -e "${YELLOW}[4/4] Starting Phone Web UI Service...${NC}"
+sudo systemctl enable core-phone-ui
+sudo systemctl restart core-phone-ui
 sleep 2
-if pgrep -f "phone_web_ui.py" > /dev/null; then
-    echo -e "  ✓ Phone Web UI running on port 8081"
+
+if systemctl is-active --quiet core-phone-ui; then
+    echo -e "  ✓ Phone Web UI service running"
 else
-    echo -e "  ${RED}✗ Phone Web UI failed to start${NC}"
-    tail -5 /tmp/phone_webui.log
+    echo -e "  ${RED}✗ Phone Web UI service failed to start${NC}"
+    sudo journalctl -u core-phone-ui -n 10 --no-pager
     exit 1
 fi
 
@@ -70,43 +72,41 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # Detect environment and show URLs
-# VNC password for auto-login (keeps VNC secure but auto-fills for convenience)
 VNC_PASSWORD="core123"
+
+# Detect External IP (GCP Metadata)
+EXTERNAL_IP=$(curl -s -H "Metadata-Flavor: Google" http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip || echo "")
+INTERNAL_IP=$(hostname -I | awk '{print $1}')
 
 if [ -n "$CODESPACE_NAME" ]; then
     PHONE_URL="https://$CODESPACE_NAME-8081.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN"
     NOVNC_URL="https://$CODESPACE_NAME-6080.$GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
-
+    
     echo -e "${YELLOW}GitHub Codespace URLs:${NC}"
-    echo ""
     echo -e "  ${CYAN}Phone Sensor Page:${NC}  ${PHONE_URL}/phone"
-    echo -e "  ${CYAN}Phone Display:${NC}      ${PHONE_URL}/phone-display"
+elif [ -n "$EXTERNAL_IP" ]; then
+    # Force HTTPS for Phone Sensor on GCE
+    PHONE_URL="https://${EXTERNAL_IP}:8081"
+    NOVNC_URL="http://${EXTERNAL_IP}:6080/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
+
+    echo -e "${YELLOW}GCP External IP URLs:${NC}"
+    echo -e "  ${CYAN}Phone Sensor Page:${NC}  ${PHONE_URL}/phone"
+    echo -e "  ${CYAN}Phone Display:${NC}      ${PHONE_URL}/phone-display (Accept Warning)"
     echo -e "  ${CYAN}noVNC Desktop:${NC}      ${NOVNC_URL}"
-    echo ""
-    echo -e "${YELLOW}QR Code Connection:${NC}"
-    echo "  1. Open ${PHONE_URL}/phone on your desktop"
-    echo "  2. Scan the QR code with your phone camera"
-    echo "  3. Grant sensor permissions when prompted"
-    echo "  4. Tap 'Start Streaming' to begin sending data"
-    echo ""
-    echo -e "${YELLOW}Note:${NC} Make sure port 8081 is set to 'Public' in Codespace port settings"
 else
-    NOVNC_URL="http://localhost:6080/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
-    echo -e "${YELLOW}Local URLs:${NC}"
-    echo ""
-    echo -e "  ${CYAN}Phone Sensor Page:${NC}  http://localhost:8081/phone"
-    echo -e "  ${CYAN}Phone Display:${NC}      http://localhost:8081/phone-display"
-    echo -e "  ${CYAN}noVNC Desktop:${NC}      ${NOVNC_URL}"
-    echo ""
-    echo -e "${YELLOW}QR Code Connection:${NC}"
-    echo "  1. Open http://localhost:8081/phone on your desktop"
-    echo "  2. Scan the QR code with your phone camera"
-    echo "  3. Grant sensor permissions when prompted"
-    echo "  4. Tap 'Start Streaming' to begin sending data"
-    echo ""
-    echo -e "${YELLOW}Note:${NC} Your phone and computer must be on the same network"
-    echo "      For USB tethering, the phone connects via the computer's IP"
+    PHONE_URL="http://${INTERNAL_IP}:8081"
+    NOVNC_URL="http://${INTERNAL_IP}:6080/vnc.html?autoconnect=true&password=${VNC_PASSWORD}"
+
+    echo -e "${YELLOW}Local/Internal URLs:${NC}"
+    echo -e "  ${CYAN}Phone Sensor Page:${NC}  ${PHONE_URL}/phone"
+    echo -e "  ${CYAN}Phone Display:${NC}      ${PHONE_URL}/phone-display" 
 fi
+
+echo ""
+echo -e "${YELLOW}QR Code Connection:${NC}"
+echo "  1. Open the Phone Sensor Page on your phone"
+echo "  2. Grant permissions and click Start"
+echo ""
 
 echo ""
 echo -e "${YELLOW}Quick Test:${NC}"

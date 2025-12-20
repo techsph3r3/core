@@ -2874,7 +2874,53 @@ basic.forever(function () {
                     }
 
                     // Phone Sensor Functions - now using same-origin API
+                    // Real-time Sensor Stream (SSE)
+                    function initSensorStream() {
+                        const evtSource = new EventSource('/api/sensors/stream');
+
+                        evtSource.onmessage = function (event) {
+                            try {
+                                const data = JSON.parse(event.data);
+                                if (!data.phones) return;
+
+                                const phones = Object.values(data.phones);
+                                phoneSensorCount.value = phones.length;
+                                phoneConnected.value = phones.length > 0;
+                                phoneInjectorRunning.value = data.injector_running || false;
+
+                                // Reset latency if no phones
+                                if (phones.length === 0) {
+                                    phoneLatency.value = null;
+                                }
+
+                                // Update first connected phone
+                                const phoneIds = Object.keys(data.phones);
+                                if (phoneIds.length > 0) {
+                                    const firstPhoneId = phoneIds[0];
+                                    const reading = data.phones[firstPhoneId];
+
+                                    phoneLastData.value = reading;
+
+                                    // Calculate Latency (Server Time - Phone Time)
+                                    if (reading.timestamp) {
+                                        const now = Date.now();
+                                        const ts = reading.timestamp < 10000000000 ? reading.timestamp * 1000 : reading.timestamp;
+                                        const lat = now - ts;
+                                        // Filter unreasonable jumps
+                                        if (lat > -5000 && lat < 5000) {
+                                            phoneLatency.value = lat;
+                                        }
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('SSE Error:', e);
+                            }
+                        };
+                    }
+
+                    // Legacy polling (unused)
                     async function pollPhoneStatus() {
+                        return; // Disabled
                         try {
                             // Filter for phone sensors from the shared sensor API
                             const response = await fetch('/api/sensors');
@@ -3974,8 +4020,8 @@ basic.forever(function () {
                         setInterval(refreshHosts, 30000);
                         // Also refresh CORE VNC nodes periodically
                         setInterval(refreshCoreVncNodes, 15000);
-                        // Poll phone sensor status (500ms = 2Hz) to balance latency/load
-                        setInterval(pollPhoneStatus, 500);
+                        // Init real-time sensor stream
+                        initSensorStream();
 
                         // Listen for lab state changes from other tabs
                         window.addEventListener('storage', (e) => {

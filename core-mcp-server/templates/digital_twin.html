@@ -132,24 +132,37 @@
     <div id="editor-overlay"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #0f172a; z-index: 1000; flex-direction: column;">
         <div
-            style="height: 50px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; align-items: center; justify-content: space-between; padding: 0 20px;">
-            <div style="color: #fff; font-family: 'Segoe UI', sans-serif; font-weight: bold;">PLC Logic Editor
-                (sorting_merged.st)</div>
-            <div>
-                <button onclick="saveAndCompile()" id="btn-compile"
-                    style="background: #22c55e; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px; margin-right: 10px;">Save
-                    & Compile</button>
-                <button onclick="toggleEditor()"
-                    style="background: #ef4444; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 13px;">Close</button>
+            style="padding: 10px; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center;">
+            <div style="color: #fff; font-weight: bold;">ST Code Editor</div>
+            <div style="display: flex; gap: 10px;">
+                <input type="file" id="file-upload" accept=".st" style="display: none;"
+                    onchange="handleFileUpload(this)">
+                <button onclick="document.getElementById('file-upload').click()"
+                    style="background: #475569; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Upload
+                    ST</button>
+                <button onclick="downloadCode()"
+                    style="background: #475569; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px;">Download
+                    ST</button>
+                <button
+                    style="background: #ef4444; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 10px;"
+                    onclick="toggleEditor()">Close</button>
             </div>
         </div>
         <div style="display: flex; flex: 1; overflow: hidden;">
             <div style="flex: 2; display: flex; flex-direction: column; border-right: 1px solid #334155;">
+                <!-- Code Area -->
                 <textarea id="code-area"
-                    style="flex: 1; background: #0f172a; color: #e2e8f0; border: none; padding: 20px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; resize: none; outline: none; line-height: 1.5;"
+                    style="width: 100%; height: 60%; background: #0f172a; color: #e2e8f0; border: none; padding: 10px; font-family: monospace; resize: none; outline: none;"
                     spellcheck="false"></textarea>
+                <div
+                    style="padding: 10px; border-top: 1px solid #334155; display: flex; align-items: center; gap: 10px;">
+                    <button id="btn-compile" onclick="saveAndCompile()"
+                        style="background: #2563eb; color: #fff; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer;">Save
+                        & Compile</button>
+                    <div style="color: #94a3b8; font-size: 12px;">Compiling deploys code to the PLC immediately.</div>
+                </div>
                 <div id="compile-status"
-                    style="height: 100px; background: #020617; border-top: 1px solid #334155; padding: 10px; color: #94a3b8; font-family: monospace; font-size: 12px; overflow-y: auto;">
+                    style="height: 150px; background: #020617; border-top: 1px solid #334155; padding: 10px; color: #94a3b8; font-family: monospace; font-size: 12px; overflow-y: auto; white-space: pre-wrap;">
                     Ready to compile.
                 </div>
             </div>
@@ -198,10 +211,144 @@
             }
         }
 
-        async function saveAndCompile() {
+        // File I/O
+        function downloadCode() {
+            const code = document.getElementById('code-area').value;
+            const blob = new Blob([code], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'sorting_logic.st';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        function handleFileUpload(input) {
+            const file = input.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                document.getElementById('code-area').value = e.target.result;
+            };
+            reader.readAsText(file);
+            input.value = ''; // Reset
+        }
+
+        // Linter
+        function lintCode(code) {
+            const lines = code.split('\n');
+            const errors = [];
+            let ifCount = 0;
+            let endIfCount = 0;
+            let varCount = 0;
+            let endVarCount = 0;
+            let inCommentBlock = false;
+
+            // Keywords that typically don't need semicolons at the end of the line
+            const noSemiKeywords = new Set([
+                'VAR', 'END_VAR', 'PROGRAM', 'END_PROGRAM', 'CONFIGURATION', 'END_CONFIGURATION',
+                'RESOURCE', 'END_RESOURCE', 'TASK', 'WITH', 'IF', 'THEN', 'ELSE', 'ELSIF', 'END_IF',
+                'CASE', 'OF', 'END_CASE', 'FOR', 'DO', 'END_FOR', 'WHILE', 'END_WHILE', 'REPEAT', 'UNTIL', 'END_REPEAT'
+            ]);
+
+            for (let i = 0; i < lines.length; i++) {
+                let line = lines[i].trim();
+
+                // Multi-line comment tracking
+                if (inCommentBlock) {
+                    if (line.includes('*)')) {
+                        inCommentBlock = false;
+                        line = line.split('*)')[1].trim();
+                    } else {
+                        continue;
+                    }
+                }
+                if (line.includes('(*')) {
+                    if (line.includes('*)')) {
+                        line = line.replace(/\(\*.*?\*\)/g, '').trim(); // Remove inline comment
+                    } else {
+                        inCommentBlock = true;
+                        line = line.split('(*')[0].trim();
+                    }
+                }
+
+                if (line.length === 0) continue;
+
+                const upper = line.toUpperCase();
+
+                // Block Checks
+                // Note: ST is case-insensitive
+                if (upper.match(/\bIF\b/) && !upper.match(/\bEND_IF\b/)) ifCount++; // Simple checks
+                if (upper.match(/\bEND_IF\b/)) endIfCount++;
+
+                if (upper.match(/\bVAR\b/) && !upper.match(/\bEND_VAR\b/) && !upper.includes('_VAR')) varCount++; // Avoid VAR_INPUT etc false positives
+                if (upper.match(/\bEND_VAR\b/)) endVarCount++;
+
+                // Semicolon Check
+                const lastChar = line.slice(-1);
+                // Get first word for keyword check. Split by space or semicolon.
+                const firstWord = upper.split(/[\s;]+/)[0];
+
+                // If check:
+                // 1. Not a keyword that allows no semi
+                // 2. Does not end in semi
+                // 3. Not a label (ending in :)
+                // 4. Not a declaration start like "VAR_INPUT" (handled by noSemiKeywords generally, but let's be safe)
+                if (!noSemiKeywords.has(firstWord) && lastChar !== ';' && lastChar !== ':' && !upper.startsWith('VAR_') && !upper.startsWith('PROGRAM ') && !upper.startsWith('CONFIGURATION ')) {
+                    errors.push(`Line ${i + 1}: Possible missing semicolon (ended with '${lastChar}')`);
+                }
+            }
+
+            if (ifCount !== endIfCount) errors.push(`Unbalanced IF/END_IF blocks (Opened: ${ifCount}, Closed: ${endIfCount})`);
+            if (varCount !== endVarCount) errors.push(`Unbalanced VAR/END_VAR blocks (Opened: ${varCount}, Closed: ${endVarCount})`);
+
+            return errors;
+        }
+
+        async function analyzeWithAI(errorLog) {
+            const code = document.getElementById('code-area').value;
+            const aiPanel = document.getElementById('chat-history');
+
+            aiPanel.innerHTML += `<div style="background: #334155; color: #f87171; padding: 10px; border-radius: 8px; font-size: 13px;">
+                <strong>Analyzing Error...</strong>
+            </div>`;
+
+            const aiPrompt = `I just tried to compile this ST code and got the following error:\n\n${errorLog}\n\nPlease analyze this error and tell me exactly how to fix the code.`;
+
+            try {
+                const aiRes = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: aiPrompt, code: code })
+                });
+                const aiData = await aiRes.json();
+                aiPanel.innerHTML += `<div style="background: #334155; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">
+                    ${aiData.response}
+                </div>`;
+                aiPanel.scrollTop = aiPanel.scrollHeight;
+            } catch (err) {
+                console.error("AI Analysis Failed", err);
+                aiPanel.innerHTML += `<div style="background: #334155; color: #ef4444; padding: 10px; border-radius: 8px; font-size: 13px;">
+                    AI Analysis Failed: ${err}
+                </div>`;
+            }
+        }
+
+        async function saveAndCompile(force = false) {
             const code = document.getElementById('code-area').value;
             const statusDiv = document.getElementById('compile-status');
             const btn = document.getElementById('btn-compile');
+
+            // Run Linter First
+            if (!force) {
+                const linterErrors = lintCode(code);
+                if (linterErrors.length > 0) {
+                    let errorHtml = `<span style="color: #fca5a5"><strong>Linter Found Issues:</strong></span><br>` + linterErrors.join('<br>');
+                    errorHtml += `<br><br><button onclick="saveAndCompile(true)" style="background: #eab308; color: #000; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">Compile Anyway</button>`;
+                    statusDiv.innerHTML = errorHtml;
+                    return;
+                }
+            }
 
             btn.disabled = true;
             btn.textContent = "Compiling...";
@@ -221,9 +368,21 @@
                 const data = await res.json();
 
                 if (data.success) {
-                    statusDiv.innerHTML = `<span style="color: #22c55e">SUCCESS:</span>\n` + data.output;
+                    statusDiv.innerHTML = `<span style="color: #22c55e">SUCCESS:</span>\n` + (data.logs || data.message);
                 } else {
-                    statusDiv.innerHTML = `<span style="color: #ef4444">FAILED:</span>\n` + data.output;
+                    const errorLog = data.logs || data.error;
+                    // Escape basic HTML chars in errorLog to prevent breakage
+                    const safeLog = errorLog.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+                    statusDiv.innerHTML = `<span style="color: #ef4444">FAILED:</span>\n${safeLog}`;
+
+                    // Add Manual AI Button
+                    window.lastErrorLog = errorLog; // Store error log globally for the button click
+
+                    statusDiv.innerHTML += `<br><br><button onclick="analyzeWithAI(window.lastErrorLog)" 
+                        style="background: #8b5cf6; color: #fff; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer;">
+                        ✨ Analyze Error with AI
+                    </button>`;
                 }
             } catch (e) {
                 statusDiv.textContent = "Error: " + e;
@@ -233,7 +392,7 @@
             }
         }
 
-        function sendChat(input) {
+        async function sendChat(input) {
             const history = document.getElementById('chat-history');
             const msg = input.value;
             if (!msg) return;
@@ -241,12 +400,47 @@
             // Add user message
             history.innerHTML += `<div style="background: #3b82f6; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px; align-self: flex-end;">${msg}</div>`;
             input.value = '';
+            history.scrollTop = history.scrollHeight;
 
-            // Mock AI Response (for now)
-            setTimeout(() => {
-                history.innerHTML += `<div style="background: #334155; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">I see you're working on the sorting logic. To implement "Speed Sorting", try reducing the timer values!</div>`;
-                history.scrollTop = history.scrollHeight;
-            }, 1000);
+            // Add loading indicator
+            const loadingId = 'loading-' + Date.now();
+            history.innerHTML += `<div id="${loadingId}" style="background: #334155; color: #94a3b8; padding: 10px; border-radius: 8px; font-size: 13px;">Thinking...</div>`;
+            history.scrollTop = history.scrollHeight;
+
+            try {
+                // Get current code
+                const code = document.getElementById('code-area').value;
+
+                const res = await fetch('/api/ai/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg, code: code })
+                });
+
+                const data = await res.json();
+
+                // Remove loading
+                const loader = document.getElementById(loadingId);
+                if (loader) loader.remove();
+
+                if (data.success) {
+                    // Render Markdown-ish response (simple conversion)
+                    let html = data.response
+                        .replace(/\n/g, '<br>')
+                        .replace(/```st/g, '<pre style="background:#0f172a;padding:5px;">')
+                        .replace(/```/g, '</pre>');
+
+                    history.innerHTML += `<div style="background: #334155; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">${html}</div>`;
+                } else {
+                    history.innerHTML += `<div style="background: #ef4444; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">Error: ${data.error}</div>`;
+                }
+            } catch (e) {
+                const loader = document.getElementById(loadingId);
+                if (loader) loader.remove();
+                history.innerHTML += `<div style="background: #ef4444; color: #fff; padding: 10px; border-radius: 8px; font-size: 13px;">Network Error: ${e}</div>`;
+            }
+
+            history.scrollTop = history.scrollHeight;
         }
         // PLC I/O bridge connection for 3D Digital Twin
         // Uses /ws/plc-io endpoint which connects to actual OpenPLC Modbus

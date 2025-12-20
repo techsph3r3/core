@@ -476,6 +476,9 @@ def main():
     parser.add_argument("--auto-configure-injector", action="store_true",
                         help="Auto-configure MQTT injector with default settings")
 
+    parser.add_argument("--cert", help="Path to SSL certificate")
+    parser.add_argument("--key", help="Path to SSL private key")
+
     args = parser.parse_args()
 
     # Auto-configure injector if requested
@@ -489,12 +492,13 @@ def main():
         )
         phone_injector.start()
 
+    protocol = "https" if args.cert else "http"
     print(f"""
 ========================================
    Phone Sensor Web UI Server
 ========================================
 
-Server running at: http://{args.host}:{args.port}
+Server running at: {protocol}://{args.host}:{args.port}
 
 Pages:
   /phone         - Phone sensor page (open on mobile)
@@ -517,7 +521,8 @@ To use:
 ========================================
 """)
 
-    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True)
+    ssl_context = (args.cert, args.key) if args.cert and args.key else None
+    app.run(host=args.host, port=args.port, debug=args.debug, threaded=True, ssl_context=ssl_context)
 
 
 if __name__ == '__main__':

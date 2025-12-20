@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
@@ -7,7 +8,12 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -17,39 +23,67 @@
             -webkit-user-select: none;
             user-select: none;
         }
-        .container { max-width: 800px; margin: 0 auto; }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
         }
-        h1 { font-size: 1.3rem; display: flex; align-items: center; gap: 10px; }
+
+        h1 {
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
         .logo {
-            width: 36px; height: 36px;
+            width: 36px;
+            height: 36px;
             background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
             border-radius: 8px;
-            display: flex; align-items: center; justify-content: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             font-size: 18px;
         }
-        .nav-links { display: flex; gap: 10px; }
+
+        .nav-links {
+            display: flex;
+            gap: 10px;
+        }
+
         .nav-links a {
-            color: #aaa; text-decoration: none;
-            padding: 6px 12px; border-radius: 6px;
+            color: #aaa;
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 6px;
             font-size: 0.85rem;
             transition: all 0.2s;
         }
-        .nav-links a:hover, .nav-links a.active { color: #fff; background: rgba(255,255,255,0.1); }
+
+        .nav-links a:hover,
+        .nav-links a.active {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.1);
+        }
 
         .card {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 12px;
             padding: 16px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
             margin-bottom: 16px;
         }
+
         .card h2 {
             font-size: 0.9rem;
             margin-bottom: 12px;
@@ -60,19 +94,29 @@
 
         /* Status indicators */
         .status-indicator {
-            display: flex; align-items: center; gap: 10px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
             padding: 10px;
-            background: rgba(0,0,0,0.2);
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 8px;
             margin-bottom: 12px;
         }
+
         .status-dot {
-            width: 12px; height: 12px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
             background: #ff4757;
         }
-        .status-dot.connected { background: #2ed573; }
-        .status-dot.warning { background: #ffa502; }
+
+        .status-dot.connected {
+            background: #2ed573;
+        }
+
+        .status-dot.warning {
+            background: #ffa502;
+        }
 
         /* Buttons */
         .btn {
@@ -89,18 +133,44 @@
             justify-content: center;
             gap: 8px;
         }
-        .btn-primary { background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%); color: #fff; }
-        .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 15px rgba(255,107,107,0.3); }
-        .btn-success { background: linear-gradient(135deg, #2ed573 0%, #26de81 100%); color: #000; }
-        .btn-danger { background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%); color: #fff; }
-        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
-        .btn-sm { padding: 8px 14px; font-size: 0.85rem; }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+            color: #fff;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(255, 107, 107, 0.3);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, #2ed573 0%, #26de81 100%);
+            color: #000;
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #ff4757 0%, #ff3838 100%);
+            color: #fff;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-sm {
+            padding: 8px 14px;
+            font-size: 0.85rem;
+        }
 
         /* QR Code Section */
         .qr-section {
             text-align: center;
             padding: 20px;
         }
+
         .qr-code {
             display: inline-block;
             padding: 15px;
@@ -110,14 +180,17 @@
             min-width: 230px;
             min-height: 230px;
         }
+
         .qr-code img {
             display: block;
         }
+
         .qr-instructions {
             font-size: 0.85rem;
             color: #888;
             margin-top: 10px;
         }
+
         .connection-url {
             font-family: monospace;
             font-size: 0.75rem;
@@ -125,7 +198,7 @@
             word-break: break-all;
             margin-top: 10px;
             padding: 8px;
-            background: rgba(0,0,0,0.3);
+            background: rgba(0, 0, 0, 0.3);
             border-radius: 6px;
         }
 
@@ -135,33 +208,68 @@
             grid-template-columns: repeat(3, 1fr);
             gap: 8px;
         }
+
         .sensor-item {
-            background: rgba(0,0,0,0.2);
+            background: rgba(0, 0, 0, 0.2);
             padding: 12px 8px;
             border-radius: 8px;
             text-align: center;
         }
-        .sensor-item .label { font-size: 0.7rem; color: #888; margin-bottom: 4px; }
-        .sensor-item .value { font-size: 1.3rem; font-weight: 700; font-family: 'Monaco', monospace; }
-        .sensor-item.x .value { color: #ff6b6b; }
-        .sensor-item.y .value { color: #2ed573; }
-        .sensor-item.z .value { color: #70a1ff; }
-        .sensor-item.alpha .value { color: #ffa502; }
-        .sensor-item.beta .value { color: #ff6b81; }
-        .sensor-item.gamma .value { color: #a29bfe; }
+
+        .sensor-item .label {
+            font-size: 0.7rem;
+            color: #888;
+            margin-bottom: 4px;
+        }
+
+        .sensor-item .value {
+            font-size: 1.3rem;
+            font-weight: 700;
+            font-family: 'Monaco', monospace;
+        }
+
+        .sensor-item.x .value {
+            color: #ff6b6b;
+        }
+
+        .sensor-item.y .value {
+            color: #2ed573;
+        }
+
+        .sensor-item.z .value {
+            color: #70a1ff;
+        }
+
+        .sensor-item.alpha .value {
+            color: #ffa502;
+        }
+
+        .sensor-item.beta .value {
+            color: #ff6b81;
+        }
+
+        .sensor-item.gamma .value {
+            color: #a29bfe;
+        }
 
         /* Charts */
-        .chart-container { position: relative; height: 180px; margin-top: 10px; }
+        .chart-container {
+            position: relative;
+            height: 180px;
+            margin-top: 10px;
+        }
 
         /* Permission request */
         .permission-card {
             text-align: center;
             padding: 30px 20px;
         }
+
         .permission-icon {
             font-size: 48px;
             margin-bottom: 15px;
         }
+
         .permission-text {
             font-size: 0.9rem;
             color: #aaa;
@@ -178,12 +286,25 @@
             overflow-y: auto;
             font-family: 'Monaco', monospace;
             font-size: 0.7rem;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .console-line { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
-        .console-line.error { color: #ff6b6b; }
-        .console-line.success { color: #2ed573; }
-        .console-line.info { color: #70a1ff; }
+
+        .console-line {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .console-line.error {
+            color: #ff6b6b;
+        }
+
+        .console-line.success {
+            color: #2ed573;
+        }
+
+        .console-line.info {
+            color: #70a1ff;
+        }
 
         /* Stats */
         .stats-row {
@@ -192,10 +313,19 @@
             text-align: center;
             margin-top: 12px;
             padding-top: 12px;
-            border-top: 1px solid rgba(255,255,255,0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
         }
-        .stat-item .label { font-size: 0.7rem; color: #888; }
-        .stat-item .value { font-size: 1.1rem; font-weight: 600; color: #00d4aa; }
+
+        .stat-item .label {
+            font-size: 0.7rem;
+            color: #888;
+        }
+
+        .stat-item .value {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #00d4aa;
+        }
 
         /* Two-column layout for desktop */
         @media (min-width: 600px) {
@@ -204,7 +334,10 @@
                 grid-template-columns: 1fr 1fr;
                 gap: 16px;
             }
-            .full-width { grid-column: 1 / -1; }
+
+            .full-width {
+                grid-column: 1 / -1;
+            }
         }
 
         /* Streaming indicator */
@@ -219,15 +352,27 @@
             font-size: 0.75rem;
             color: #2ed573;
         }
+
         .streaming-badge .pulse {
-            width: 8px; height: 8px;
+            width: 8px;
+            height: 8px;
             background: #2ed573;
             border-radius: 50%;
             animation: pulse 1s infinite;
         }
+
         @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.5; transform: scale(0.8); }
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
         }
 
         /* Warning box */
@@ -248,20 +393,24 @@
             gap: 10px;
             margin-top: 12px;
         }
+
         .rate-control input[type="range"] {
             flex: 1;
             height: 6px;
             border-radius: 3px;
-            background: rgba(255,255,255,0.2);
+            background: rgba(255, 255, 255, 0.2);
             -webkit-appearance: none;
         }
+
         .rate-control input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            width: 18px; height: 18px;
+            width: 18px;
+            height: 18px;
             border-radius: 50%;
             background: #ff6b6b;
             cursor: pointer;
         }
+
         .rate-buttons {
             display: flex;
             gap: 8px;
@@ -269,26 +418,37 @@
             flex-wrap: wrap;
             justify-content: center;
         }
+
         .rate-btn {
             padding: 6px 12px;
-            border: 1px solid rgba(255,255,255,0.2);
+            border: 1px solid rgba(255, 255, 255, 0.2);
             border-radius: 6px;
-            background: rgba(0,0,0,0.2);
+            background: rgba(0, 0, 0, 0.2);
             color: #aaa;
             font-size: 0.75rem;
             cursor: pointer;
             transition: all 0.2s;
         }
-        .rate-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
-        .rate-btn.active { background: #ff6b6b; color: #fff; border-color: #ff6b6b; }
+
+        .rate-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+        }
+
+        .rate-btn.active {
+            background: #ff6b6b;
+            color: #fff;
+            border-color: #ff6b6b;
+        }
     </style>
 </head>
+
 <body>
     <div class="container">
         <header>
             <h1>
-                <div class="logo">P</div>
-                Phone Sensor
+                <div class="logo" style="background: #e0e0e0; color: #1a1a2e;">📱</div>
+                Phone Sensor V2
             </h1>
             <nav class="nav-links">
                 <a href="/phone">Phone</a>
@@ -367,9 +527,18 @@
             <div class="card">
                 <h2>Accelerometer (m/s²)</h2>
                 <div class="sensor-grid">
-                    <div class="sensor-item x"><div class="label">X</div><div class="value" id="accelX">--</div></div>
-                    <div class="sensor-item y"><div class="label">Y</div><div class="value" id="accelY">--</div></div>
-                    <div class="sensor-item z"><div class="label">Z</div><div class="value" id="accelZ">--</div></div>
+                    <div class="sensor-item x">
+                        <div class="label">X</div>
+                        <div class="value" id="accelX">--</div>
+                    </div>
+                    <div class="sensor-item y">
+                        <div class="label">Y</div>
+                        <div class="value" id="accelY">--</div>
+                    </div>
+                    <div class="sensor-item z">
+                        <div class="label">Z</div>
+                        <div class="value" id="accelZ">--</div>
+                    </div>
                 </div>
                 <div class="chart-container">
                     <canvas id="accelChart"></canvas>
@@ -380,9 +549,18 @@
             <div class="card">
                 <h2>Orientation (degrees)</h2>
                 <div class="sensor-grid">
-                    <div class="sensor-item alpha"><div class="label">Alpha</div><div class="value" id="alpha">--</div></div>
-                    <div class="sensor-item beta"><div class="label">Beta</div><div class="value" id="beta">--</div></div>
-                    <div class="sensor-item gamma"><div class="label">Gamma</div><div class="value" id="gamma">--</div></div>
+                    <div class="sensor-item alpha">
+                        <div class="label">Alpha</div>
+                        <div class="value" id="alpha">--</div>
+                    </div>
+                    <div class="sensor-item beta">
+                        <div class="label">Beta</div>
+                        <div class="value" id="beta">--</div>
+                    </div>
+                    <div class="sensor-item gamma">
+                        <div class="label">Gamma</div>
+                        <div class="value" id="gamma">--</div>
+                    </div>
                 </div>
                 <div class="chart-container">
                     <canvas id="orientChart"></canvas>
@@ -396,15 +574,16 @@
                     Select how often to send sensor data. Minimum is 1 Hz (once per second).
                 </p>
                 <div class="rate-buttons" id="rateButtons">
-                    <button class="rate-btn" data-hz="1" onclick="setRateHz(1)">1 Hz</button>
-                    <button class="rate-btn active" data-hz="0.5" onclick="setRateHz(0.5)">0.5 Hz</button>
+                    <button class="rate-btn active" data-hz="1" onclick="setRateHz(1)">1 Hz</button>
+                    <button class="rate-btn" data-hz="0.5" onclick="setRateHz(0.5)">0.5 Hz</button>
                     <button class="rate-btn" data-hz="0.2" onclick="setRateHz(0.2)">0.2 Hz</button>
                     <button class="rate-btn" data-hz="0.1" onclick="setRateHz(0.1)">0.1 Hz</button>
                 </div>
                 <div style="text-align: center; margin-top: 12px;">
-                    <span id="rateDisplay" style="font-weight: 600; color: #ff6b6b; font-size: 1.1rem;">Every 2 seconds</span>
+                    <span id="rateDisplay" style="font-weight: 600; color: #ff6b6b; font-size: 1.1rem;">10
+                        samples/sec</span>
                     <div style="font-size: 0.7rem; color: #666; margin-top: 4px;">
-                        Interval: <span id="intervalDisplay">2000ms</span>
+                        Interval: <span id="intervalDisplay">100ms</span>
                     </div>
                 </div>
             </div>
@@ -422,8 +601,8 @@
         let isStreaming = false;
         let sampleCount = 0;
         let sampleTimes = [];
-        let sampleInterval = 2000; // ms between samples (default: 0.5 Hz = every 2 seconds)
-        let currentRateHz = 0.5;   // Hz rate (minimum 1 Hz = 1000ms max speed)
+        let sampleInterval = 1000; // ms between samples (default: 1 Hz)
+        let currentRateHz = 1;     // Hz rate (max 1 Hz)
         let streamingTimer = null;
         let hasMotionPermission = false;
         let hasOrientationPermission = false;
@@ -666,25 +845,26 @@
 
         async function sendToServer(data) {
             try {
-                // Send to both endpoints for compatibility
                 const promises = [
                     // Main sensor data endpoint
                     fetch(`${serverEndpoint}/api/sensors/${sensorId}/data`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                    }).catch(() => null),
-                    // Injector endpoint for CORE network traffic
-                    fetch(`${serverEndpoint}/api/inject/${sensorId}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                    }).catch(() => null)
+                        body: JSON.stringify(data),
+                        keepalive: true
+                    })
+                        .then(response => {
+                            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                        })
+                        .catch(err => {
+                            logConsole(`Send error: ${err.message}`, 'error');
+                            throw err;
+                        })
                 ];
 
                 await Promise.all(promises);
             } catch (error) {
-                // Silently ignore send errors to avoid flooding console
+                // Error already logged above
             }
         }
 
@@ -718,8 +898,9 @@
         }
 
         function setRateHz(hz) {
-            // Enforce minimum 1 Hz (1000ms) as fastest rate
+            // Enforce strict limit (max 1 Hz) per user requirement
             if (hz > 1) hz = 1;
+            if (hz < 0.1) hz = 0.1;
 
             currentRateHz = hz;
             sampleInterval = Math.round(1000 / hz);
@@ -883,4 +1064,5 @@
         init();
     </script>
 </body>
+
 </html>

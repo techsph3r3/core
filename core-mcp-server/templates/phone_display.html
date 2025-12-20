@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -49,7 +50,9 @@
         }
 
         @media (max-width: 1000px) {
-            .main-grid { grid-template-columns: 1fr; }
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .right-section {
@@ -95,8 +98,15 @@
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
         }
 
         button {
@@ -201,12 +211,29 @@
         }
 
         /* Color coding for phone sensors */
-        .value-box.accel-x .value { color: #ff6b6b; }
-        .value-box.accel-y .value { color: #2ed573; }
-        .value-box.accel-z .value { color: #70a1ff; }
-        .value-box.alpha .value { color: #ffa502; }
-        .value-box.beta .value { color: #ff6b81; }
-        .value-box.gamma .value { color: #a29bfe; }
+        .value-box.accel-x .value {
+            color: #ff6b6b;
+        }
+
+        .value-box.accel-y .value {
+            color: #2ed573;
+        }
+
+        .value-box.accel-z .value {
+            color: #70a1ff;
+        }
+
+        .value-box.alpha .value {
+            color: #ffa502;
+        }
+
+        .value-box.beta .value {
+            color: #ff6b81;
+        }
+
+        .value-box.gamma .value {
+            color: #a29bfe;
+        }
 
         .chart-container {
             position: relative;
@@ -232,9 +259,17 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.05);
         }
 
-        .log-entry.info { color: #ff6b6b; }
-        .log-entry.data { color: #00ff88; }
-        .log-entry.error { color: #ff4444; }
+        .log-entry.info {
+            color: #ff6b6b;
+        }
+
+        .log-entry.data {
+            color: #00ff88;
+        }
+
+        .log-entry.error {
+            color: #ff4444;
+        }
 
         .stats-grid {
             display: grid;
@@ -296,7 +331,8 @@
             transition: all 0.2s;
         }
 
-        .nav-links a:hover, .nav-links a.active {
+        .nav-links a:hover,
+        .nav-links a.active {
             color: #fff;
             background: rgba(255, 107, 107, 0.2);
         }
@@ -315,6 +351,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -358,9 +395,9 @@
                         </div>
                         <div style="margin-bottom: 10px;">
                             <input type="text" id="brokerHost" placeholder="Broker Host" value="localhost"
-                                   style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; margin-bottom: 8px;">
+                                style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; margin-bottom: 8px;">
                             <input type="number" id="brokerPort" placeholder="WS Port" value="9001"
-                                   style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff;">
+                                style="width: 100%; padding: 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff;">
                         </div>
                         <button id="mqttBtn" onclick="toggleMqtt()">Connect</button>
                     </div>
@@ -402,7 +439,8 @@
             <div class="right-section">
                 <!-- Selected Sensor Header -->
                 <div class="card" style="grid-column: 1 / -1;">
-                    <h2>Phone: <span id="selectedSensorName">--</span> <span id="selectedSensorType" class="sensor-type-badge" style="display:none;"></span></h2>
+                    <h2>Phone: <span id="selectedSensorName">--</span> <span id="selectedSensorType"
+                            class="sensor-type-badge" style="display:none;"></span></h2>
                     <p id="selectedSensorTopic" style="color: #666; font-family: monospace; font-size: 0.8rem;">--</p>
                 </div>
 
@@ -453,7 +491,8 @@
                 <!-- Raw Data -->
                 <div class="card" style="grid-column: 1 / -1;">
                     <h2>Raw Sensor Data</h2>
-                    <pre id="rawData" style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-size: 0.8rem; overflow-x: auto; color: #00ff88;">
+                    <pre id="rawData"
+                        style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-size: 0.8rem; overflow-x: auto; color: #00ff88;">
 Waiting for data...
                     </pre>
                 </div>
@@ -740,8 +779,27 @@ Waiting for data...
             log(logMsg, 'data');
         }
 
+        // Refresh sensor list every second to handle aging
+        setInterval(updateSensorList, 1000);
+
         function updateSensorList() {
             const container = document.getElementById('sensorList');
+            const now = Date.now();
+            const STALE_TIMEOUT = 15000; // 15 seconds
+
+            // Filter out stale sensors
+            for (const id in sensors) {
+                if (now - sensors[id].lastUpdate > STALE_TIMEOUT) {
+                    delete sensors[id];
+                    if (selectedSensor === id) {
+                        selectedSensor = null;
+                        document.getElementById('selectedSensorName').textContent = '--';
+                        // Clear display values
+                        document.querySelectorAll('.value-box .value').forEach(el => el.textContent = '--');
+                    }
+                }
+            }
+
             const phoneSensors = Object.entries(sensors).filter(([id]) => id.startsWith('phone-'));
 
             if (phoneSensors.length === 0) {
@@ -757,7 +815,7 @@ Waiting for data...
                 item.onclick = () => selectSensor(sensorId);
 
                 const timeSinceUpdate = sensor.lastUpdate
-                    ? Math.floor((Date.now() - sensor.lastUpdate) / 1000) + 's ago'
+                    ? Math.floor((now - sensor.lastUpdate) / 1000) + 's ago'
                     : 'never';
 
                 item.innerHTML = `
@@ -848,4 +906,5 @@ Waiting for data...
         });
     </script>
 </body>
+
 </html>

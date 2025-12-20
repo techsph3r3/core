@@ -6205,6 +6205,58 @@ def unbind_sensor(sensor_id):
     })
 
 
+@app.route('/api/sensors/stream')
+def stream_sensor_readings():
+    """
+    Stream live sensor readings using Server-Sent Events (SSE).
+    Optimized for low-latency live view in dashboard.
+    """
+    def generate():
+        # SSE standard: send initial padding > 2KB to flush Nginx/proxy buffers
+        yield ":" + (" " * 4096) + "\n\n"
+        
+        while True:
+            # Aggregate all active phone sensors
+            phones = {}
+            has_data = False
+            current_time = int(time.time() * 1000)
+            
+            # Find phones
+            for sensor_id, sensor in sensor_data_store['sensors'].items():
+                if sensor_id.startswith('phone-'):
+                    readings = sensor_data_store['readings'].get(sensor_id, [])
+                    if readings:
+                        phones[sensor_id] = readings[-1]
+                        has_data = True
+                        
+            # Get inject status (lightweight)
+            injector_running = False
+            try:
+                injector_running = embedded_injector.running
+            except: 
+                pass
+                
+            if has_data:
+                data = {
+                    'phones': phones,
+                    'timestamp': current_time,
+                    'injector_running': injector_running
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+            else:
+                # Keep-alive heartbeat
+                yield ": keepalive\n\n"
+                
+            # Sleep 50ms (20Hz) - fast but not busy-wait
+            if GEVENT_AVAILABLE:
+                import gevent
+                gevent.sleep(0.05)
+            else:
+                time.sleep(0.05)
+
+    return Response(generate(), mimetype='text/event-stream')
+
+
 @app.route('/api/sensors/<sensor_id>/readings', methods=['GET'])
 def get_sensor_readings(sensor_id):
     """Get sensor readings with optional limit and offset"""

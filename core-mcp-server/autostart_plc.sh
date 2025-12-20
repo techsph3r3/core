@@ -41,8 +41,10 @@ for i in {1..30}; do
         break
     fi
     if echo "$LOGS" | grep -q "Error"; then
-        echo "[AutoStart] Compilation FAILED" >> $LOGFILE
-        echo "$LOGS" | head -n 20 >> $LOGFILE
+        echo "[AutoStart] Compilation FAILED"
+        echo "=== COMPILATION ERROR LOG ==="
+        echo "$LOGS"
+        echo "============================="
         exit 1
     fi
     sleep 2
