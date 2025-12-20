@@ -3974,8 +3974,8 @@ basic.forever(function () {
                         setInterval(refreshHosts, 30000);
                         // Also refresh CORE VNC nodes periodically
                         setInterval(refreshCoreVncNodes, 15000);
-                        // Poll phone sensor status frequently for low latency (10Hz)
-                        setInterval(pollPhoneStatus, 100);
+                        // Poll phone sensor status (500ms = 2Hz) to balance latency/load
+                        setInterval(pollPhoneStatus, 500);
 
                         // Listen for lab state changes from other tabs
                         window.addEventListener('storage', (e) => {
